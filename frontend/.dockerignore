@@ -1,0 +1,22 @@
+# Environment & secrets
+.env
+.env.*
+../.env
+
+# Version control
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+
+# Dependencies (rebuilt in Docker)
+node_modules
+
+# Next.js build output (rebuilt in Docker)
+.next
+out
+
+# Docs
+*.md

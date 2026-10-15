@@ -1,0 +1,16 @@
+.git
+.gitignore
+.gcloudignore
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/node_modules
+**/.next
+**/uploads
+**/venv
+**/.venv
+**/env
+**/.env
+**/.dockerignore
+**/.gitkeep

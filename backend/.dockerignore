@@ -1,0 +1,29 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+../.env
+
+# Version control
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.pytest_cache
+venv
+.venv
+
+# Uploads (runtime data)
+uploads/*
+!uploads/.gitkeep
+
+# Docs
+*.md

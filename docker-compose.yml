@@ -1,0 +1,49 @@
+# Ports sit one above SnagStock's (5432/8000/3000) so both stacks can run side by side.
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-autoaccounting}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autoaccounting}
+      POSTGRES_DB: ${POSTGRES_DB:-autoaccounting}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-autoaccounting}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    ports:
+      - "8001:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-autoaccounting}:${POSTGRES_PASSWORD:-autoaccounting}@db:5432/${POSTGRES_DB:-autoaccounting}
+      GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+      FRONTEND_URL: http://localhost:3001
+    volumes:
+      - ./backend:/app
+      - ./backend/uploads:/app/uploads
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3001:3000"
+    depends_on:
+      - backend
+    env_file:
+      - .env
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8001
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+
+volumes:
+  pgdata:

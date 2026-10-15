@@ -1,0 +1,170 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { accountingApi } from "@/lib/accounting-api";
+import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
+import BookMonths from "@/components/accounting/BookMonths";
+import ChartEditor from "@/components/accounting/ChartEditor";
+import JournalEntryForm from "@/components/accounting/JournalEntryForm";
+import OpeningAssets from "@/components/accounting/OpeningAssets";
+import type { Account, JournalEntry, JournalEntryInput } from "@/types/accounting";
+
+interface Props {
+  companyId: string;
+  year: number;
+  booksStart: string;
+  fiscalYearEndMonth: number;
+  canManage: boolean;
+  onChanged: () => void;
+}
+
+const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)]";
+
+export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndMonth, canManage, onChanged }: Props) {
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [editing, setEditing] = useState<{ id?: string; input: JournalEntryInput } | null>(null);
+  const [showChart, setShowChart] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    const [a, e] = await Promise.all([accountingApi.accounts(companyId), accountingApi.journalEntries(companyId, year)]);
+    setAccounts(a);
+    setEntries(e);
+  }, [companyId, year]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([accountingApi.accounts(companyId), accountingApi.journalEntries(companyId, year)])
+      .then(([a, e]) => {
+        if (cancelled) return;
+        setAccounts(a);
+        setEntries(e);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(apiErrorMessage(e, "Couldn't load the books"));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, year]);
+
+  const opening = entries.find((e) => e.kind === "opening");
+  // First day of the fiscal year being viewed (month after the year-end month, in year-1; Jan 1 for 12).
+  const fyStart = fiscalYearEndMonth === 12
+    ? `${year}-01-01`
+    : `${year - 1}-${String(fiscalYearEndMonth + 1).padStart(2, "0")}-01`;
+  const manualDate = fyStart > booksStart ? fyStart : booksStart;
+  // Fiscal year of booksStart (the year its fiscal year ends in): the only year the opening balances belong to.
+  const [startYear, startMonth] = booksStart.split("-").map(Number);
+  const booksFy = startMonth > fiscalYearEndMonth ? startYear + 1 : startYear;
+  const blank = (kind: "opening" | "manual"): JournalEntryInput => ({
+    kind, book: "GJ", entry_date: kind === "opening" ? booksStart : manualDate, reference: kind === "opening" ? "OB" : "",
+    particulars: kind === "opening" ? "Opening balances" : "", lines: [],
+  });
+  const ppeCodes = new Set(accounts.filter((a) => a.system_key === "ppe" || a.system_key === "accum_dep").map((a) => a.code));
+  const openingPpe = (opening?.lines ?? [])
+    .filter((l) => ppeCodes.has(l.account_code))
+    .reduce((s, l) => s + Number(l.debit || 0) - Number(l.credit || 0), 0);
+  const title = (code: string) => accounts.find((a) => a.code === code)?.name ?? code;
+  // Stored lines carry "0" on the empty side; the form wants it blank.
+  const editable = (e: JournalEntry): JournalEntryInput => ({
+    ...e,
+    lines: e.lines.map((l) => ({ ...l, debit: Number(l.debit) ? l.debit : "", credit: Number(l.credit) ? l.credit : "" })),
+  });
+
+  async function save(input: JournalEntryInput) {
+    setBusy(true);
+    setError("");
+    try {
+      if (editing?.id) await accountingApi.updateJournalEntry(editing.id, input);
+      else await accountingApi.createJournalEntry(companyId, input);
+      setEditing(null);
+      await load();
+      onChanged();
+    } catch (e) {
+      setError(apiErrorMessage(e, "Couldn't save the entry"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(id: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await accountingApi.deleteJournalEntry(id);
+      await load();
+      onChanged();
+    } catch (e) {
+      setError(apiErrorMessage(e, "Couldn't delete the entry"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mb-6">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h2 className="text-base font-semibold text-[var(--text-primary)]">Books · FY {year}</h2>
+        <span className="text-xs text-[var(--text-secondary)]">Books start {booksStart}. Journals, ledger and trial balance are in each quarter&apos;s workbook.</span>
+        <button className={`${BTN} ml-auto`} onClick={() => setShowChart((s) => !s)}>{showChart ? "Hide" : "Chart of accounts"}</button>
+      </div>
+      {error && <p className="mb-2 text-sm text-[var(--alert-error-text)]">{error}</p>}
+      {showChart && (
+        <div className="mb-4 rounded-lg border border-[var(--border)] p-3">
+          <ChartEditor companyId={companyId} canManage={canManage} />
+        </div>
+      )}
+
+      <BookMonths companyId={companyId} year={year} canManage={canManage} onChanged={onChanged} />
+
+      <section className="mb-4">
+        <div className="mb-2 flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Opening balances</h3>
+          {!editing && (opening || booksFy === year) && (
+            <button className={BTN} onClick={() => setEditing(opening ? { id: opening.id, input: editable(opening) } : { input: blank("opening") })}>
+              {opening ? "Edit" : "Enter opening balances"}
+            </button>
+          )}
+        </div>
+        {!opening && booksFy !== year && (
+          <p className="text-xs text-[var(--text-secondary)]">Opening balances are in FY {booksFy}.</p>
+        )}
+        {opening && editing?.id !== opening.id && (
+          <p className="text-xs text-[var(--text-secondary)]">
+            {opening.lines.length} accounts as of {opening.entry_date} · total {formatPeso(opening.lines.reduce((s, l) => s + Number(l.debit), 0))}
+          </p>
+        )}
+        {opening && booksFy === year && (
+          <OpeningAssets companyId={companyId} year={year} openingPpe={openingPpe} onChanged={onChanged} />
+        )}
+      </section>
+
+      <section>
+        <div className="mb-2 flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Journal entries</h3>
+          {!editing && <button className={BTN} onClick={() => setEditing({ input: blank("manual") })}>New entry</button>}
+        </div>
+        {editing && (
+          <JournalEntryForm accounts={accounts} initial={editing.input} busy={busy} onCancel={() => setEditing(null)} onSave={save} />
+        )}
+        <ul className="mt-2 divide-y divide-[var(--border)]">
+          {entries.filter((e) => e.kind === "manual").map((e) => (
+            <li key={e.id} className="flex flex-wrap items-baseline gap-3 py-2 text-sm">
+              <span className="w-24 text-[var(--text-secondary)]">{e.entry_date}</span>
+              <span className="w-10 text-xs text-[var(--text-secondary)]">{e.book}</span>
+              <span className="flex-1 text-[var(--text-primary)]">
+                {e.particulars || e.reference || "(no particulars)"} ·{" "}
+                {e.lines.map((l) => `${title(l.account_code)} ${Number(l.debit) ? "Dr" : "Cr"} ${formatPeso(Number(l.debit) || Number(l.credit))}`).join(" / ")}
+              </span>
+              <button className="text-[var(--accent)]" onClick={() => setEditing({ id: e.id, input: editable(e) })}>Edit</button>
+              <button className="text-[var(--alert-error-text)]" disabled={busy} onClick={() => remove(e.id)}>Delete</button>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}

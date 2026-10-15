@@ -1,0 +1,1 @@
+"""AutoAccounting backend application."""

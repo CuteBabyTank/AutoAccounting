@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+
+# Node
+node_modules/
+.next/
+out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Playwright MCP capture artifacts
+.playwright-mcp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Temporary
+tmpclaude-*
+
+# Next.js incremental type info
+*.tsbuildinfo
+
+# Build
+dist/
+build/
+*.egg-info/
+

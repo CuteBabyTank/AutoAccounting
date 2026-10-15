@@ -37,6 +37,7 @@
   let ledgers = [], docs = [], particles = [];
 
   function resize() {
+    measure();
     DPR = Math.min(window.devicePixelRatio || 1, 2);
     W = canvas.clientWidth; H = canvas.clientHeight;
     canvas.width = W * DPR; canvas.height = H * DPR;
@@ -46,16 +47,40 @@
     }));
   }
 
+  // Documents travel in the open space around the demo card, never behind it,
+  // and drift away from it. Passing behind the headline copy they thin out so
+  // the text stays easy to read. Boxes are canvas-relative, refreshed on resize.
+  const demoCard = $("#demo"), heroCopy = $(".hero-copy");
+  let cardBox = null, copyBox = null;
+  function measure() {
+    const c = canvas.getBoundingClientRect();
+    const rel = (el) => { const r = el.getBoundingClientRect(); return { l: r.left - c.left, r: r.right - c.left, t: r.top - c.top, b: r.bottom - c.top }; };
+    cardBox = rel(demoCard); copyBox = rel(heroCopy);
+  }
+  function openX(w) {
+    const left = cardBox.l - 16, right = cardBox.r + 16;
+    for (let k = 0; k < 10; k++) {
+      const x = W * (0.03 + Math.random() * 0.95);
+      if (x + w / 2 < left || x - w / 2 > right) return x;
+    }
+    return Math.random() < 0.5 ? Math.max(w, left - w) : Math.min(W - w / 2, right + w / 2);
+  }
+  function overCopy(d) {
+    return d.x + d.w / 2 > copyBox.l && d.x - d.w / 2 < copyBox.r && d.y + d.h / 2 > copyBox.t && d.y - d.h / 2 < copyBox.b;
+  }
+
   function spawnDoc(initial = false) {
-    const w = 46 + Math.random() * 26;
+    const w = 54 + Math.random() * 30;
+    const x = openX(w);
+    const away = x < (cardBox.l + cardBox.r) / 2 ? -1 : 1;
     docs.push({
-      x: W * (0.36 + Math.random() * 0.6),
+      x,
       y: initial ? H * (0.15 + Math.random() * 0.7) : H + 60,
       w, h: w * 1.3,
       rot: (Math.random() - 0.5) * 0.5,
       vr: (Math.random() - 0.5) * 0.002,
-      vy: -(0.18 + Math.random() * 0.22),
-      vx: 0.12 + Math.random() * 0.12,
+      vy: -(0.28 + Math.random() * 0.26),
+      vx: away * (0.12 + Math.random() * 0.12),
       dissolveAt: H * (0.2 + Math.random() * 0.55),
       lines: 3 + ((Math.random() * 3) | 0),
     });
@@ -94,21 +119,23 @@
     ctx.save();
     ctx.translate(d.x, d.y);
     ctx.rotate(d.rot);
-    ctx.globalAlpha = 0.9 * fade;
-    ctx.shadowColor = "rgba(15,23,42,0.10)";
-    ctx.shadowBlur = 18; ctx.shadowOffsetY = 6;
+    // Ease toward a lower opacity behind the copy instead of popping.
+    d.dim = (d.dim ?? 1) + ((overCopy(d) ? 0.35 : 1) - (d.dim ?? 1)) * 0.08;
+    ctx.globalAlpha = fade * d.dim;
+    ctx.shadowColor = "rgba(15,23,42,0.16)";
+    ctx.shadowBlur = 20; ctx.shadowOffsetY = 8;
     roundRect(-d.w / 2, -d.h / 2, d.w, d.h, 5);
     ctx.fillStyle = "#FFFFFF"; ctx.fill();
     ctx.shadowColor = "transparent";
-    ctx.strokeStyle = "#E2E8F0"; ctx.lineWidth = 1; ctx.stroke();
-    ctx.fillStyle = "#F1F5F9";
+    ctx.strokeStyle = "#CBD5E1"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = "#E2E8F0";
     ctx.beginPath();
     ctx.moveTo(d.w / 2 - 10, -d.h / 2); ctx.lineTo(d.w / 2, -d.h / 2 + 10); ctx.lineTo(d.w / 2 - 10, -d.h / 2 + 10);
     ctx.fill();
     for (let i = 0; i < d.lines; i++) {
       const lw = (d.w - 16) * (i === d.lines - 1 ? 0.45 : 0.6 + ((i * 37) % 40) / 100);
-      ctx.fillStyle = i === d.lines - 1 ? "#A7F3D0" : "#E2E8F0";
-      ctx.fillRect(-d.w / 2 + 8, -d.h / 2 + 12 + i * 8, lw, 3);
+      ctx.fillStyle = i === d.lines - 1 ? "#6EE7B7" : "#CBD5E1";
+      ctx.fillRect(-d.w / 2 + 8, -d.h / 2 + 13 + i * 9, lw, 3.5);
     }
     ctx.restore();
   }
@@ -132,7 +159,7 @@
     });
     ctx.setLineDash([]);
 
-    if (t - lastSpawn > 50 / SPEED && docs.length < 10) { spawnDoc(); lastSpawn = t; }
+    if (t - lastSpawn > 34 / SPEED && docs.length < 16) { spawnDoc(); lastSpawn = t; }
     for (let i = docs.length - 1; i >= 0; i--) {
       const d = docs[i];
       d.y += d.vy * SPEED; d.x += d.vx * 0.3 * SPEED; d.rot += d.vr * SPEED;
@@ -162,11 +189,13 @@
   function stop() { running = false; cancelAnimationFrame(raf); }
 
   resize();
-  for (let i = 0; i < 5; i++) spawnDoc(true);
+  for (let i = 0; i < 9; i++) spawnDoc(true);
   start();
   // Size the drawing buffer from the canvas's real box whenever it changes
   // (fonts and layout settle after first paint), so it never renders stretched.
   new ResizeObserver(() => { resize(); if (!running) frame(); }).observe(canvas);
+  // Web fonts can reflow the copy without resizing the canvas.
+  if (document.fonts) document.fonts.ready.then(measure);
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()));
   new IntersectionObserver(([e]) => (e.isIntersecting ? start() : stop())).observe(canvas);
 
@@ -174,6 +203,17 @@
   const SAMPLES = [
     { name: "Invoice_2026.pdf", ext: "pdf", vendor: "Northwind Supply Co.", date: "Mar 14, 2026", amount: 4280.0, category: "COGS · 5000", bucket: "payable" },
     { name: "Tax_Receipt.jpg", ext: "jpg", vendor: "City Office Depot", date: "Feb 02, 2026", amount: 312.48, category: "Office · Deductible", bucket: "tax" },
+    {
+      // Autosort: one scanned PDF holding several documents. Like the app, it's
+      // split into its separate documents and each is filed on its own.
+      name: "Scanned_Bundle.pdf", ext: "pdf", pages: 6, bundle: [
+        { pages: "p. 1", vendor: "Staples Business", kind: "Invoice", amount: 642.9, bucket: "payable" },
+        { pages: "p. 2", vendor: "Delta Air Lines", kind: "Receipt", amount: 418.0, bucket: "tax" },
+        { pages: "pp. 3–4", vendor: "Mercury Bank", kind: "Statement", amount: 22404.0, bucket: "reconciled" },
+        { pages: "p. 5", vendor: "FedEx Office", kind: "Receipt", amount: 87.35, bucket: "tax" },
+        { pages: "p. 6", vendor: "Sysco", kind: "Invoice", amount: 1150.6, bucket: "payable" },
+      ],
+    },
     { name: "AWS_March.pdf", ext: "pdf", vendor: "Amazon Web Services", date: "Mar 31, 2026", amount: 1894.17, category: "Software · 6810", bucket: "reconciled" },
     { name: "1099-NEC_Form.pdf", ext: "pdf", vendor: "J. Rivera (contractor)", date: "Jan 28, 2026", amount: 18500.0, category: "Contract Labor", bucket: "tax" },
     { name: "Chase_Statement.csv", ext: "csv", vendor: "Chase Business", date: "Mar 01, 2026", amount: 9612.55, category: "n/a · Bank match", bucket: "reconciled" },
@@ -202,52 +242,22 @@
       ext.className = `ext ${s.ext}`;
       ext.textContent = s.ext.toUpperCase();
       b.append(ext, s.name);
+      if (s.bundle) {
+        b.classList.add("bundle");
+        const pg = document.createElement("span");
+        pg.className = "pages";
+        pg.textContent = `${s.pages} pages`;
+        b.append(pg);
+        b.setAttribute("aria-label", `Auto-sort sample ${s.name}, ${s.pages} pages`);
+      }
       samplesEl.appendChild(b);
     });
   }
   renderSamples();
 
-  // Pointer-based drag so it works with mouse, pen and touch alike. A tap processes too.
-  let drag = null;
-  samplesEl.addEventListener("pointerdown", (e) => {
-    const el = e.target.closest(".sample");
-    if (!el || el.classList.contains("used") || e.button > 0) return;
-    drag = { el, x0: e.clientX, y0: e.clientY, ghost: null, moved: false };
-    el.setPointerCapture(e.pointerId);
-  });
-  samplesEl.addEventListener("pointermove", (e) => {
-    if (!drag) return;
-    if (!drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 6) return;
-    if (!drag.moved) {
-      drag.moved = true;
-      drag.ghost = drag.el.cloneNode(true);
-      drag.ghost.classList.add("drag-ghost");
-      drag.ghost.removeAttribute("aria-label");
-      document.body.appendChild(drag.ghost);
-      drag.el.classList.add("dragging");
-    }
-    drag.ghost.style.left = e.clientX + "px";
-    drag.ghost.style.top = e.clientY + "px";
-    dz.classList.toggle("over", overZone(e));
-  });
-  const endDrag = (e, cancelled) => {
-    if (!drag) return;
-    const { el, moved, ghost } = drag;
-    drag = null;
-    el.classList.remove("dragging");
-    if (ghost) ghost.remove();
-    dz.classList.remove("over");
-    if (!cancelled && (!moved || overZone(e))) enqueueSample(el);
-  };
-  samplesEl.addEventListener("pointerup", (e) => endDrag(e, false));
-  samplesEl.addEventListener("pointercancel", (e) => endDrag(e, true));
-  function overZone(e) {
-    const r = dz.getBoundingClientRect();
-    return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
-  }
-  // Keyboard: Enter/Space on a focused sample arrives as a click with detail 0.
+  // Samples are buttons: a click, tap or Enter/Space sorts one. (Real files can
+  // still be dropped onto the zone from the desktop.)
   samplesEl.addEventListener("click", (e) => {
-    if (e.detail !== 0) return;
     const el = e.target.closest(".sample");
     if (el && !el.classList.contains("used")) enqueueSample(el);
   });
@@ -268,8 +278,7 @@
   dz.addEventListener("drop", (e) => {
     e.preventDefault();
     dz.classList.remove("over");
-    [...(e.dataTransfer?.files || [])].forEach((f) => queue.push(classifyFile(f)));
-    pump();
+    takeFiles([...(e.dataTransfer?.files || [])]);
   });
   window.addEventListener("dragover", (e) => e.preventDefault());
   window.addEventListener("drop", (e) => e.preventDefault());
@@ -278,10 +287,40 @@
     if ((e.key === "Enter" || e.key === " ") && !busy) { e.preventDefault(); fileInput.click(); }
   });
   fileInput.addEventListener("change", () => {
-    [...fileInput.files].forEach((f) => queue.push(classifyFile(f)));
+    const files = [...fileInput.files];
     fileInput.value = "";
-    pump();
+    takeFiles(files);
   });
+
+  // A multi-page PDF is auto-sorted as a bundle; anything else is one document.
+  async function takeFiles(files) {
+    noteUser();
+    for (const f of files) {
+      const pages = /\.pdf$/i.test(f.name) ? await countPdfPages(f) : 1;
+      queue.push(pages > 1 ? bundleFromFile(f, pages) : classifyFile(f));
+    }
+    pump();
+  }
+  // Page count read locally from the PDF's own page objects; nothing is uploaded.
+  async function countPdfPages(f) {
+    try {
+      const text = new TextDecoder("latin1").decode(await f.slice(0, 8 * 1024 * 1024).arrayBuffer());
+      const objects = (text.match(/\/Type\s*\/Page(?![a-zA-Z])/g) || []).length;
+      const counts = [...text.matchAll(/\/Count\s+(\d+)/g)].map((m) => +m[1]);
+      return Math.max(objects, counts.length ? Math.max(...counts) : 0, 1);
+    } catch { return 1; }
+  }
+  function bundleFromFile(f, pages) {
+    const KINDS = [["Invoice", "payable"], ["Receipt", "tax"], ["Statement", "reconciled"], ["Receipt", "tax"]];
+    const base = classifyFile(f);
+    const n = Math.min(pages, 6);
+    const bundle = Array.from({ length: n }, (_, i) => {
+      const h = hash(f.name + f.size + i);
+      const [kind, bucket] = KINDS[h % KINDS.length];
+      return { pages: `p. ${i + 1}`, vendor: `document ${i + 1}`, kind, bucket, amount: Math.round(2000 + (h % 380000)) / 100 };
+    });
+    return { name: base.name, ext: "pdf", pages, bundle };
+  }
 
   function hash(str) {
     let h = 2166136261;
@@ -309,14 +348,82 @@
   async function pump() {
     if (busy) return;
     busy = true;
-    while (queue.length) await processDoc(queue.shift());
+    while (queue.length) {
+      const doc = queue.shift();
+      await (doc.bundle ? processBundle(doc) : processDoc(doc));
+    }
     busy = false;
+    lastDone = performance.now();
     await sleep(900);
     if (!busy) { stage.hidden = true; idle.hidden = false; }
     if (!busy && $$(".sample:not(.used)").length === 0) {
       await sleep(2500);
-      if (!busy) renderSamples();
+      if (!busy) { renderSamples(); resetBuckets(); }
     }
+  }
+
+  function resetBuckets() {
+    Object.keys(totals).forEach((k) => {
+      totals[k] = { n: 0, sum: 0 };
+      const bEl = $(`.bucket[data-bucket="${k}"]`);
+      $("[data-count]", bEl).textContent = "0";
+      $("[data-total]", bEl).textContent = money(0);
+    });
+  }
+
+  function fileInto(bucket, amount) {
+    const t = totals[bucket];
+    const bEl = $(`.bucket[data-bucket="${bucket}"]`);
+    const from = t.sum;
+    t.n += 1; t.sum += amount;
+    $("[data-count]", bEl).textContent = t.n;
+    countUp($("[data-total]", bEl), from, t.sum, 700, money);
+    bEl.classList.add("pulse");
+    setTimeout(() => bEl.classList.remove("pulse"), 700);
+  }
+
+  // Autosort: scan the whole file, list the separate documents found in it,
+  // then file each into its own bucket.
+  const splitEl = $("#split");
+  const fieldsEl = $("#fields");
+  const BUCKET_NAMES = { payable: "Accounts Payable", tax: "Tax Deductions", reconciled: "Reconciled Expenses" };
+  async function processBundle(doc) {
+    idle.hidden = true;
+    stage.hidden = false;
+    fieldsEl.hidden = true;
+    splitEl.hidden = false;
+    stage.classList.remove("flying", "scanning");
+    $("#scanName").textContent = `${doc.name} · ${doc.pages} pages`;
+    $(".split-head", splitEl).textContent = `Splitting ${doc.pages} pages…`;
+    const list = $("ol", splitEl);
+    list.textContent = "";
+    void stage.offsetWidth;
+    stage.classList.add("scanning");
+    await sleep(700);
+
+    $(".split-head", splitEl).textContent = `Found ${doc.bundle.length} documents`;
+    const rows = doc.bundle.map((d) => {
+      const li = document.createElement("li");
+      const pg = document.createElement("span"); pg.className = "pg"; pg.textContent = d.pages;
+      const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = `${d.kind} · ${d.vendor}`;
+      const to = document.createElement("span"); to.className = "to"; to.textContent = BUCKET_NAMES[d.bucket];
+      li.append(pg, nm, to);
+      list.appendChild(li);
+      return li;
+    });
+    for (const li of rows) { await sleep(220); li.classList.add("in"); }
+    await sleep(450);
+    for (let i = 0; i < rows.length; i++) {
+      rows[i].classList.add("sorted");
+      fileInto(doc.bundle[i].bucket, doc.bundle[i].amount);
+      await sleep(420);
+    }
+    $(".split-head", splitEl).textContent = `${doc.bundle.length} documents sorted`;
+    await sleep(700);
+    stage.classList.add("flying");
+    await sleep(450);
+    splitEl.hidden = true;
+    fieldsEl.hidden = false;
   }
 
   async function processDoc(doc) {
@@ -339,16 +446,60 @@
     stage.classList.add("flying");
     await sleep(450);
 
-    const t = totals[doc.bucket];
-    const bEl = $(`.bucket[data-bucket="${doc.bucket}"]`);
-    const from = t.sum;
-    t.n += 1; t.sum += doc.amount;
-    $("[data-count]", bEl).textContent = t.n;
-    countUp($("[data-total]", bEl), from, t.sum, 700, money);
-    bEl.classList.add("pulse");
-    setTimeout(() => bEl.classList.remove("pulse"), 700);
+    fileInto(doc.bucket, doc.amount);
     await sleep(300);
   }
+
+  /* Autoplay: while the demo is on screen and nobody is using it, it presses the
+     next sample itself (bundle included). Any touch, click or key hands control
+     back; it picks up again after a quiet spell. */
+  const demoEl = $("#demo");
+  const hintEl = $(".demo-hint");
+  const HINT = hintEl.textContent;
+  const QUIET_MS = 9000;
+  let lastUser = -Infinity, lastDone = -Infinity, demoOnScreen = false, autoBusy = false;
+  function noteUser() { lastUser = performance.now(); hintEl.textContent = HINT; }
+  ["pointerdown", "keydown"].forEach((ev) => demoEl.addEventListener(ev, (e) => { if (e.isTrusted) noteUser(); }));
+  dz.addEventListener("dragenter", noteUser);
+  new IntersectionObserver(([e]) => { demoOnScreen = e.isIntersecting; }, { threshold: 0.4 }).observe(demoEl);
+
+  async function autoPress(el) {
+    autoBusy = true;
+    hintEl.textContent = "Playing by itself · tap a file to take over";
+    el.classList.add("auto-press");
+    await sleep(260);
+    if (!reduceMotion) {
+      const a = el.getBoundingClientRect(), b = dz.getBoundingClientRect();
+      const ghost = el.cloneNode(true);
+      ghost.classList.remove("auto-press");
+      ghost.classList.add("drag-ghost");
+      ghost.removeAttribute("aria-label");
+      ghost.style.left = a.left + a.width / 2 + "px";
+      ghost.style.top = a.top + a.height / 2 + "px";
+      document.body.appendChild(ghost);
+      el.classList.add("dragging");
+      const dx = b.left + b.width / 2 - (a.left + a.width / 2), dy = b.top + b.height / 2 - (a.top + a.height / 2);
+      dz.classList.add("over");
+      await ghost.animate(
+        [{ transform: "translate(-50%, -50%) rotate(-3deg)" }, { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(2deg) scale(.92)`, opacity: 0.9 }],
+        { duration: 650, easing: "cubic-bezier(0.32, 0.72, 0, 1)" }
+      ).finished.catch(() => {});
+      ghost.remove();
+      el.classList.remove("dragging");
+      dz.classList.remove("over");
+    }
+    el.classList.remove("auto-press");
+    autoBusy = false;
+    if (!el.classList.contains("used")) enqueueSample(el);
+  }
+
+  setInterval(() => {
+    const now = performance.now();
+    if (!demoOnScreen || document.hidden || busy || autoBusy || queue.length) return;
+    if (now - lastUser < QUIET_MS || now - lastDone < 1800) return;
+    const next = $(".sample:not(.used)", samplesEl);
+    if (next) autoPress(next);
+  }, 500);
 
   function countUp(el, from, to, ms, fmt) {
     if (reduceMotion) { el.textContent = fmt(to); return; }

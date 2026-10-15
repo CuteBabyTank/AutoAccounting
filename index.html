@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoAccounting — Drop Your Documents. Consider Your Books Done.</title>
+<meta name="description" content="AutoAccounting reads your clients' invoices, receipts, tax forms and bank statements, extracts every field, and sorts them into the right ledger. Zero manual entry.">
+<link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ───────────── Header ───────────── -->
+<header class="nav-wrap">
+  <nav class="nav glass" aria-label="Primary">
+    <a href="#" class="logo" aria-label="AutoAccounting home">
+      <img src="assets/logo-mark.svg" alt="" width="34" height="24">
+      <span>AutoAccounting</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#live">Live processing</a></li>
+      <li><a href="#trace">Source trail</a></li>
+    </ul>
+    <div class="nav-right">
+      <a href="#demo" class="btn btn-primary btn-sm magnetic"><span class="long">Try AutoAccounting Free</span><span class="short">Try free</span></a>
+    </div>
+  </nav>
+</header>
+
+<main>
+<!-- ───────────── Hero ───────────── -->
+<section class="hero" id="try">
+  <div class="hero-media" aria-hidden="true">
+    <!-- Canvas renders the "documents → ledger streams" motion. If assets/hero.mp4
+         exists (e.g. a Higgsfield render), app.js swaps the video in over it. -->
+    <canvas id="heroCanvas"></canvas>
+    <video id="heroVideo" muted loop playsinline preload="metadata" data-src="assets/hero.mp4"></video>
+    <div class="hero-veil"></div>
+  </div>
+
+  <div class="container hero-inner">
+    <div class="hero-copy">
+      <h1>Drop your documents.<br><span class="accent">Consider your books done.</span></h1>
+      <p class="lede">Your clients send invoices, receipts, tax forms and bank exports in every format imaginable. AutoAccounting reads each one, files it in the right ledger, and reconciles it as it arrives. Nobody keys a thing.</p>
+      <div class="cta-row">
+        <a href="#demo" class="btn btn-primary btn-lg magnetic">Try AutoAccounting Free
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10m-4-4 4 4-4 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a href="#how" class="btn btn-ghost btn-lg magnetic">See how it works</a>
+      </div>
+    </div>
+
+    <!-- Interactive demo -->
+    <div class="demo glass" id="demo">
+      <div class="demo-head">
+        <span class="demo-title">Try it: sort a document</span>
+        <span class="demo-hint">Drag a file in, or tap it</span>
+      </div>
+
+      <div class="samples" id="samples">
+        <!-- filled by JS -->
+      </div>
+
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Drop zone. Drop a document or press Enter to choose a file.">
+        <input type="file" id="fileInput" multiple hidden>
+        <div class="dz-idle">
+          <div class="dz-icon">
+            <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <p class="dz-main">Drop invoices, receipts or tax forms</p>
+          <p class="dz-sub">PDF · JPG · PNG · CSV &nbsp;—&nbsp; or <u>browse</u></p>
+        </div>
+        <div class="dz-scan" id="scanStage" hidden>
+          <div class="scan-doc" id="scanDoc">
+            <div class="scan-doc-name" id="scanName">Invoice_2026.pdf</div>
+            <div class="scan-lines"><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="scan-ray"></div>
+          </div>
+          <div class="fields" id="fields" aria-live="polite">
+            <div class="field" data-k="vendor"><span>Vendor</span><b></b></div>
+            <div class="field" data-k="date"><span>Date</span><b></b></div>
+            <div class="field" data-k="amount"><span>Amount</span><b class="tnum"></b></div>
+            <div class="field" data-k="category"><span>Tax category</span><b></b></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="buckets">
+        <div class="bucket" data-bucket="payable">
+          <div class="bucket-top"><span class="b-ico b-ico--ap"></span>Accounts Payable</div>
+          <div class="bucket-num"><b class="tnum" data-count>0</b><span class="tnum" data-total>$0.00</span></div>
+        </div>
+        <div class="bucket" data-bucket="tax">
+          <div class="bucket-top"><span class="b-ico b-ico--tax"></span>Tax Deductions</div>
+          <div class="bucket-num"><b class="tnum" data-count>0</b><span class="tnum" data-total>$0.00</span></div>
+        </div>
+        <div class="bucket" data-bucket="reconciled">
+          <div class="bucket-top"><span class="b-ico b-ico--rec"></span>Reconciled Expenses</div>
+          <div class="bucket-num"><b class="tnum" data-count>0</b><span class="tnum" data-total>$0.00</span></div>
+        </div>
+      </div>
+      <p class="demo-foot">Sample documents are illustrative. Files you drop stay in your browser.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── How it works ───────────── -->
+<section class="section" id="how">
+  <div class="container">
+    <header class="section-head">
+      <h2>Three steps. The last one is a click.</h2>
+      <p class="section-sub">Every document your clients send takes the same short route into the books.</p>
+    </header>
+    <ol class="steps">
+      <li class="step reveal">
+        <span class="step-n">1</span>
+        <div class="step-art step-art--drop" aria-hidden="true">
+          <span class="chip">PDF</span><span class="chip">JPG</span><span class="chip">CSV</span><span class="chip">HEIC</span>
+        </div>
+        <h3>Drop anything</h3>
+        <p>PDFs, phone photos of receipts, forwarded invoices, bank CSVs. Messy, rotated, multi-page: all fine.</p>
+      </li>
+      <li class="step reveal">
+        <span class="step-n">2</span>
+        <div class="step-art step-art--parse" aria-hidden="true">
+          <div class="mini-row"><span>Line items</span><b class="ok">14 parsed</b></div>
+          <div class="mini-row"><span>Category</span><b>Software · 6810</b></div>
+          <div class="mini-row"><span>Duplicate</span><b class="warn">Flagged</b></div>
+        </div>
+        <h3>Instant sorting &amp; extraction</h3>
+        <p>AI parses every line item, categorizes each expense, and flags duplicates before they hit anyone's books.</p>
+      </li>
+      <li class="step reveal">
+        <span class="step-n">3</span>
+        <div class="step-art step-art--sync" aria-hidden="true">
+          <span class="sync-btn">Sync 128 entries</span>
+          <div class="sync-targets"><span>Excel</span><span>QuickBooks</span><span>Custom</span></div>
+        </div>
+        <h3>One-click sync</h3>
+        <p>Export straight to Excel, QuickBooks, or your own accounting system. Every entry links back to its source document.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ───────────── Live processing grid ───────────── -->
+<section class="section section--tint" id="live">
+  <div class="container">
+    <header class="section-head">
+      <h2>Every document type, sorted as it lands.</h2>
+      <p class="section-sub">A simulated morning across four clients. Names and amounts are made up.</p>
+    </header>
+    <div class="live-grid" id="liveGrid">
+      <!-- filled by JS -->
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── Source trail ───────────── -->
+<section class="section" id="trace">
+  <div class="container trace-grid">
+    <div class="trace-copy">
+      <h2>Every number knows where it came from.</h2>
+      <p class="section-sub">When a client asks why a charge landed in Office Supplies, you shouldn't have to dig. Point at any field and AutoAccounting shows the exact spot on the original document it was read from.</p>
+      <p class="trace-hint">Hover or tap a field in the entry.</p>
+    </div>
+
+    <div class="trace glass" id="traceDemo">
+      <figure class="receipt">
+        <figcaption class="sr">Original receipt</figcaption>
+        <div class="r-top">
+          <b data-src="vendor">City Office Depot</b>
+          <span>418 Market St · Store #0412</span>
+        </div>
+        <div class="r-meta"><span data-src="date">02/02/2026 14:31</span><span>Txn 88213</span></div>
+        <ul class="r-lines" data-src="lines">
+          <li><span>Copy paper, 10 ream</span><span>89.90</span></li>
+          <li><span>Toner HP 58A</span><span>164.99</span></li>
+          <li><span>Binder clips</span><span>12.49</span></li>
+          <li><span>Desk organizer</span><span>21.18</span></li>
+        </ul>
+        <div class="r-sum">
+          <span>Subtotal</span><span>288.56</span>
+          <span>Tax 8.3%</span><span data-src="tax">23.92</span>
+          <b>Total</b><b data-src="amount">312.48</b>
+        </div>
+      </figure>
+
+      <div class="entry">
+        <p class="entry-title">Journal entry <span>JE-0202-17</span></p>
+        <dl>
+          <div tabindex="0" data-field="vendor"><dt>Vendor</dt><dd>City Office Depot</dd></div>
+          <div tabindex="0" data-field="date"><dt>Date</dt><dd>Feb 02, 2026</dd></div>
+          <div tabindex="0" data-field="amount"><dt>Amount</dt><dd class="tnum">$312.48</dd></div>
+          <div tabindex="0" data-field="tax"><dt>Sales tax</dt><dd class="tnum">$23.92</dd></div>
+          <div tabindex="0" data-field="lines"><dt>Account</dt><dd>6410 Office Supplies</dd></div>
+        </dl>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── Final CTA ───────────── -->
+<section class="final">
+  <div class="container">
+    <div class="final-inner">
+      <h2>Close this month's books before lunch.</h2>
+      <p>Start with one client's paperwork and watch it sort itself.</p>
+      <div class="cta-row cta-row--center">
+        <a href="#demo" class="btn btn-primary btn-lg magnetic">Try AutoAccounting Free</a>
+        <a href="mailto:hello@autoaccounting.ai" class="btn btn-ghost btn-lg magnetic">Talk to us</a>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ───────────── Footer ───────────── -->
+<footer class="footer" id="footer">
+  <div class="container footer-grid">
+    <div class="f-brand">
+      <a href="#" class="logo">
+        <img src="assets/logo-mark.svg" alt="" width="31" height="22">
+        <span>AutoAccounting</span>
+      </a>
+      <p>AI bookkeeping that sorts, extracts and reconciles every financial document the moment it arrives.</p>
+    </div>
+    <div>
+      <h4>Product</h4>
+      <ul><li><a href="#how">How it works</a></li><li><a href="#live">Live processing</a></li><li><a href="#trace">Source trail</a></li></ul>
+    </div>
+    <div>
+      <h4>Documentation</h4>
+      <ul><li><a href="#">Getting started</a></li><li><a href="#">Export formats</a></li></ul>
+    </div>
+    <div>
+      <h4>Legal</h4>
+      <ul><li><a href="#">Privacy policy</a></li><li><a href="#">Terms of service</a></li></ul>
+    </div>
+    <div>
+      <h4>Contact</h4>
+      <!-- placeholder address: replace with the real contact -->
+      <ul><li><a href="mailto:hello@autoaccounting.ai">hello@autoaccounting.ai</a></li></ul>
+    </div>
+  </div>
+  <div class="container footer-base">
+    <span>&copy; 2026 AutoAccounting, Inc.</span>
+    <span>Made for people who would rather not do data entry.</span>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

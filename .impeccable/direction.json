@@ -1,0 +1,215 @@
+{
+  "title": "Choose the visual world for AutoAccounting",
+  "question": "One direction is presented below, already improved by ideas from the alternatives it beat. Keep it, take an alternate, or re-roll.",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "The Receiving Desk",
+      "kicker": "THE DIRECTION",
+      "lineage": "accounting-office rubber date stamps: RECEIVED, ENTERED, POSTED",
+      "thesis": "Every document that lands gets stamped through the desk: received, entered, posted. The stamp is the proof the work is done.",
+      "palette": [
+        "#F8FAFC",
+        "#FFFFFF",
+        "#0F172A",
+        "#1E3A8A",
+        "#059669"
+      ],
+      "materials": [
+        "bond-paper documents",
+        "rubber-stamp ink impressions",
+        "date-wheel numerals",
+        "pigeonhole ledger slots"
+      ],
+      "viewport": "Headline left. Right: a live intake tray where dropped documents land as real paper and are hit by a navy RECEIVED date stamp, field annotations, then an emerald POSTED stamp before filing into a ledger slot.",
+      "risk": "Stamps are a strong motif; if used as decoration outside the demo it turns into a costume.",
+      "raised": [
+        {
+          "from": "ikeda-datamatics",
+          "raise": "Numbers become the material: amounts and dates set in a mono at true ledger density, in tabular columns, not decorative big stats."
+        },
+        {
+          "from": "signals-instruments-vu-meter-bridge",
+          "raise": "Emerald is strictly reserved for the POSTED / reconciled state, the way red is reserved past zero. Nothing decorative is green."
+        },
+        {
+          "from": "posters-covers-sleeves-saul-bass-title",
+          "raise": "Hard asymmetry and one idea per section; no rows of three identical cards."
+        }
+      ]
+    },
+    {
+      "id": "model-pick",
+      "label": "The Columnar Ledger Book",
+      "kicker": "MY PICK",
+      "lineage": "green-ruled columnar account books",
+      "thesis": "The whole page is a ruled ledger; documents dropped in become entries written onto it in real time.",
+      "palette": [
+        "#F8FAFC",
+        "#E7F5EE",
+        "#0F172A",
+        "#059669",
+        "#B91C1C"
+      ],
+      "materials": [
+        "ruled columns",
+        "ledger pads",
+        "ink entries"
+      ],
+      "viewport": "A full-width ruled ledger spread with the headline set as its title line, entries posting as you drop documents.",
+      "risk": "The most familiar choice for accounting; it can read like a spreadsheet template."
+    },
+    {
+      "id": "pop-culture-shelf-benday-comic-page",
+      "label": "Ben-Day Comic Page",
+      "verdict": "declined",
+      "lineage": "silver-age comic printing",
+      "thesis": "Document processing told as a six-panel comic.",
+      "palette": [
+        "#F3E9C6",
+        "#E4002B",
+        "#0072BC",
+        "#FFD200"
+      ],
+      "materials": [
+        "ben-day dots",
+        "caption boxes"
+      ],
+      "viewport": "A six-panel grid where a receipt fights its way into the books.",
+      "risk": "Bookkeepers do not see themselves here; clashes with the navy/emerald brief.",
+      "case": "Loses on audience and on clarity.",
+      "kept": "Color reserved only for the action state."
+    },
+    {
+      "id": "posters-covers-sleeves-saul-bass-title",
+      "label": "Saul Bass Title Sequence",
+      "verdict": "declined",
+      "lineage": "1950s cut-paper film titles",
+      "thesis": "The product told in timed cut-paper cards.",
+      "palette": [
+        "#D9541E",
+        "#111111",
+        "#F2EDE4"
+      ],
+      "materials": [
+        "cut paper",
+        "flat color fields"
+      ],
+      "viewport": "One full-bleed card per idea, a jittering line tracing the document.",
+      "risk": "Stylish but hides the working demo behind theatre.",
+      "case": "Loses on clarity; no tie to bookkeeping.",
+      "kept": "Hard asymmetry, one idea per section."
+    },
+    {
+      "id": "ikeda-datamatics",
+      "label": "Datamatics Field",
+      "verdict": "declined",
+      "lineage": "Ryoji Ikeda data installations",
+      "thesis": "Financial data as a strobing barcode field.",
+      "palette": [
+        "#000000",
+        "#FFFFFF"
+      ],
+      "materials": [
+        "barcode bars",
+        "monospace numerics"
+      ],
+      "viewport": "A black-and-white field of bars and numbers.",
+      "risk": "Breaks the light, navy and emerald brief; unsettling for financial trust.",
+      "case": "Loses on audience; numbers-as-material is strong.",
+      "kept": "Numbers as material, set at true data density."
+    },
+    {
+      "id": "signals-instruments-vu-meter-bridge",
+      "label": "VU Meter Bridge",
+      "verdict": "declined",
+      "lineage": "recording-desk meters",
+      "thesis": "Client books as a row of meters leaning toward reconciled.",
+      "palette": [
+        "#F3EBD8",
+        "#111111",
+        "#C62828",
+        "#5B3A1E"
+      ],
+      "materials": [
+        "meter faces",
+        "walnut"
+      ],
+      "viewport": "A row of needle meters, one per client.",
+      "risk": "Metaphor needs explaining; it belongs to audio people.",
+      "case": "Loses on audience identification.",
+      "kept": "Signal color allowed only for one state."
+    },
+    {
+      "id": "kinetic-sculpture-automata-crank-paper-menagerie",
+      "label": "Paper Automata",
+      "verdict": "declined",
+      "lineage": "hand-cranked paper automata",
+      "thesis": "A crank turns documents into filed entries.",
+      "palette": [
+        "#C8A97E",
+        "#FFFFFF",
+        "#2B2B2B",
+        "#B3202A"
+      ],
+      "materials": [
+        "kraft board",
+        "cut paper"
+      ],
+      "viewport": "A cut-paper machine processing a receipt.",
+      "risk": "Whimsical; undercuts professional trust.",
+      "case": "Loses on both axes.",
+      "kept": "One continuous mechanism drives every motion."
+    },
+    {
+      "id": "stagecraft-theater-lighting-cyclorama-dawn",
+      "label": "Cyclorama Dawn",
+      "verdict": "declined",
+      "lineage": "theatre lighting",
+      "thesis": "Books moving from dark to daylight as they reconcile.",
+      "palette": [
+        "#05060A",
+        "#1D3FA8",
+        "#E58BA0",
+        "#FFFFFF"
+      ],
+      "materials": [
+        "light bands"
+      ],
+      "viewport": "Horizon bands brightening as documents process.",
+      "risk": "Dark ground breaks the light-mode brief.",
+      "case": "Loses on both axes.",
+      "kept": "State shown as discrete named phases, never color alone."
+    }
+  ],
+  "reroll": {
+    "registers": [
+      "safer",
+      "bolder"
+    ]
+  },
+  "canon": true,
+  "canonCard": {
+    "label": "The category standard",
+    "thesis": "A clean fintech SaaS landing page, executed impeccably.",
+    "palette": [
+      "#FFFFFF",
+      "#0F172A",
+      "#059669"
+    ],
+    "materials": [
+      "clean grid",
+      "product UI screenshots"
+    ],
+    "viewport": "Headline and CTA left, product UI right, logo strip, features below.",
+    "risk": "Indistinguishable from every competitor by design."
+  },
+  "steer": true,
+  "seed": {
+    "key": "d39f838d",
+    "scope": "direction",
+    "mode": "persuade",
+    "assignedIndex": 4,
+    "chosen": "assigned"
+  }
+}

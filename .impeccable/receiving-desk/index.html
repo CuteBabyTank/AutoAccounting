@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoAccounting — Drop your documents. Consider your books done.</title>
+<meta name="description" content="AutoAccounting receives your clients' invoices, receipts, tax forms and bank statements, extracts every field, and posts them to the right ledger. Built for bookkeepers.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='3' width='26' height='26' rx='3' fill='none' stroke='%231E3A8A' stroke-width='3'/%3E%3Cpath d='M9 21l4.5-11h1L19 21M10.5 17.5h7' stroke='%231E3A8A' stroke-width='2.4' fill='none'/%3E%3Ccircle cx='23' cy='20' r='2.4' fill='%231E3A8A'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=JetBrains+Mono:wght@400;500;600&family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<!--
+THESIS: Every document that lands is stamped through a receiving desk (received, read, posted) and the stamp is the proof. Refuses the fintech hero + glass card + three-feature-card arrangement.
+OWN-WORLD: Chalk desk (#F8FAFC), white bond paper slips with hairline edges, navy rubber-stamp ink (#1E3A8A) with ink texture, condensed stamp caps, mono ledger numerals at true density. Emerald (#059669) exists only as the POSTED / reconciled state.
+STORY: A bookkeeper sees their own in-tray processed live, understands documents become posted, traceable entries without keying, and starts free.
+FIRST VIEWPORT: Left 5/12: headline at display scale, one-line lede, primary CTA in navy ink. Right 7/12: the intake desk: paper slips to drag, the tray, three ledger pigeonholes with running tape totals.
+FORM: The Receiving Desk, grounded candidate 4 of 7, raised by datamatics (numbers as material), VU bridge (single reserved state color), Saul Bass (hard asymmetry). Seed key d39f838d.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+-->
+
+<header class="top" id="top">
+  <div class="top-inner">
+    <a href="#" class="brand" aria-label="AutoAccounting home">
+      <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="3" width="26" height="26" rx="3" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M9 21l4.5-11h1L19 21M10.5 17.5h7" stroke="currentColor" stroke-width="2.2" fill="none"/><circle cx="23" cy="20" r="2.2" fill="currentColor"/></svg>
+      AutoAccounting
+    </a>
+    <nav aria-label="Primary">
+      <ul class="links">
+        <li><a href="#desk">The desk</a></li>
+        <li><a href="#routing">How it works</a></li>
+        <li><a href="#journal">Today's intake</a></li>
+        <li><a href="#trace">Source trail</a></li>
+      </ul>
+    </nav>
+    <a href="#desk-tray" class="btn btn-ink btn-sm"><span class="long">Try AutoAccounting Free</span><span class="short">Try free</span></a>
+  </div>
+</header>
+
+<main>
+<!-- ───────── Hero: the desk ───────── -->
+<section class="hero" id="desk">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <h1>Drop your documents. Consider your books done.</h1>
+      <p class="lede">Your clients' paperwork, read and posted to the right ledger the moment it lands. Nobody keys a thing.</p>
+      <div class="actions">
+        <a href="#desk-tray" class="btn btn-ink btn-lg">Try AutoAccounting Free</a>
+        <a href="#routing" class="btn btn-line btn-lg hide-sm">See how it works</a>
+      </div>
+      <p class="hero-note">Try it here: drag a slip from the stack into the tray, or tap one.</p>
+    </div>
+
+    <div class="desk" id="desk-tray">
+      <div class="stack" id="stack" aria-label="Sample documents"></div>
+
+      <div class="tray" id="tray" tabindex="0" role="button" aria-label="Intake tray. Drop documents here, or press Enter to choose files from your computer.">
+        <input type="file" id="fileInput" multiple hidden>
+        <div class="tray-bar">
+          <span class="tray-title">In-tray</span>
+          <span class="tray-sub">Drop files here or <span class="u">browse</span></span>
+        </div>
+
+        <div class="work" id="work">
+          <article class="slip" id="slip">
+            <div class="slip-head">
+              <span class="slip-name" id="slipName"></span>
+              <span class="slip-kind" id="slipKind"></span>
+            </div>
+            <dl class="slip-body">
+              <div data-k="vendor"><dt>From</dt><dd></dd></div>
+              <div data-k="date"><dt>Date</dt><dd></dd></div>
+              <div data-k="category"><dt>For</dt><dd></dd></div>
+              <div data-k="amount" class="slip-total"><dt>Total</dt><dd></dd></div>
+            </dl>
+            <div class="readhead" aria-hidden="true"></div>
+            <div class="stamp stamp--received" id="stampReceived" aria-hidden="true">
+              <b>Received</b><span id="stampDate"></span>
+            </div>
+            <div class="stamp stamp--posted" id="stampPosted" aria-hidden="true">
+              <b>Posted</b><span id="stampAcct"></span>
+            </div>
+          </article>
+
+          <ol class="extract" id="extract" aria-live="polite">
+            <li data-k="vendor"><span>Vendor</span><b></b></li>
+            <li data-k="date"><span>Date</span><b></b></li>
+            <li data-k="amount"><span>Amount</span><b></b></li>
+            <li data-k="category"><span>Tax category</span><b></b></li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="cabinet" aria-label="Ledgers">
+        <div class="hole" data-bucket="payable">
+          <span class="hole-name">Accounts Payable</span>
+          <ol class="tape" data-tape></ol>
+          <span class="tape-total"><span data-total>0.00</span><i>T</i></span>
+        </div>
+        <div class="hole" data-bucket="tax">
+          <span class="hole-name">Tax Deductions</span>
+          <ol class="tape" data-tape></ol>
+          <span class="tape-total"><span data-total>0.00</span><i>T</i></span>
+        </div>
+        <div class="hole" data-bucket="reconciled">
+          <span class="hole-name">Reconciled Expenses</span>
+          <ol class="tape" data-tape></ol>
+          <span class="tape-total"><span data-total>0.00</span><i>T</i></span>
+        </div>
+      </div>
+      <p class="desk-foot">Sample documents are illustrative. Files you drop stay in your browser and are never uploaded.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────── How it works: a routing slip ───────── -->
+<section class="routing" id="routing">
+  <div class="wrap routing-grid">
+    <div class="routing-head">
+      <h2>One pass across the desk.</h2>
+      <p>Every document follows the same route. You see it come in, you see what was read, you see where it was posted.</p>
+    </div>
+
+    <table class="route">
+      <caption class="sr">How AutoAccounting processes a document</caption>
+      <tbody>
+        <tr>
+          <th scope="row"><span class="stamp stamp--inline stamp--received"><b>Received</b></span></th>
+          <td>
+            <h3>Drop anything</h3>
+            <p>PDFs, phone photos of receipts, forwarded invoices, bank CSVs. Crooked, multi-page, a different format from every client.</p>
+          </td>
+          <td class="route-spec"><span>pdf</span><span>jpg</span><span>png</span><span>heic</span><span>csv</span></td>
+        </tr>
+        <tr>
+          <th scope="row"><span class="stamp stamp--inline stamp--read"><b>Read</b></span></th>
+          <td>
+            <h3>Instant sorting &amp; extraction</h3>
+            <p>Line items are parsed, each expense is categorized, and duplicates are flagged before they reach anyone's books.</p>
+          </td>
+          <td class="route-spec route-spec--rows">
+            <span><i>vendor</i>Northwind Supply</span>
+            <span><i>lines</i>14</span>
+            <span><i>dupe of</i>INV-4471</span>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row"><span class="stamp stamp--inline stamp--posted"><b>Posted</b></span></th>
+          <td>
+            <h3>One-click sync</h3>
+            <p>Export straight to Excel, QuickBooks, or your own accounting system. Each entry carries a link back to the document it came from.</p>
+          </td>
+          <td class="route-spec"><span>excel</span><span>quickbooks</span><span>custom</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ───────── Live processing: the journal ───────── -->
+<section class="journal-sec" id="journal">
+  <div class="wrap">
+    <div class="journal-head">
+      <h2>Today's intake, as it lands.</h2>
+      <div class="filters" role="tablist" aria-label="Filter by document type">
+        <button role="tab" aria-selected="true" data-f="all">All</button>
+        <button role="tab" aria-selected="false" data-f="Receipt">Receipts</button>
+        <button role="tab" aria-selected="false" data-f="Invoice">Invoices</button>
+        <button role="tab" aria-selected="false" data-f="Tax form">Tax files</button>
+        <button role="tab" aria-selected="false" data-f="Bank stmt">Bank statements</button>
+      </div>
+    </div>
+
+    <div class="journal" role="table" aria-label="Simulated document journal">
+      <div class="jrow jrow--head" role="row">
+        <span role="columnheader">Time</span>
+        <span role="columnheader">Client</span>
+        <span role="columnheader">Document</span>
+        <span role="columnheader">Type</span>
+        <span role="columnheader">Posted to</span>
+        <span role="columnheader" class="num">Amount</span>
+        <span role="columnheader">Status</span>
+      </div>
+      <div id="jbody"></div>
+    </div>
+    <p class="journal-foot">Simulated feed, for illustration. Client names and amounts are made up.</p>
+  </div>
+</section>
+
+<!-- ───────── Source trail ───────── -->
+<section class="trace-sec" id="trace">
+  <div class="wrap trace-grid">
+    <div class="trace-copy">
+      <h2>Every number knows where it came from.</h2>
+      <p>When a client asks why a charge landed in Office Supplies, you shouldn't have to dig. Point at any field in the entry and AutoAccounting shows you the exact spot on the original document it was read from.</p>
+      <p class="trace-hint">Hover or tap a field in the entry.</p>
+    </div>
+
+    <div class="trace" id="traceDemo">
+      <figure class="paper">
+        <figcaption class="sr">Original receipt</figcaption>
+        <div class="paper-top">
+          <b data-src="vendor">City Office Depot</b>
+          <span>418 Market St · Store #0412</span>
+        </div>
+        <div class="paper-meta">
+          <span data-src="date">02/02/2026 14:31</span>
+          <span>Reg 3 · Txn 88213</span>
+        </div>
+        <ul class="paper-lines" data-src="lines">
+          <li><span>Copy paper, 10 ream</span><span>89.90</span></li>
+          <li><span>Toner HP 58A</span><span>164.99</span></li>
+          <li><span>Binder clips, assorted</span><span>12.49</span></li>
+          <li><span>Desk organizer</span><span>21.18</span></li>
+        </ul>
+        <div class="paper-sum">
+          <span>Subtotal</span><span>288.56</span>
+          <span>Tax 8.3%</span><span data-src="tax">23.92</span>
+          <b>Total</b><b data-src="amount">312.48</b>
+        </div>
+        <div class="stamp stamp--posted stamp--paper" aria-hidden="true"><b>Posted</b><span>6410 · Feb 02</span></div>
+      </figure>
+
+      <div class="entry">
+        <p class="entry-title">Journal entry · JE-20260202-17</p>
+        <dl>
+          <div tabindex="0" data-field="vendor"><dt>Vendor</dt><dd>City Office Depot</dd></div>
+          <div tabindex="0" data-field="date"><dt>Date</dt><dd>Feb 02, 2026</dd></div>
+          <div tabindex="0" data-field="amount"><dt>Amount</dt><dd class="num">$312.48</dd></div>
+          <div tabindex="0" data-field="tax"><dt>Sales tax</dt><dd class="num">$23.92</dd></div>
+          <div tabindex="0" data-field="lines"><dt>Account</dt><dd>6410 Office Supplies</dd></div>
+        </dl>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────── Close ───────── -->
+<section class="close">
+  <div class="wrap close-inner">
+    <h2>Bring this month's pile.</h2>
+    <p>Start with one client's paperwork and watch it post.</p>
+    <div class="actions">
+      <a href="#desk-tray" class="btn btn-ink btn-lg">Try AutoAccounting Free</a>
+      <a href="mailto:hello@autoaccounting.ai" class="btn btn-line btn-lg">Talk to us</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <a href="#" class="brand">
+        <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="3" width="26" height="26" rx="3" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M9 21l4.5-11h1L19 21M10.5 17.5h7" stroke="currentColor" stroke-width="2.2" fill="none"/><circle cx="23" cy="20" r="2.2" fill="currentColor"/></svg>
+        AutoAccounting
+      </a>
+      <p>Document intake and posting for bookkeepers and accountants.</p>
+    </div>
+    <div>
+      <h4>Product</h4>
+      <ul><li><a href="#routing">How it works</a></li><li><a href="#journal">Today's intake</a></li><li><a href="#trace">Source trail</a></li></ul>
+    </div>
+    <div>
+      <h4>Documentation</h4>
+      <ul><li><a href="#">Getting started</a></li><li><a href="#">Export formats</a></li></ul>
+    </div>
+    <div>
+      <h4>Legal</h4>
+      <ul><li><a href="#">Privacy</a></li><li><a href="#">Terms</a></li></ul>
+    </div>
+    <div>
+      <h4>Contact</h4>
+      <ul><li><!-- placeholder address: replace with the real contact --><a href="mailto:hello@autoaccounting.ai">hello@autoaccounting.ai</a></li></ul>
+    </div>
+  </div>
+  <div class="wrap foot-base">
+    <span>&copy; 2026 AutoAccounting</span>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

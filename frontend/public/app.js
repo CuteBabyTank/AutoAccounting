@@ -6,7 +6,10 @@
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const money = (n) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
-  const sleep = (ms) => new Promise((r) => setTimeout(r, reduceMotion ? 0 : ms));
+  // Reduce motion means calmer, not frozen: demo steps run a little quicker and
+  // the hero backdrop drifts at under half speed.
+  const sleep = (ms) => new Promise((r) => setTimeout(r, reduceMotion ? ms * 0.6 : ms));
+  const SPEED = reduceMotion ? 0.4 : 1;
 
   /* ───────── Nav shadow on scroll ───────── */
   const navWrap = $(".nav-wrap");
@@ -124,15 +127,15 @@
       ctx.strokeStyle = g;
       ctx.lineWidth = 1;
       ctx.setLineDash([2, 10]);
-      ctx.lineDashOffset = -(t * (0.6 + i * 0.05));
+      ctx.lineDashOffset = -(t * (0.6 + i * 0.05) * SPEED);
       ctx.beginPath(); ctx.moveTo(startX, l.y); ctx.lineTo(W, l.y); ctx.stroke();
     });
     ctx.setLineDash([]);
 
-    if (t - lastSpawn > 50 && docs.length < 10) { spawnDoc(); lastSpawn = t; }
+    if (t - lastSpawn > 50 / SPEED && docs.length < 10) { spawnDoc(); lastSpawn = t; }
     for (let i = docs.length - 1; i >= 0; i--) {
       const d = docs[i];
-      d.y += d.vy; d.x += d.vx * 0.3; d.rot += d.vr;
+      d.y += d.vy * SPEED; d.x += d.vx * 0.3 * SPEED; d.rot += d.vr * SPEED;
       if (!d.dissolved && d.y < d.dissolveAt + 40) { d.dissolved = true; dissolve(d); }
       if (d.y < d.dissolveAt) { docs.splice(i, 1); continue; }
       drawDoc(d);
@@ -143,7 +146,7 @@
       p.vy += (p.ty - p.y) * 0.004;
       p.vy *= 0.92;
       p.vx = Math.min(p.vx * 1.012 + 0.02, 4.5);
-      p.x += p.vx; p.y += p.vy;
+      p.x += p.vx * SPEED; p.y += p.vy * SPEED;
       if (p.x > W * 0.8) p.a -= 0.012;
       if (p.a <= 0 || p.x > W + 10) { particles.splice(i, 1); continue; }
       ctx.globalAlpha = p.a;
@@ -155,13 +158,15 @@
     if (running) raf = requestAnimationFrame(frame);
   }
 
-  function start() { if (!running && !reduceMotion) { running = true; raf = requestAnimationFrame(frame); } }
+  function start() { if (!running) { running = true; raf = requestAnimationFrame(frame); } }
   function stop() { running = false; cancelAnimationFrame(raf); }
 
   resize();
   for (let i = 0; i < 5; i++) spawnDoc(true);
-  if (reduceMotion) { frame(); } else { start(); }
-  window.addEventListener("resize", () => { resize(); if (reduceMotion) frame(); });
+  start();
+  // Size the drawing buffer from the canvas's real box whenever it changes
+  // (fonts and layout settle after first paint), so it never renders stretched.
+  new ResizeObserver(() => { resize(); if (!running) frame(); }).observe(canvas);
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()));
   new IntersectionObserver(([e]) => (e.isIntersecting ? start() : stop())).observe(canvas);
 
@@ -356,47 +361,48 @@
     requestAnimationFrame(step);
   }
 
-  /* ───────── Live processing grid (simulated, four clients) ───────── */
+  /* ───────── Live sorting grid (simulated, four clients) ─────────
+     Each item: [document, "client · where it went", amount, review reason?].
+     A review reason is one the app actually raises; the item stops there. */
+  const peso = (n) => "₱" + n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const LIVE = [
     {
-      title: "Receipts", tag: "Expenses", color: ["#FFFBEB", "#B45309"],
+      title: "Sales", tag: "Output VAT", color: ["#EEF2FF", "#4F46E5"],
       items: [
-        ["Blue Bottle Coffee", "Maple & Rye · Meals 50%", 18.4],
-        ["Delta Air Lines", "Okafor Arch. · Travel", 642.0],
-        ["Staples #0412", "Harbor Dental · Office", 87.19],
-        ["Shell Station", "Lumen Yoga · Vehicle", 61.33],
-        ["Marriott SF", "Okafor Arch. · Lodging", 389.0],
-        ["Lyft", "Harbor Dental · Transport", 24.75],
+        ["Sales invoice #0981", "Dela Cruz Bakery · Sales", 18450.0],
+        ["Sales invoice #2207", "Tan Hardware · Sales", 64200.0],
+        ["Collection receipt #0412", "Lakbay Travel · Paid SI #3310", 22000.0],
+        ["Sales invoice #0982", "Dela Cruz Bakery · Sales", 9875.0, "Possible duplicate"],
+        ["Service invoice #3311", "Lakbay Travel · Sales", 41500.0],
       ],
     },
     {
-      title: "Invoices", tag: "Payable", color: ["#EEF2FF", "#4F46E5"],
+      title: "Purchases & expenses", tag: "Input VAT", color: ["#FFFBEB", "#B45309"],
       items: [
-        ["Henry Schein #88412", "Harbor Dental · Net 30", 2318.4],
-        ["Northwind Supply", "Maple & Rye · Net 15", 4280.0],
-        ["Autodesk renewal", "Okafor Arch. · Annual", 2030.0],
-        ["Mindbody", "Lumen Yoga · Monthly", 189.0],
-        ["Sysco", "Maple & Rye · Net 7", 1150.6],
+        ["Meralco · Aug bill", "Dela Cruz Bakery · Utilities", 12384.6],
+        ["Santos Hardware SI #4127", "Dela Cruz Bakery · Repairs", 7500.0],
+        ["Petron receipt", "Tan Hardware · Transportation", 3150.0],
+        ["Flour supplier OR", "Dela Cruz Bakery · Raw materials", 28600.0, "Seller not VAT-registered"],
+        ["PLDT · Aug bill", "Reyes Dental · Utilities", 2899.0],
+        ["Grab receipt", "Reyes Dental · Transportation", 486.0, "Not addressed to client"],
       ],
     },
     {
-      title: "Tax files", tag: "Tax", color: ["#ECFDF5", "#059669"],
+      title: "BIR 2307s", tag: "Creditable tax", color: ["#ECFDF5", "#059669"],
       items: [
-        ["1099-NEC · D. Lee", "Okafor Arch. · TY2025", 14200.0],
-        ["W-9 · Bright Studio", "Lumen Yoga · TIN on file", 0],
-        ["Form 941 · Q1", "Harbor Dental · Payroll tax", 9204.12],
-        ["1099-K · Square", "Maple & Rye · Gross receipts", 88410.0],
-        ["Sales tax · CA", "Maple & Rye · Quarterly", 3381.5],
+        ["2307 from Mercury Corp.", "Tan Hardware · 1% goods · Q3", 1250.0],
+        ["2307 from St. Luke's", "Reyes Dental · 10% prof. fees · Q3", 8400.0],
+        ["2307 from Aboitiz", "Lakbay Travel · 2% services · Q3", 3020.0],
+        ["2307 from SM Supermalls", "Dela Cruz Bakery · 5% rent · Q3", 6000.0, "TIN belongs to another client"],
       ],
     },
     {
-      title: "Bank statements", tag: "Reconcile", color: ["#F1F5F9", "#334155"],
+      title: "Payroll", tag: "Withholding", color: ["#F1F5F9", "#334155"],
       items: [
-        ["Chase ••4021", "Maple & Rye · 42 of 42 matched", 9612.55],
-        ["Mercury ••7710", "Harbor Dental · 18 of 18 matched", 22404.0],
-        ["Amex ••1009", "Maple & Rye · 1 duplicate flagged", 7118.92],
-        ["SVB ••3380", "Okafor Arch. · 9 of 9 matched", 51200.0],
-        ["Wells ••5512", "Lumen Yoga · 33 of 33 matched", 4471.08],
+        ["Payroll register · Aug", "Tan Hardware · 14 employees", 286400.0],
+        ["Payroll register · Aug", "Reyes Dental · 6 employees", 132750.0],
+        ["SSS · PhilHealth · Pag-IBIG", "Dela Cruz Bakery · Aug", 18920.0],
+        ["Payroll register · Aug", "Lakbay Travel · 9 employees", 198300.0],
       ],
     },
   ];
@@ -427,11 +433,11 @@
   });
 
   function pushLive(s) {
-    const [name, sub, amt] = s.c.items[s.idx % s.c.items.length];
+    const [name, sub, amt, reason] = s.c.items[s.idx % s.c.items.length];
     s.idx++;
     const el = document.createElement("div");
     el.className = "feed-item processing";
-    const cells = [["fi-name", name], ["fi-amt tnum", amt ? money(amt) : "—"], ["fi-sub", sub], ["fi-state", "Extracting…"]];
+    const cells = [["fi-name", name], ["fi-amt tnum", peso(amt)], ["fi-sub", sub], ["fi-state", "Reading…"]];
     cells.forEach(([cls, text]) => {
       const sp = document.createElement("span");
       sp.className = cls;
@@ -441,21 +447,20 @@
     s.feed.prepend(el);
     while (s.feed.children.length > 5) s.feed.lastElementChild.remove();
     setTimeout(() => {
-      const flagged = /flagged/i.test(sub);
       el.classList.remove("processing");
-      el.classList.add(flagged ? "flagged" : "done");
-      $(".fi-state", el).textContent = flagged ? "Needs review" : "Sorted";
-      s.n++;
-      $("[data-n]", s.card).textContent = s.n.toLocaleString();
-    }, reduceMotion ? 0 : 1300);
+      el.classList.add(reason ? "flagged" : "done");
+      $(".fi-state", el).textContent = reason ? "Needs review" : "Sorted";
+      if (reason) $(".fi-sub", el).textContent = reason;
+      else { s.n++; $("[data-n]", s.card).textContent = s.n.toLocaleString(); }
+    }, reduceMotion ? 700 : 1300);
   }
 
   liveState.forEach((s) => { for (let i = 0; i < 4; i++) pushLive(s); });
   let liveTimer = null;
   new IntersectionObserver(([e]) => {
-    if (e.isIntersecting && !liveTimer && !reduceMotion) {
+    if (e.isIntersecting && !liveTimer) {
       let k = 0;
-      liveTimer = setInterval(() => { pushLive(liveState[k % liveState.length]); k++; }, 1100);
+      liveTimer = setInterval(() => { pushLive(liveState[k % liveState.length]); k++; }, reduceMotion ? 1800 : 1100);
     } else if (!e.isIntersecting && liveTimer) { clearInterval(liveTimer); liveTimer = null; }
   }).observe(grid);
 

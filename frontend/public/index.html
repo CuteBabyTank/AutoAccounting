@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AutoAccounting — Drop Your Documents. Consider Your Books Done.</title>
-<meta name="description" content="AutoAccounting reads your clients' invoices, receipts, tax forms and bank statements, extracts every field, and sorts them into the right ledger. Zero manual entry.">
+<meta name="description" content="AutoAccounting is the back office for Philippine accounting firms: drop client receipts, invoices, 2307s and payroll, and it sorts them per client, fills the BIR returns, and keeps the books of accounts.">
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,8 +22,8 @@
     </a>
     <ul class="nav-links">
       <li><a href="#how">How it works</a></li>
-      <li><a href="#live">Live processing</a></li>
-      <li><a href="#trace">Source trail</a></li>
+      <li><a href="#returns">BIR returns</a></li>
+      <li><a href="#books">Books of accounts</a></li>
     </ul>
     <div class="nav-right">
       <a href="/login" class="nav-login">Log in</a>
@@ -113,50 +113,130 @@
 <section class="section" id="how">
   <div class="container">
     <header class="section-head">
-      <h2>Three steps. The last one is a click.</h2>
-      <p class="section-sub">Every document your clients send takes the same short route into the books.</p>
+      <h2>From a pile of papers to a filed quarter.</h2>
+      <p class="section-sub">Every document your clients hand over takes the same short route: into the right client's folder, onto the right line of the right return.</p>
     </header>
     <ol class="steps">
       <li class="step reveal">
         <span class="step-n">1</span>
         <div class="step-art step-art--drop" aria-hidden="true">
-          <span class="chip">PDF</span><span class="chip">JPG</span><span class="chip">CSV</span><span class="chip">HEIC</span>
+          <span class="chip">Sales invoice</span><span class="chip">Receipt</span><span class="chip">BIR 2307</span><span class="chip">Payroll</span>
         </div>
-        <h3>Drop anything</h3>
-        <p>PDFs, phone photos of receipts, forwarded invoices, bank CSVs. Messy, rotated, multi-page: all fine.</p>
+        <h3>Drop the whole pile</h3>
+        <p>Receipts, sales invoices, 2307s, payroll registers and import papers, for any number of clients in one batch. Phone photos and scans are fine.</p>
       </li>
       <li class="step reveal">
         <span class="step-n">2</span>
         <div class="step-art step-art--parse" aria-hidden="true">
-          <div class="mini-row"><span>Line items</span><b class="ok">14 parsed</b></div>
-          <div class="mini-row"><span>Category</span><b>Software · 6810</b></div>
+          <div class="mini-row"><span>Client</span><b class="ok">Matched by TIN</b></div>
+          <div class="mini-row"><span>Sorted to</span><b>Purchases · 12% VAT</b></div>
           <div class="mini-row"><span>Duplicate</span><b class="warn">Flagged</b></div>
         </div>
-        <h3>Instant sorting &amp; extraction</h3>
-        <p>AI parses every line item, categorizes each expense, and flags duplicates before they hit anyone's books.</p>
+        <h3>Matched, read and checked</h3>
+        <p>Each document is matched to its client by TIN and name, sorted into sales, purchases, expenses, payroll or 2307s, and its VAT math is checked. Anything doubtful waits for you, with the reason.</p>
       </li>
       <li class="step reveal">
         <span class="step-n">3</span>
         <div class="step-art step-art--sync" aria-hidden="true">
-          <span class="sync-btn">Sync 128 entries</span>
-          <div class="sync-targets"><span>Excel</span><span>QuickBooks</span><span>Custom</span></div>
+          <span class="sync-btn">Generate Q3 2026</span>
+          <div class="sync-targets"><span>2550-Q</span><span>1601-EQ</span><span>Books</span></div>
         </div>
-        <h3>One-click sync</h3>
-        <p>Export straight to Excel, QuickBooks, or your own accounting system. Every entry links back to its source document.</p>
+        <h3>Generate the quarter</h3>
+        <p>One click fills the quarter's BIR returns as PDFs and builds a versioned workbook, with every change since the last version highlighted.</p>
       </li>
     </ol>
   </div>
 </section>
 
-<!-- ───────────── Live processing grid ───────────── -->
+<!-- ───────────── Live sorting grid ───────────── -->
 <section class="section section--tint" id="live">
   <div class="container">
     <header class="section-head">
-      <h2>Every document type, sorted as it lands.</h2>
-      <p class="section-sub">A simulated morning across four clients. Names and amounts are made up.</p>
+      <h2>Nothing gets filed on a guess.</h2>
+      <p class="section-sub">Documents sort themselves into each client's books. The ones that don't add up stop and say why: a duplicate, a receipt made out to someone else, a seller who isn't VAT-registered.</p>
     </header>
     <div class="live-grid" id="liveGrid">
       <!-- filled by JS -->
+    </div>
+    <p class="live-note">A simulated morning across four clients. Clients, suppliers and amounts are made up.</p>
+  </div>
+</section>
+
+<!-- ───────────── BIR returns ───────────── -->
+<section class="section" id="returns">
+  <div class="container">
+    <header class="section-head">
+      <h2>Every return your clients owe, already filled.</h2>
+      <p class="section-sub">AutoAccounting works out which returns each client files for the month, the quarter and the year, fills them from the sorted documents, and tracks every deadline. A due date that lands on a weekend or a Philippine holiday moves to the next working day.</p>
+    </header>
+
+    <div class="filing reveal">
+      <div class="filing-group">
+        <h3>Monthly</h3>
+        <dl>
+          <div><dt>0619-E</dt><dd><span>Expanded withholding remittance, months 1 and 2</span><em>10th of the following month</em></dd></div>
+          <div><dt>1601-C</dt><dd><span>Withholding on employees' compensation</span><em>10th of the following month, Jan 15 for December</em></dd></div>
+        </dl>
+      </div>
+      <div class="filing-group">
+        <h3>Quarterly</h3>
+        <dl>
+          <div><dt>2550-Q</dt><dd><span>VAT return</span><em>25 days after the quarter</em></dd></div>
+          <div><dt>2551-Q</dt><dd><span>Percentage tax return</span><em>25 days after the quarter</em></dd></div>
+          <div><dt>1601-EQ</dt><dd><span>Expanded withholding, every ATC listed</span><em>Last day of the month after the quarter</em></dd></div>
+          <div><dt>1701-Q</dt><dd><span>Income tax, individuals, cumulative from Q1</span><em>May 15, Aug 15, Nov 15</em></dd></div>
+          <div><dt>1702-Q</dt><dd><span>Income tax, corporations, cumulative from Q1</span><em>60 days after the quarter</em></dd></div>
+        </dl>
+      </div>
+      <div class="filing-group">
+        <h3>Annual</h3>
+        <dl>
+          <div><dt>1701 · 1701-A</dt><dd><span>Annual income tax, individuals</span><em>April 15</em></dd></div>
+          <div><dt>1702-RT</dt><dd><span>Annual income tax, corporations</span><em>15th of the 4th month after year end</em></dd></div>
+          <div><dt>1604-C</dt><dd><span>Alphalist of employees, with each employee's 2316</span><em>Prepared from payroll</em></dd></div>
+          <div><dt>2307</dt><dd><span>Certificates of tax withheld, issued to your client's suppliers</span><em>Filled per supplier</em></dd></div>
+        </dl>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── Books of accounts ───────────── -->
+<section class="section section--tint" id="books">
+  <div class="container books-grid">
+    <div class="books-copy">
+      <h2>The books, kept as you go.</h2>
+      <p class="section-sub">The same documents post to each client's journals and general ledger, printed as BIR loose-leaf books. Nobody re-encodes a thing at year end.</p>
+      <ul class="books-points">
+        <li><b>Six books for VAT-registered clients, four for non-VAT.</b> Page numbers run on across the whole year.</li>
+        <li><b>Printing a month closes it.</b> Its pages never change; a later fix posts as a correcting entry in the next open month.</li>
+        <li><b>Official receipts are matched to the invoice they pay,</b> so a sale is never counted twice.</li>
+        <li><b>Year end is ready to bind:</b> trial balance, financial statements, a cover and the sworn declaration.</li>
+      </ul>
+    </div>
+
+    <div class="binder reveal" aria-label="Example books of accounts for a VAT-registered client">
+      <div class="binder-head">
+        <b>Dela Cruz Bakery</b>
+        <span>Books of accounts · 2026</span>
+      </div>
+      <ol class="binder-books">
+        <li><span>General Journal</span><em class="tnum">pp. 1–12</em></li>
+        <li><span>General Ledger</span><em class="tnum">pp. 1–64</em></li>
+        <li><span>Cash Receipts Journal</span><em class="tnum">pp. 1–31</em></li>
+        <li><span>Cash Disbursements Journal</span><em class="tnum">pp. 1–38</em></li>
+        <li><span>Sales Journal</span><em class="tnum">pp. 1–27</em></li>
+        <li><span>Purchase Journal</span><em class="tnum">pp. 1–22</em></li>
+      </ol>
+      <div class="binder-months">
+        <p>Month close</p>
+        <ol>
+          <li class="closed">Jan</li><li class="closed">Feb</li><li class="closed">Mar</li><li class="closed">Apr</li>
+          <li class="closed">May</li><li class="closed">Jun</li><li class="closed">Jul</li><li class="closed">Aug</li>
+          <li class="open">Sep</li><li>Oct</li><li>Nov</li><li>Dec</li>
+        </ol>
+        <p class="binder-legend"><i class="closed"></i>Closed and printed <i class="open"></i>Open</p>
+      </div>
     </div>
   </div>
 </section>
@@ -166,39 +246,41 @@
   <div class="container trace-grid">
     <div class="trace-copy">
       <h2>Every number knows where it came from.</h2>
-      <p class="section-sub">When a client asks why a charge landed in Office Supplies, you shouldn't have to dig. Point at any field and AutoAccounting shows the exact spot on the original document it was read from.</p>
+      <p class="section-sub">When a client, a reviewer or a BIR examiner asks about a figure, you shouldn't have to dig through a box. Point at any field and AutoAccounting shows the exact spot on the original invoice it was read from.</p>
       <p class="trace-hint">Hover or tap a field in the entry.</p>
     </div>
 
     <div class="trace glass" id="traceDemo">
       <figure class="receipt">
-        <figcaption class="sr">Original receipt</figcaption>
+        <figcaption class="sr">Original sales invoice</figcaption>
         <div class="r-top">
-          <b data-src="vendor">City Office Depot</b>
-          <span>418 Market St · Store #0412</span>
+          <b data-src="vendor">Santos Hardware</b>
+          <span>&amp; Construction Supply</span>
+          <span data-src="tin">VAT Reg. TIN 214-385-901-000</span>
         </div>
-        <div class="r-meta"><span data-src="date">02/02/2026 14:31</span><span>Txn 88213</span></div>
+        <div class="r-meta"><span data-src="date">09/02/2026</span><span>SI No. 0004127</span></div>
         <ul class="r-lines" data-src="lines">
-          <li><span>Copy paper, 10 ream</span><span>89.90</span></li>
-          <li><span>Toner HP 58A</span><span>164.99</span></li>
-          <li><span>Binder clips</span><span>12.49</span></li>
-          <li><span>Desk organizer</span><span>21.18</span></li>
+          <li><span>Cement 40kg ×10</span><span>2,450.00</span></li>
+          <li><span>Plywood 1/4 ×6</span><span>2,670.00</span></li>
+          <li><span>Tie wire #16</span><span>1,180.00</span></li>
+          <li><span>Latex paint 4L ×2</span><span>1,200.00</span></li>
         </ul>
         <div class="r-sum">
-          <span>Subtotal</span><span>288.56</span>
-          <span>Tax 8.3%</span><span data-src="tax">23.92</span>
-          <b>Total</b><b data-src="amount">312.48</b>
+          <span>VATable sales</span><span>6,696.43</span>
+          <span>VAT 12%</span><span data-src="tax">803.57</span>
+          <b>Total</b><b data-src="amount">7,500.00</b>
         </div>
       </figure>
 
       <div class="entry">
-        <p class="entry-title">Journal entry <span>JE-0202-17</span></p>
+        <p class="entry-title">Purchase journal <span>PJ-0902-14</span></p>
         <dl>
-          <div tabindex="0" data-field="vendor"><dt>Vendor</dt><dd>City Office Depot</dd></div>
-          <div tabindex="0" data-field="date"><dt>Date</dt><dd>Feb 02, 2026</dd></div>
-          <div tabindex="0" data-field="amount"><dt>Amount</dt><dd class="tnum">$312.48</dd></div>
-          <div tabindex="0" data-field="tax"><dt>Sales tax</dt><dd class="tnum">$23.92</dd></div>
-          <div tabindex="0" data-field="lines"><dt>Account</dt><dd>6410 Office Supplies</dd></div>
+          <div tabindex="0" data-field="vendor"><dt>Supplier</dt><dd>Santos Hardware</dd></div>
+          <div tabindex="0" data-field="tin"><dt>TIN</dt><dd class="tnum">214-385-901-000</dd></div>
+          <div tabindex="0" data-field="date"><dt>Date</dt><dd>Sep 2, 2026</dd></div>
+          <div tabindex="0" data-field="amount"><dt>Amount</dt><dd class="tnum">₱7,500.00</dd></div>
+          <div tabindex="0" data-field="tax"><dt>Input VAT</dt><dd class="tnum">₱803.57</dd></div>
+          <div tabindex="0" data-field="lines"><dt>Account</dt><dd>Repairs &amp; maintenance</dd></div>
         </dl>
       </div>
     </div>
@@ -209,8 +291,8 @@
 <section class="final">
   <div class="container">
     <div class="final-inner">
-      <h2>Close this month's books before lunch.</h2>
-      <p>Start with one client's paperwork and watch it sort itself.</p>
+      <h2>File the quarter without retyping a receipt.</h2>
+      <p>Start with one client's papers and watch them sort themselves.</p>
       <div class="cta-row cta-row--center">
         <a href="/login" class="btn btn-primary btn-lg magnetic">Try AutoAccounting Free</a>
         <a href="mailto:hello@autoaccounting.ai" class="btn btn-ghost btn-lg magnetic">Talk to us</a>
@@ -228,11 +310,11 @@
         <img src="assets/logo-mark.svg" alt="" width="31" height="22">
         <span>AutoAccounting</span>
       </a>
-      <p>AI bookkeeping that sorts, extracts and reconciles every financial document the moment it arrives.</p>
+      <p>The back office for Philippine accounting firms: sorts every client document, fills the BIR returns, and keeps the books.</p>
     </div>
     <div>
       <h4>Product</h4>
-      <ul><li><a href="#how">How it works</a></li><li><a href="#live">Live processing</a></li><li><a href="#trace">Source trail</a></li><li><a href="/login">Log in</a></li></ul>
+      <ul><li><a href="#how">How it works</a></li><li><a href="#returns">BIR returns</a></li><li><a href="#books">Books of accounts</a></li><li><a href="#trace">Source trail</a></li><li><a href="/login">Log in</a></li></ul>
     </div>
     <div>
       <h4>Documentation</h4>

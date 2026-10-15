@@ -7,23 +7,25 @@
 web
 
 ## Users
-Primary: professional bookkeepers and accountants who process financial documents on behalf of many client businesses. Their job is turning a constant inflow of client paperwork (invoices, receipts, tax forms, bank statements) into correct, reconciled ledger entries across multiple client books, then handing off to the client's accounting system.
+Primary: Philippine accounting and bookkeeping firms (firm owner, managers, staff) who keep the books and file BIR returns for many client businesses. Their job is turning a constant inflow of client paperwork (sales invoices, receipts, BIR 2307s, payroll registers, import papers) into filed returns and BIR loose-leaf books of accounts.
 
 ## Product Purpose
-AutoAccounting is an AI app where users drop financial documents and the platform automatically sorts, extracts fields from, and reconciles them in real time. Success is zero manual data entry: a document goes in, a categorized, reconciled entry comes out, traceable back to its source.
+AutoAccounting is an AI back office for Philippine accounting firms. Staff drop client documents; it matches each to the right client company by TIN and name, extracts and sorts it (sales, purchases, expenses, payroll, 2307s), checks VAT math and flags anything doubtful with a reason, then files everything Company → Year → Quarter. From that it fills the BIR returns as PDFs plus a versioned XLSX, and keeps the BIR loose-leaf books of accounts. Success is zero re-encoding, with every figure traceable to its source document.
 
 ## Positioning
-Drop-and-done processing: documents of any format are classified into ledger destinations (accounts payable, tax deductions, reconciled expenses), field-extracted (vendor, date, amount, tax category), duplicate-checked, and synced in one flow, instead of the bookkeeper keying entries or configuring rules per client.
+Drop-and-done for PH compliance: one batch of mixed client papers becomes the month's, quarter's and year's BIR returns (0619-E, 1601-C, 2550-Q, 2551-Q, 1601-EQ, 1701-Q/1702-Q, 1701/1701-A/1702-RT, 1604-C alphalist with 2316s, outgoing 2307s) and the client's journals, GL, trial balance and financial statements, instead of staff encoding receipts into spreadsheets.
 
 ## Operating Context
-- Inputs: PDFs, photographed receipts, forwarded invoices, bank CSV exports, tax forms (1099, W-9, etc.).
-- Work happens per client, in batches, under month-end and tax-season deadlines.
-- Outputs go to Excel, QuickBooks, or custom accounting systems.
+- Inputs: sales/service invoices, official and collection receipts, BIR 2307s, payroll registers, import papers; photos and scans.
+- Work happens per client company, in batches, against BIR monthly/quarterly/annual deadlines (moved to the next working day on weekends and PH holidays).
+- Outputs: filled BIR return PDFs, a versioned workbook with changes highlighted, and BIR loose-leaf books (6 books for VAT-registered, 4 for non-VAT; printed months are closed; year-end binder with sworn declaration).
+- Currency is peso (₱); VAT is 12%.
 
 ## Capabilities and Constraints
-- Described capabilities (from the founding brief): sorting, field extraction, line-item parsing, expense categorization, duplicate flagging, one-click export/sync.
-- Existing site is static HTML/CSS/JS (index.html, styles.css, app.js), no build step.
-- Undecided: pricing, free tier terms, which integrations actually ship.
+- Real review reasons the app raises include: possible duplicate, not addressed to the client, seller not VAT-registered, VAT math mismatch, another company's TIN, missing date/amount, low confidence.
+- The marketing site is static HTML/CSS/JS in frontend/public/ (index.html, styles.css, app.js), served at /homepage; no build step. The hero (headline, CTAs, sorting demo) is approved as-is and should not change.
+- Billing is per extracted page (₱), opt-in per platform; pricing and free-tier terms are undecided.
+- No e-filing integration: AutoAccounting fills returns; the firm submits them.
 
 ## Brand Commitments
 - Name: AutoAccounting.

@@ -285,6 +285,45 @@ ul, ol, dl, dd { margin: 0; padding: 0; list-style: none; }
 @keyframes shimmer { to { transform: translateX(100%); } }
 @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } }
 
+.live-note { margin-top: 20px; font-size: 13px; color: var(--muted); }
+.feed-item.flagged .fi-sub { color: var(--amber); font-weight: 600; white-space: normal; }
+
+/* BIR returns: a filing schedule, read like a ledger */
+.filing { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); overflow: hidden; }
+.filing-group { padding: 28px 26px 30px; }
+.filing-group + .filing-group { border-left: 1px solid var(--line); }
+.filing-group h3 { font-size: 13px; font-weight: 700; color: var(--muted); padding-bottom: 14px; border-bottom: 1.5px solid var(--ink); }
+.filing dl > div { display: grid; grid-template-columns: 112px 1fr; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.filing dl > div:last-child { border-bottom: 0; padding-bottom: 0; }
+.filing dt { white-space: nowrap; font-size: 14.5px; font-weight: 800; letter-spacing: -.01em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.filing dd span { display: block; font-size: 14px; color: var(--ink-2); line-height: 1.4; }
+.filing dd em { display: block; margin-top: 4px; font-style: normal; font-size: 12.5px; font-weight: 600; color: var(--emerald); }
+
+/* Books of accounts */
+.books-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
+.books-copy h2 { font-size: clamp(32px, 3.8vw, 48px); font-weight: 800; letter-spacing: -.035em; }
+.books-points { margin-top: 28px; display: grid; gap: 14px; }
+.books-points li { position: relative; padding-left: 22px; font-size: 15.5px; color: var(--ink-2); line-height: 1.5; }
+.books-points li::before { content: ""; position: absolute; left: 2px; top: .55em; width: 7px; height: 7px; border-radius: 2px; background: var(--emerald); }
+.books-points b { color: var(--ink); font-weight: 700; }
+.binder { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.binder-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.binder-head b { font-size: 15px; }
+.binder-head span { font-size: 12.5px; color: var(--muted); }
+.binder-books li { display: flex; justify-content: space-between; gap: 12px; padding: 11px 20px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.binder-books li span { font-weight: 600; color: var(--ink); }
+.binder-books li em { font-style: normal; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.binder-months { padding: 16px 20px 18px; background: var(--bg); }
+.binder-months > p:first-child { font-size: 12.5px; font-weight: 700; color: var(--ink-2); margin-bottom: 10px; }
+.binder-months ol { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; }
+.binder-months li { font-size: 10.5px; font-weight: 600; text-align: center; padding: 7px 0; border-radius: 6px; color: var(--muted); background: #fff; border: 1px solid var(--line); }
+.binder-months li.closed { background: var(--ink); border-color: var(--ink); color: #fff; }
+.binder-months li.open { border: 1.5px solid var(--emerald); color: var(--emerald); }
+.binder-legend { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 11.5px; color: var(--muted); }
+.binder-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.binder-legend i.closed { background: var(--ink); }
+.binder-legend i.open { border: 1.5px solid var(--emerald); margin-left: 10px; }
+
 /* Source trail */
 .trace-grid { display: grid; grid-template-columns: 1fr 1.15fr; gap: 64px; align-items: center; }
 .trace-hint { margin-top: 18px; font-size: 14px; color: var(--muted); }
@@ -352,6 +391,7 @@ ul, ol, dl, dd { margin: 0; padding: 0; list-style: none; }
   .live-grid { grid-template-columns: repeat(2, 1fr); }
   .nav-links { display: none; }
   .trace-grid { grid-template-columns: 1fr; gap: 40px; }
+  .books-grid { grid-template-columns: 1fr; gap: 40px; }
 }
 @media (max-width: 960px) {
   .hero { padding-top: 120px; }
@@ -360,6 +400,8 @@ ul, ol, dl, dd { margin: 0; padding: 0; list-style: none; }
   .step + .step { border-left: 0; border-top: 1px solid var(--line); }
   .footer-grid { grid-template-columns: 1fr 1fr; }
   .f-brand { grid-column: 1 / -1; }
+  .filing { grid-template-columns: 1fr; }
+  .filing-group + .filing-group { border-left: 0; border-top: 1px solid var(--line); }
 }
 @media (max-width: 640px) {
   .container { padding: 0 16px; }
@@ -384,9 +426,23 @@ ul, ol, dl, dd { margin: 0; padding: 0; list-style: none; }
   .trace svg.wire { display: none; }
   .final-inner { padding: 56px 20px; border-radius: 22px; }
   .final { padding-bottom: 80px; }
+  .filing-group { padding: 22px 18px 24px; }
+  .filing dl > div { grid-template-columns: 1fr; gap: 4px; }
+  .binder-books li, .binder-head { padding-left: 16px; padding-right: 16px; }
+  .binder-months { padding: 14px 16px 16px; }
+  .binder-months ol { grid-template-columns: repeat(6, 1fr); }
 }
 
+/* Reduce motion: gentler, not frozen. Motion that explains something (the
+   scan, fields landing, documents sorting) keeps playing; pure decoration and
+   travel are toned down. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
-  .js .reveal { opacity: 1; transform: none; }
+  html { scroll-behavior: auto; }
+  .chip { animation: none; }
+  .dropzone.over::before { animation-duration: 6s; }
+  .feed-item { animation: fadeIn .3s ease; }
+  .feed-item.processing::after { animation-duration: 2.4s; }
+  .field.hit { animation: none; }
+  .js .reveal { transform: none; transition: opacity .5s ease; }
 }
+@keyframes fadeIn { from { opacity: 0; } }

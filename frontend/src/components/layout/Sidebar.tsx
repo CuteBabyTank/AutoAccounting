@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
@@ -21,7 +21,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "next-themes";
 import type { UserRole } from "@/types";
-import { roleHome, roleLabel } from "@/lib/roles";
+import { HOMEPAGE, roleLabel } from "@/lib/roles";
 
 interface NavItem {
   id: string;
@@ -52,6 +52,8 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   },
 ];
 
+const fade = (i: number) => ({ "--i": i }) as CSSProperties;
+
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout, updateNickname } = useAuth();
@@ -62,14 +64,15 @@ export default function Sidebar() {
   const [showSignOut, setShowSignOut] = useState(false);
   // Mobile off-canvas drawer. Desktop (md+) ignores this and renders the sidebar statically.
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // Desktop rail: expands on hover (with a short intent delay so passing the cursor
-  // across it doesn't flash it open) or when keyboard focus moves inside it.
+  // Desktop rail: expands on hover or when keyboard focus moves inside it. Opening
+  // pushes the page over, so hover needs a short rest first; brushing past the
+  // rail on the way to something else shouldn't re-flow the whole page.
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queueOpen = (next: boolean) => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => setHovered(next), next ? 80 : 180);
+    hoverTimer.current = setTimeout(() => setHovered(next), next ? 140 : 220);
   };
   useEffect(() => () => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
@@ -99,7 +102,14 @@ export default function Sidebar() {
     })).filter((section) => section.items.length > 0);
   }, [user?.role]);
 
-  const homeHref = user ? roleHome(user.role) : "/";
+  // Stagger order for the label reveal: logo, then each section heading and its
+  // rows top to bottom; the account card and footer share the last step.
+  const rowIndex = (sectionIdx: number, itemIdx: number) => {
+    let n = 1;
+    for (let k = 0; k < sectionIdx; k++) n += sections[k].items.length + 1;
+    return n + itemIdx + 1;
+  };
+  const lastRow = sections.reduce((n, sec) => n + sec.items.length + 1, 1);
 
   const initials = useMemo(() => {
     const name = (user?.nickname || user?.email || "").replace(/@.*/, "");
@@ -119,10 +129,11 @@ export default function Sidebar() {
       >
         <List size={24} />
       </button>
-      <Link href={homeHref} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+      {/* Plain <a>: the homepage is static HTML, not a Next route. */}
+      <a href={HOMEPAGE} aria-label="AutoAccounting homepage" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
         <Image src="/logo-mark.svg" alt="" width={34} height={24} />
         <span className="lp-logo-text text-[18px] tracking-tight text-[var(--text-sidebar)]">AutoAccounting</span>
-      </Link>
+      </a>
     </header>
 
     {/* Mobile drawer scrim */}
@@ -134,11 +145,11 @@ export default function Sidebar() {
       />
     )}
 
-    {/* Desktop: a 72px icon rail that holds its place in the layout; the panel inside
-        widens over the page on hover (or keyboard focus) so content keeps the space.
-        Mobile: the same panel is an off-canvas drawer at full width. */}
+    {/* Desktop: a 72px icon rail that is itself the layout column; on hover (or
+        keyboard focus) it widens to 248px and pushes the page over with it.
+        Mobile: the panel is an off-canvas drawer at full width. */}
     <div
-      className="aa-rail lp-skin w-0 md:w-[72px] shrink-0 md:relative h-screen"
+      className="aa-rail lp-skin w-0 shrink-0 h-screen"
       data-open={expanded}
       onMouseEnter={() => queueOpen(true)}
       onMouseLeave={() => queueOpen(false)}
@@ -150,16 +161,16 @@ export default function Sidebar() {
       }}
     >
     <aside
-      className={`aa-rail-panel flex flex-col h-screen fixed md:absolute top-0 left-0 z-50 overflow-x-hidden overflow-y-auto text-[var(--text-sidebar)] border-r border-[var(--border-sidebar)] ${
+      className={`aa-rail-panel flex flex-col h-screen fixed md:relative top-0 left-0 z-50 md:z-auto overflow-x-hidden overflow-y-auto text-[var(--text-sidebar)] border-r border-[var(--border-sidebar)] ${
         drawerOpen ? "translate-x-0" : "-translate-x-full"
       } md:translate-x-0`}
     >
       {/* Logo */}
       <div className="px-[19px] pt-5 pb-4 flex items-center justify-between gap-2">
-        <Link href={homeHref} className="flex items-center gap-2.5 min-w-0 hover:opacity-80 transition-opacity">
+        <a href={HOMEPAGE} aria-label="AutoAccounting homepage" className="flex items-center gap-2.5 min-w-0 hover:opacity-80 transition-opacity">
           <Image src="/logo-mark.svg" alt="" width={34} height={24} className="shrink-0" />
-          <span className="aa-fade lp-logo-text text-[17px] tracking-tight whitespace-nowrap">AutoAccounting</span>
-        </Link>
+          <span style={fade(0)} className="aa-fade lp-logo-text text-[17px] tracking-tight whitespace-nowrap">AutoAccounting</span>
+        </a>
         {/* Close drawer (mobile only) */}
         <button
           onClick={() => setDrawerOpen(false)}
@@ -172,13 +183,13 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-[14px] pt-1">
-        {sections.map((section) => (
+        {sections.map((section, si) => (
           <div key={section.label} className="mb-5">
-            <p className="aa-fade px-1 h-5 text-[11px] font-medium text-[var(--text-sidebar-muted)] whitespace-nowrap">
+            <p style={fade(rowIndex(si, -1))} className="aa-fade px-1 h-5 text-[11px] font-medium text-[var(--text-sidebar-muted)] whitespace-nowrap">
               {section.label}
             </p>
             <div className="h-px mt-1.5 mb-3 bg-[var(--border-sidebar)]" />
-            {section.items.map((item) => {
+            {section.items.map((item, ii) => {
               const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
               return (
                 <Link
@@ -193,7 +204,7 @@ export default function Sidebar() {
                   }`}
                 >
                   <item.icon size={20} weight={active ? "regular" : "light"} className="shrink-0" />
-                  <span className="aa-fade">{item.label}</span>
+                  <span style={fade(rowIndex(si, ii))} className="aa-fade">{item.label}</span>
                 </Link>
               );
             })}
@@ -211,7 +222,7 @@ export default function Sidebar() {
             >
               {initials}
             </span>
-            <div className="aa-fade flex-1 min-w-0 pr-1 text-xs">
+            <div style={fade(lastRow)} className="aa-fade flex-1 min-w-0 pr-1 text-xs">
               {editingNickname ? (
                 <form
                   onSubmit={async (e) => {
@@ -297,7 +308,7 @@ export default function Sidebar() {
           className="aa-item nav-press flex items-center gap-3 w-full h-10 px-3 rounded-xl text-sm whitespace-nowrap overflow-hidden text-[var(--text-sidebar-muted)] hover:text-[var(--text-sidebar)]"
         >
           {theme === "dark" ? <Sun size={20} weight="light" className="shrink-0" /> : <Moon size={20} weight="light" className="shrink-0" />}
-          <span className="aa-fade">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+          <span style={fade(lastRow)} className="aa-fade">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
         </button>
         <button
           onClick={() => setShowSignOut(true)}
@@ -305,7 +316,7 @@ export default function Sidebar() {
           className="aa-item nav-press flex items-center gap-3 w-full h-10 px-3 rounded-xl text-sm whitespace-nowrap overflow-hidden text-[var(--text-sidebar-muted)] hover:text-[var(--text-sidebar)]"
         >
           <SignOut size={20} weight="light" className="shrink-0" />
-          <span className="aa-fade">Sign out</span>
+          <span style={fade(lastRow)} className="aa-fade">Sign out</span>
         </button>
       </div>
     </aside>

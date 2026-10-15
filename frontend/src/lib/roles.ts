@@ -16,6 +16,9 @@ export function roleHome(role?: UserRole | string): string {
   }
 }
 
+/** The static marketing page (frontend/public/index.html, served by a rewrite). */
+export const HOMEPAGE = "/homepage";
+
 export const PUBLIC_ROUTES = ["/", "/login"];
 
 const FIRM_ROLES: UserRole[] = ["admin", "enterprise", "manager", "employee"];

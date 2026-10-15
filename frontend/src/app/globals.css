@@ -1354,16 +1354,27 @@ main textarea:focus-visible {
 
 /* ── App sidebar rail ──────────────────────────────
    Mobile: a full-width off-canvas drawer (transform).
-   md+: a 72px icon rail; the panel widens to 248px over
-   the page while hovered or focused (data-open). Children
-   size off the panel width, so nav pills shrink to icon
-   squares when collapsed; .aa-fade labels fade in after. */
+   md+: the rail itself is the layout column. Its width
+   animates 72px → 248px (data-open) in normal flow, so the
+   page beside it slides over in step instead of being
+   covered. Children size off that width: nav pills shrink
+   to icon squares when collapsed.
+   Labels (.aa-fade) unroll left→right with a clip wipe that
+   follows the moving edge, staggered top→bottom by --i
+   (capped), and fold away first on close. Opening is
+   the slower, more deliberate direction. */
+.aa-rail {
+  /* Both directions accelerate gently and glide to rest, so the
+     page being pushed never lurches. */
+  --rail-ease-open: cubic-bezier(0.32, 0.72, 0, 1);
+  --rail-ease-close: cubic-bezier(0.32, 0.72, 0, 1);
+}
 .aa-rail-panel {
   width: 264px;
   background: var(--lp-bg);
   transition: transform 300ms var(--ease-out);
 }
-.aa-item { transition: background-color 160ms ease, color 160ms ease, transform 160ms var(--ease-out); }
+.aa-item { transition: background-color 140ms ease, color 140ms ease, transform 160ms var(--ease-out); }
 .aa-item:hover { background: color-mix(in srgb, var(--lp-text) 4%, transparent); }
 .aa-item--active, .aa-item--active:hover { background: color-mix(in srgb, var(--lp-text) 7%, transparent); }
 .aa-card {
@@ -1372,28 +1383,44 @@ main textarea:focus-visible {
   box-shadow: 0 1px 2px rgba(11,11,18,.04), 0 6px 16px -10px rgba(11,11,18,.18);
 }
 @media (min-width: 768px) {
-  .aa-rail-panel {
+  .aa-rail {
     width: 72px;
-    transition: width 280ms var(--ease-out), box-shadow 280ms var(--ease-out);
+    transition: width 300ms var(--rail-ease-close);
   }
-  .aa-rail[data-open="true"] .aa-rail-panel {
+  .aa-rail[data-open="true"] {
     width: 248px;
-    box-shadow: 12px 0 32px -16px rgba(11,11,18,.22);
+    transition: width 420ms var(--rail-ease-open);
   }
+  .aa-rail-panel { width: 100%; transition: none; }
+
   .aa-rail .aa-fade {
     opacity: 0;
-    transform: translateX(-4px);
+    clip-path: inset(0 100% 0 0);
     pointer-events: none;
-    transition: opacity 120ms ease, transform 200ms var(--ease-out);
+    transition:
+      opacity 140ms ease-out,
+      clip-path 200ms var(--rail-ease-close);
   }
   .aa-rail[data-open="true"] .aa-fade {
     opacity: 1;
-    transform: none;
+    clip-path: inset(0 -2px 0 0);
     pointer-events: auto;
-    transition-delay: 70ms;
+    transition:
+      opacity 180ms ease-out,
+      clip-path 300ms var(--rail-ease-open);
+    transition-delay: calc(20ms + min(var(--i, 0), 7) * 8ms);
   }
 }
-.dark .aa-rail[data-open="true"] .aa-rail-panel { box-shadow: 12px 0 32px -16px rgba(0,0,0,.6); }
 @media (prefers-reduced-motion: reduce) {
-  .aa-rail-panel, .aa-rail .aa-fade { transition: none; }
+  /* Gentler, not gone: a short, soft slide so the push still reads as
+     one continuous change (a snap would jolt the whole page), labels
+     only cross-fade with no wipe or stagger. */
+  .aa-rail-panel { transition: none; }
+  .aa-rail, .aa-rail[data-open="true"] { transition: width 220ms ease-out; }
+  .aa-rail .aa-fade,
+  .aa-rail[data-open="true"] .aa-fade {
+    clip-path: none;
+    transition: opacity 120ms ease;
+    transition-delay: 0ms;
+  }
 }

@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import api, { TOKEN_KEY } from "@/lib/api";
 import type { User } from "@/types";
+import { HOMEPAGE } from "@/lib/roles";
 
 interface AuthState {
   user: User | null;
@@ -59,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setUser(null);
-    window.location.href = "/";
+    window.location.href = HOMEPAGE;
   };
 
   const updateNickname = async (nickname: string | null): Promise<User> => {

@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import Image from "next/image";
 import { useAuth } from "@/lib/auth";
+import { HOMEPAGE } from "@/lib/roles";
 
 const CONTACT_EMAIL = "matthewfrasersim@gmail.com";
 
@@ -63,10 +64,10 @@ export default function PendingPage() {
 
       {/* Top bar */}
       <div className="relative flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">
-        <span className="flex items-center gap-2 text-[var(--text-primary)] font-semibold tracking-tight">
+        <a href={HOMEPAGE} className="flex items-center gap-2 text-[var(--text-primary)] font-semibold tracking-tight hover:opacity-80 transition-opacity">
           <Image src="/logo-mark.svg" alt="" width={34} height={24} />
           AutoAccounting
-        </span>
+        </a>
         <button
           onClick={logout}
           className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"

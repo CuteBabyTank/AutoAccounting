@@ -27,7 +27,7 @@ You need [Docker Desktop](https://www.docker.com/products/docker-desktop/) runni
 
 3. **Open the app:** http://localhost:3001
 
-   - `/` is the landing page.
+   - It opens on the homepage (http://localhost:3001/homepage). Clicking the AutoAccounting logo anywhere brings you back to it.
    - **Log in**, then **Sign in with Google**, puts you straight into the app as the platform admin.
 
 | What | Where |
@@ -44,6 +44,7 @@ You only need to rebuild when you:
 
 - **add or update a package** (`package.json` or `backend/pyproject.toml`) → `docker compose up --build -d --renew-anon-volumes`
 - **change `.env`** → `docker compose up -d --force-recreate`
+- **change `frontend/next.config.ts`** → `docker compose restart frontend`
 
 ### Signing in
 

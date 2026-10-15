@@ -68,6 +68,38 @@ async def google_login(db: AsyncSession, credential: str, client_id: str) -> tup
         raise HTTPException(status_code=403, detail="Account is deactivated")
 
 
+async def dev_login(db: AsyncSession, email: str) -> tuple[User, str]:
+    """Development-only sign-in by email, standing in for Google SSO until a
+    client ID is configured. The first user on a database with no admin becomes
+    the platform admin so a fresh local setup is usable straight away."""
+    if settings.environment != "development":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    email = email.strip().lower()
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    if not user:
+        user = User(email=email, role=UserRole.UNVERIFIED)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        logger.info("dev_registration user_id=%s email=%s", user.id, email)
+    elif not user.is_active:
+        raise HTTPException(status_code=403, detail="Account is deactivated")
+
+    if user.role == UserRole.UNVERIFIED:
+        has_admin = (await db.execute(
+            select(User.id).where(User.role == UserRole.ADMIN).limit(1)
+        )).first()
+        if not has_admin:
+            user.role = UserRole.ADMIN
+            await db.commit()
+            await db.refresh(user)
+            logger.info("dev_bootstrap_admin_granted user_id=%s email=%s", user.id, email)
+
+    logger.info("dev_login_success user_id=%s email=%s", user.id, email)
+    return user, create_access_token(str(user.id))
+
+
 async def _maybe_bootstrap_admin(db: AsyncSession, user: User) -> None:
     """First sign-in of ``BOOTSTRAP_ADMIN_EMAIL`` becomes the platform admin,
     but only while the platform has no admin yet (a fresh database)."""

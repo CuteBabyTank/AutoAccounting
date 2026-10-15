@@ -9,6 +9,10 @@ class GoogleAuthRequest(BaseModel):
     credential: str  # The ID token from Google
 
 
+class DevLoginRequest(BaseModel):
+    email: EmailStr
+
+
 class UserResponse(BaseModel):
     id: str
     email: str

@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.dependencies import get_db, get_current_user
 from app.models.user import User
-from app.schemas.auth import GoogleAuthRequest, TokenResponse, UpdateMeRequest, UserResponse
-from app.services.auth_service import google_login, user_to_response
+from app.schemas.auth import DevLoginRequest, GoogleAuthRequest, TokenResponse, UpdateMeRequest, UserResponse
+from app.services.auth_service import dev_login, google_login, user_to_response
 from app.services.usage_service import get_enterprise_for_user, get_usage_stats
 
 router = APIRouter()
@@ -23,6 +23,19 @@ def _clean_nickname(value: str | None) -> str | None:
 @router.post("/google", response_model=TokenResponse)
 async def auth_google(request: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
     user, token = await google_login(db, request.credential, settings.google_client_id)
+    return TokenResponse(token=token, user=UserResponse(**user_to_response(user)))
+
+
+@router.get("/config")
+async def auth_config():
+    """Tells the login page which sign-in to show."""
+    return {"dev_login": settings.environment == "development"}
+
+
+@router.post("/dev-login", response_model=TokenResponse)
+async def auth_dev_login(request: DevLoginRequest, db: AsyncSession = Depends(get_db)):
+    # dev_login itself refuses (404) outside ENVIRONMENT=development.
+    user, token = await dev_login(db, request.email)
     return TokenResponse(token=token, user=UserResponse(**user_to_response(user)))
 
 

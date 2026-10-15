@@ -37,7 +37,7 @@ function AuthGate({ children }: { children: ReactNode }) {
     if (isPublicRoute) return <>{children}</>;
     return (
       <div className="flex h-screen overflow-hidden">
-        <div className="hidden md:block w-[210px] shrink-0" />
+        <div className="hidden md:block w-[72px] shrink-0" />
         <main className="flex-1 overflow-y-auto pt-14 md:pt-0" />
       </div>
     );

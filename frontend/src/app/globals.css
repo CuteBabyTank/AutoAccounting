@@ -1351,3 +1351,49 @@ main textarea:focus-visible {
   .lp-decor { opacity: 1; animation: none; }
   .lp-bob, .lp-twinkle { animation: none; }
 }
+
+/* ── App sidebar rail ──────────────────────────────
+   Mobile: a full-width off-canvas drawer (transform).
+   md+: a 72px icon rail; the panel widens to 248px over
+   the page while hovered or focused (data-open). Children
+   size off the panel width, so nav pills shrink to icon
+   squares when collapsed; .aa-fade labels fade in after. */
+.aa-rail-panel {
+  width: 264px;
+  background: var(--lp-bg);
+  transition: transform 300ms var(--ease-out);
+}
+.aa-item { transition: background-color 160ms ease, color 160ms ease, transform 160ms var(--ease-out); }
+.aa-item:hover { background: color-mix(in srgb, var(--lp-text) 4%, transparent); }
+.aa-item--active, .aa-item--active:hover { background: color-mix(in srgb, var(--lp-text) 7%, transparent); }
+.aa-card {
+  background: var(--lp-bg-card);
+  border: 1px solid var(--lp-border);
+  box-shadow: 0 1px 2px rgba(11,11,18,.04), 0 6px 16px -10px rgba(11,11,18,.18);
+}
+@media (min-width: 768px) {
+  .aa-rail-panel {
+    width: 72px;
+    transition: width 280ms var(--ease-out), box-shadow 280ms var(--ease-out);
+  }
+  .aa-rail[data-open="true"] .aa-rail-panel {
+    width: 248px;
+    box-shadow: 12px 0 32px -16px rgba(11,11,18,.22);
+  }
+  .aa-rail .aa-fade {
+    opacity: 0;
+    transform: translateX(-4px);
+    pointer-events: none;
+    transition: opacity 120ms ease, transform 200ms var(--ease-out);
+  }
+  .aa-rail[data-open="true"] .aa-fade {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    transition-delay: 70ms;
+  }
+}
+.dark .aa-rail[data-open="true"] .aa-rail-panel { box-shadow: 12px 0 32px -16px rgba(0,0,0,.6); }
+@media (prefers-reduced-motion: reduce) {
+  .aa-rail-panel, .aa-rail .aa-fade { transition: none; }
+}

@@ -21,7 +21,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "next-themes";
 import type { UserRole } from "@/types";
-import { roleLabel } from "@/lib/roles";
+import { roleHome, roleLabel } from "@/lib/roles";
 
 interface NavItem {
   id: string;
@@ -99,6 +99,8 @@ export default function Sidebar() {
     })).filter((section) => section.items.length > 0);
   }, [user?.role]);
 
+  const homeHref = user ? roleHome(user.role) : "/";
+
   const initials = useMemo(() => {
     const name = (user?.nickname || user?.email || "").replace(/@.*/, "");
     const parts = name.split(/[\s._-]+/).filter(Boolean);
@@ -117,7 +119,7 @@ export default function Sidebar() {
       >
         <List size={24} />
       </button>
-      <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+      <Link href={homeHref} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
         <Image src="/logo-mark.svg" alt="" width={34} height={24} />
         <span className="lp-logo-text text-[18px] tracking-tight text-[var(--text-sidebar)]">AutoAccounting</span>
       </Link>
@@ -154,7 +156,7 @@ export default function Sidebar() {
     >
       {/* Logo */}
       <div className="px-[19px] pt-5 pb-4 flex items-center justify-between gap-2">
-        <Link href="/" className="flex items-center gap-2.5 min-w-0 hover:opacity-80 transition-opacity">
+        <Link href={homeHref} className="flex items-center gap-2.5 min-w-0 hover:opacity-80 transition-opacity">
           <Image src="/logo-mark.svg" alt="" width={34} height={24} className="shrink-0" />
           <span className="aa-fade lp-logo-text text-[17px] tracking-tight whitespace-nowrap">AutoAccounting</span>
         </Link>

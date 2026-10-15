@@ -10,7 +10,8 @@ class GoogleAuthRequest(BaseModel):
 
 
 class DevLoginRequest(BaseModel):
-    email: EmailStr
+    # Omitted: sign in as the platform admin (created on a fresh database).
+    email: Optional[EmailStr] = None
 
 
 class UserResponse(BaseModel):

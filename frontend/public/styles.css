@@ -86,6 +86,8 @@ ul, ol, dl, dd { margin: 0; padding: 0; list-style: none; }
 .nav-links a { transition: color .2s; }
 .nav-links a:hover { color: var(--ink); }
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.nav-login { padding: 8px 10px; font-size: 14.5px; font-weight: 600; color: var(--ink-2); border-radius: 10px; transition: color .2s; }
+.nav-login:hover { color: var(--ink); }
 
 /* ───────── Hero ───────── */
 .hero { position: relative; padding: 148px 0 104px; overflow: hidden; }

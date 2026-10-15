@@ -9,8 +9,8 @@ interface AuthState {
   token: string | null;
   loading: boolean;
   googleLogin: (credential: string) => Promise<User>;
-  /** Development-only email sign-in (backend refuses it outside development). */
-  devLogin: (email: string) => Promise<User>;
+  /** Development-only sign-in; no email signs in as the platform admin. */
+  devLogin: (email?: string) => Promise<User>;
   logout: () => void;
   updateNickname: (nickname: string | null) => Promise<User>;
 }
@@ -47,8 +47,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return res.data.user;
   };
 
-  const devLogin = async (email: string): Promise<User> => {
-    const res = await api.post("/auth/dev-login", { email });
+  const devLogin = async (email?: string): Promise<User> => {
+    const res = await api.post("/auth/dev-login", email ? { email } : {});
     sessionStorage.setItem(TOKEN_KEY, res.data.token);
     setToken(res.data.token);
     setUser(res.data.user);

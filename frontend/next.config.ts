@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["@phosphor-icons/react"],
   },
+  // The marketing landing page is plain static HTML in public/ (index.html,
+  // styles.css, app.js, assets/); serve it at the site root.
+  async rewrites() {
+    return { beforeFiles: [{ source: "/", destination: "/index.html" }], afterFiles: [], fallback: [] };
+  },
   async headers() {
     // NOTE: Content-Security-Policy is intentionally NOT set here. It is
     // emitted per-request with a fresh nonce by src/middleware.ts so inline

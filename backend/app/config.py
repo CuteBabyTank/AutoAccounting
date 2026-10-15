@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # The first Google sign-in with this email becomes the platform admin, as
     # long as no admin exists yet. Lets a fresh database be claimed without SQL.
     bootstrap_admin_email: str = ""
+    # Passwordless email sign-in for local development, standing in for Google
+    # SSO. Off unless set explicitly, and also refused outside development.
+    enable_dev_login: bool = False
 
     # File Storage
     upload_dir: str = "./uploads"
@@ -109,6 +112,8 @@ def validate_secrets_at_startup() -> None:
         errors.append("GEMINI_API_KEY must be set to a valid API key")
     if not settings.google_client_id:
         errors.append("GOOGLE_CLIENT_ID must be set in production")
+    if settings.enable_dev_login:
+        errors.append("ENABLE_DEV_LOGIN must not be set outside development")
     if errors:
         for e in errors:
             print(f"SECURITY ERROR: {e}", file=sys.stderr)

@@ -83,8 +83,21 @@ def test_prod_with_all_secrets_passes():
         "GEMINI_API_KEY": "real-key",
         "GOOGLE_CLIENT_ID": "client-id",
         "GOOGLE_CLIENT_SECRET": "client-secret",
+        "ENABLE_DEV_LOGIN": "false",
     })
     cfg.validate_secrets_at_startup()  # must not raise
+
+
+def test_prod_rejects_dev_login():
+    cfg = _reload_config({
+        "ENVIRONMENT": "production",
+        "JWT_SECRET": "x" * 48,
+        "GEMINI_API_KEY": "real-key",
+        "GOOGLE_CLIENT_ID": "client-id",
+        "ENABLE_DEV_LOGIN": "true",
+    })
+    with pytest.raises(SystemExit):
+        cfg.validate_secrets_at_startup()
 
 
 def test_allowed_origins_parses_csv():

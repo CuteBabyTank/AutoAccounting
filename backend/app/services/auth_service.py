@@ -68,13 +68,29 @@ async def google_login(db: AsyncSession, credential: str, client_id: str) -> tup
         raise HTTPException(status_code=403, detail="Account is deactivated")
 
 
-async def dev_login(db: AsyncSession, email: str) -> tuple[User, str]:
-    """Development-only sign-in by email, standing in for Google SSO until a
-    client ID is configured. The first user on a database with no admin becomes
-    the platform admin so a fresh local setup is usable straight away."""
-    if settings.environment != "development":
+def dev_login_enabled() -> bool:
+    """Both an explicit opt-in flag and a development environment are required,
+    so neither a forgotten ENVIRONMENT nor a stray flag can expose it alone."""
+    return settings.enable_dev_login and settings.environment == "development"
+
+
+DEV_ADMIN_EMAIL = "dev-admin@example.com"
+
+
+async def dev_login(db: AsyncSession, email: str | None) -> tuple[User, str]:
+    """Development-only sign-in, standing in for Google SSO until a client ID
+    is configured. With no email it signs in as the oldest platform admin
+    (or BOOTSTRAP_ADMIN_EMAIL / a dev admin on a fresh database). The first
+    user on a database with no admin becomes the platform admin."""
+    if not dev_login_enabled():
         raise HTTPException(status_code=404, detail="Not found")
 
+    if not email:
+        admin_email = (await db.execute(
+            select(User.email).where(User.role == UserRole.ADMIN, User.is_active.is_(True))
+            .order_by(User.created_at).limit(1)
+        )).scalar_one_or_none()
+        email = admin_email or settings.bootstrap_admin_email or DEV_ADMIN_EMAIL
     email = email.strip().lower()
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if not user:

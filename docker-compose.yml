@@ -44,6 +44,16 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8001
       NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+      # Bind-mounted files don't always raise change events inside Docker
+      # Desktop's VM; polling makes hot reload reliable.
+      WATCHPACK_POLLING: "true"
+    # Live source: edits under frontend/ hot-reload without a rebuild.
+    # node_modules and .next stay inside the container (anonymous volumes)
+    # so the host's copies never shadow the Linux ones.
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
 
 volumes:
   pgdata:

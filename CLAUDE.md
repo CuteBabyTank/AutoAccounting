@@ -6,7 +6,7 @@ Extracted from the SnagStock repo's `AutoAccounting` branch (2026-10-15). The br
 
 ## Repo layout
 
-The repo root also holds the **static marketing site** (`index.html`, `styles.css`, `app.js`, `assets/`, `PRODUCT.md`): plain HTML/CSS/JS with no build step. It is separate from the app below.
+The **static marketing site** lives in `frontend/public/` (`index.html`, `styles.css`, `app.js`, `assets/`; product notes in root `PRODUCT.md`): plain HTML/CSS/JS with no build step. `next.config.ts` rewrites `/` to it, so it is the app's front page; its CTAs and "Log in" link go to `/login`.
 
 ```
 backend/app/
@@ -56,18 +56,19 @@ docker compose exec backend ruff check app --select F,E9
 cd frontend && npm install && npm run lint && npx tsc --noEmit && npm run build
 ```
 
-The backend dir is bind-mounted (hot reload). The frontend container is a built image, so run `docker compose up --build -d frontend` before checking UI changes.
+Both `backend/` and `frontend/` are bind-mounted and hot-reload (frontend uses `WATCHPACK_POLLING`; `node_modules`/`.next` stay in anonymous volumes). Rebuild only after dependency changes (`docker compose up --build -d --renew-anon-volumes`) or `.env` changes (`--force-recreate`).
 
 ## First run
 
 1. Set `BOOTSTRAP_ADMIN_EMAIL` and sign in with that Google account. It becomes the platform admin, but only while no admin exists.
 2. Other people sign in once (they land on `/pending` as unverified). On **Platform admin**, click "Make firm" to turn someone into a firm owner.
 3. The firm owner adds staff by email on **Team** and promotes managers there.
-4. Billing is opt-in. With no page rate set, uploads are free and never blocked. Once a rate is set on Platform admin, each extracted page debits the firm's budget and uploads stop at ₱0.
+4. **Without Google set up:** with `ENVIRONMENT=development` and `ENABLE_DEV_LOGIN=true`, `/login` shows a stand-in "Sign in with Google" button that signs straight in as the platform admin (creating one on a fresh DB) via `POST /api/auth/dev-login`. It disappears once `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is set, and the backend refuses to start with `ENABLE_DEV_LOGIN` outside development.
+5. Billing is opt-in. With no page rate set, uploads are free and never blocked. Once a rate is set on Platform admin, each extracted page debits the firm's budget and uploads stop at ₱0.
 
 ## Env vars
 
-Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CLIENT_ID`; insecure defaults fail startup. Also: `DATABASE_URL`, `ENVIRONMENT`, `FRONTEND_URL` (comma-separated CORS origins), `ACCOUNTING_GEMINI_MODEL`, `ACCOUNTING_GEMINI_THINKING_LEVEL`, `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB`, `MAX_BATCH_SIZE`, `BOOTSTRAP_ADMIN_EMAIL`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CLIENT_ID`; insecure defaults fail startup. Also: `DATABASE_URL`, `ENVIRONMENT`, `FRONTEND_URL` (comma-separated CORS origins), `ACCOUNTING_GEMINI_MODEL`, `ACCOUNTING_GEMINI_THINKING_LEVEL`, `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB`, `MAX_BATCH_SIZE`, `BOOTSTRAP_ADMIN_EMAIL`, `ENABLE_DEV_LOGIN`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
 ## Gotchas
 

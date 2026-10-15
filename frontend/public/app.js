@@ -17,7 +17,7 @@
   window.addEventListener("scroll", onScroll, { passive: true });
   onScroll();
 
-  /* ───────── Hero backdrop: documents dissolving into ledger lines ───────── */
+  /* ───────── Hero backdrop: documents drifting up and fading out ───────── */
   const heroMedia = $(".hero-media");
   const video = $("#heroVideo");
   // Prefer a real motion asset (e.g. a Higgsfield render) when one is present.
@@ -33,8 +33,7 @@
   const canvas = $("#heroCanvas");
   const ctx = canvas.getContext("2d");
   let W = 0, H = 0, DPR = 1;
-  const LEDGER_COUNT = 9;
-  let ledgers = [], docs = [], particles = [];
+  let docs = [];
 
   function resize() {
     measure();
@@ -42,9 +41,6 @@
     W = canvas.clientWidth; H = canvas.clientHeight;
     canvas.width = W * DPR; canvas.height = H * DPR;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ledgers = Array.from({ length: LEDGER_COUNT }, (_, i) => ({
-      y: H * 0.22 + (i * H * 0.6) / (LEDGER_COUNT - 1),
-    }));
   }
 
   // Documents travel in the open space around the demo card, never behind it,
@@ -84,24 +80,6 @@
       dissolveAt: H * (0.2 + Math.random() * 0.55),
       lines: 3 + ((Math.random() * 3) | 0),
     });
-  }
-
-  function dissolve(d) {
-    for (let i = 0; i < 46; i++) {
-      const lx = (Math.random() - 0.5) * d.w, ly = (Math.random() - 0.5) * d.h;
-      const cos = Math.cos(d.rot), sin = Math.sin(d.rot);
-      const target = ledgers[(Math.random() * ledgers.length) | 0];
-      particles.push({
-        x: d.x + lx * cos - ly * sin,
-        y: d.y + lx * sin + ly * cos,
-        vx: 0.4 + Math.random() * 1.2,
-        vy: (Math.random() - 0.5) * 0.6,
-        ty: target.y,
-        a: 1,
-        s: 1 + Math.random() * 1.6,
-        green: Math.random() < 0.7,
-      });
-    }
   }
 
   function roundRect(x, y, w, h, r) {
@@ -145,42 +123,13 @@
     t++;
     ctx.clearRect(0, 0, W, H);
 
-    ledgers.forEach((l, i) => {
-      const startX = W * 0.4;
-      const g = ctx.createLinearGradient(startX, 0, W, 0);
-      g.addColorStop(0, "rgba(5,150,105,0)");
-      g.addColorStop(0.3, "rgba(5,150,105,0.38)");
-      g.addColorStop(1, "rgba(5,150,105,0.12)");
-      ctx.strokeStyle = g;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([2, 10]);
-      ctx.lineDashOffset = -(t * (0.6 + i * 0.05) * SPEED);
-      ctx.beginPath(); ctx.moveTo(startX, l.y); ctx.lineTo(W, l.y); ctx.stroke();
-    });
-    ctx.setLineDash([]);
-
     if (t - lastSpawn > 34 / SPEED && docs.length < 16) { spawnDoc(); lastSpawn = t; }
     for (let i = docs.length - 1; i >= 0; i--) {
       const d = docs[i];
       d.y += d.vy * SPEED; d.x += d.vx * 0.3 * SPEED; d.rot += d.vr * SPEED;
-      if (!d.dissolved && d.y < d.dissolveAt + 40) { d.dissolved = true; dissolve(d); }
       if (d.y < d.dissolveAt) { docs.splice(i, 1); continue; }
       drawDoc(d);
     }
-
-    for (let i = particles.length - 1; i >= 0; i--) {
-      const p = particles[i];
-      p.vy += (p.ty - p.y) * 0.004;
-      p.vy *= 0.92;
-      p.vx = Math.min(p.vx * 1.012 + 0.02, 4.5);
-      p.x += p.vx * SPEED; p.y += p.vy * SPEED;
-      if (p.x > W * 0.8) p.a -= 0.012;
-      if (p.a <= 0 || p.x > W + 10) { particles.splice(i, 1); continue; }
-      ctx.globalAlpha = p.a;
-      ctx.fillStyle = p.green ? "#10B981" : "#94A3B8";
-      ctx.fillRect(p.x, p.y, p.s * (1 + p.vx * 0.9), p.s * 0.8);
-    }
-    ctx.globalAlpha = 1;
 
     if (running) raf = requestAnimationFrame(frame);
   }
@@ -198,6 +147,64 @@
   if (document.fonts) document.fonts.ready.then(measure);
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()));
   new IntersectionObserver(([e]) => (e.isIntersecting ? start() : stop())).observe(canvas);
+
+  /* ───────── Page flow: line ribbons running down the whole page ─────────
+     Each ribbon is a band of hairlines around a spine that meanders as it runs
+     down the document. The band's width swings through zero, so it pinches into
+     twists. Shapes are defined in page coordinates and drawn on one fixed canvas
+     for just the visible slice, so scrolling reveals one continuous drawing from
+     the hero to the footer; time adds a slow drift. */
+  (() => {
+    const fc = $("#flowCanvas");
+    if (!fc) return;
+    const g = fc.getContext("2d");
+    let fw = 0, fh = 0, fdpr = 1;
+    const RIBBONS = [
+      // base x (0–1), meander amplitude, spine frequency, band width, twist frequency, phase, lines, ink
+      { base: 0.84, amp: 0.13, f: 0.0026, width: 0.15, tf: 0.0031, ph: 0.4, n: 40, ink: [71, 85, 105], a: 0.22 },
+      { base: 0.07, amp: 0.08, f: 0.0032, width: 0.09, tf: 0.0037, ph: 2.1, n: 30, ink: [71, 85, 105], a: 0.2 },
+      { base: 0.5, amp: 0.44, f: 0.0011, width: 0.11, tf: 0.0024, ph: 4.0, n: 34, ink: [5, 150, 105], a: 0.12 },
+    ];
+    function size() {
+      fdpr = Math.min(window.devicePixelRatio || 1, 2);
+      fw = fc.clientWidth; fh = fc.clientHeight;
+      fc.width = fw * fdpr; fc.height = fh * fdpr;
+      g.setTransform(fdpr, 0, 0, fdpr, 0, 0);
+    }
+    let ft = 0;
+    function draw() {
+      ft += SPEED;
+      const T = ft * 0.004, top = window.scrollY, step = 10;
+      g.clearRect(0, 0, fw, fh);
+      g.lineWidth = 0.8;
+      for (const r of RIBBONS) {
+        for (let i = 0; i < r.n; i++) {
+          const u = i / (r.n - 1) - 0.5;
+          // Fainter toward one edge of the band, like light falling across it.
+          g.strokeStyle = `rgba(${r.ink[0]},${r.ink[1]},${r.ink[2]},${(r.a * (0.35 + 0.65 * (u + 0.5))).toFixed(3)})`;
+          g.beginPath();
+          for (let sy = -step; sy <= fh + step; sy += step) {
+            const y = top + sy;
+            const spine = fw * (r.base
+              + r.amp * Math.sin(y * r.f + r.ph + T * 0.6)
+              + r.amp * 0.35 * Math.sin(y * r.f * 2.3 - T * 0.4 + r.ph));
+            const band = fw * r.width * Math.sin(y * r.tf + r.ph * 1.7 + T * 0.35);
+            const x = spine + u * band + fw * 0.006 * Math.sin(y * 0.004 + u * 6 + T);
+            if (sy < 0) g.moveTo(x, sy); else g.lineTo(x, sy);
+          }
+          g.stroke();
+        }
+      }
+    }
+    let on = false, id = 0;
+    const loop = () => { draw(); if (on) id = requestAnimationFrame(loop); };
+    const go = () => { if (!on) { on = true; id = requestAnimationFrame(loop); } };
+    const halt = () => { on = false; cancelAnimationFrame(id); };
+    size();
+    go();
+    new ResizeObserver(() => { size(); draw(); }).observe(fc);
+    document.addEventListener("visibilitychange", () => (document.hidden ? halt() : go()));
+  })();
 
   /* ───────── Drag & drop sorting demo ───────── */
   const SAMPLES = [

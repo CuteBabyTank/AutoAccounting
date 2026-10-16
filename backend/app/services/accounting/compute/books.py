@@ -10,7 +10,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.services.accounting.books.chart import Chart, JOURNAL_BOOKS
-from app.services.accounting.compute.cogs import claims_input_vat, cost_base, is_capital_goods
+from app.services.accounting.compute.cogs import claimed_input_vat, cost_base, is_capital_goods, vat_difference
 from app.services.accounting.compute.depreciation import Asset, depreciation_between
 from app.services.accounting.compute.inputs import CompanyFacts, DocLine
 from app.services.accounting.compute.money import ZERO, c2, total
@@ -168,11 +168,13 @@ def document_entries(l: DocLine, inp: BooksInput) -> list[Entry]:
         ))
     if l.category in ("purchases", "expenses") and l.client_role == "buyer":
         account = chart.code("ppe") if is_capital_goods(l) else chart.doc_account(l.account, l.gl_account)
-        input_vat = l.vat if claims_input_vat(l, vat) else ZERO
+        input_vat = claimed_input_vat(l, vat)
+        difference = vat_difference(l, vat)
         ewt = inp.ewt.get(l.id, ZERO)
         return _kept(make_entry(
             f"doc:{l.id}:buy", l.doc_date, _book(inp, "PJ"), ref, party, f"{chart.name(account)}, {name}".strip(", "),
             "document", _dr(account, cost_base(l, vat)), _dr(chart.code("input_vat"), input_vat),
+            _dr(chart.code("vat_difference"), difference) if difference else None,
             _cr(chart.code("ewt_payable"), ewt), _cr(chart.code("ap"), l.gross - ewt),
         ))
     if l.category == "payroll":

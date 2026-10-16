@@ -128,3 +128,52 @@ def test_personal_purchase_in_owners_name_is_excluded():
     assert f["excluded"] is True and f["needs_review"] is True
     blank = _classify(_ext(buyer=Party(), nature="other", expense_account="other"))  # p21: buyer block blank
     assert "personal_purchase" not in blank["review_reasons"] and blank["excluded"] is False
+
+
+# --- VAT difference posting (p16 Golden Hardware) -------------------------------------------------
+
+def _golden_line(vat="2600"):
+    from tests.aa_factories import purchase
+    return purchase(gross=str(20000 + int(vat)), vatable="20000", vat=vat, input_vat_valid=True,
+                    counterparty_name="Golden Hardware Depot")
+
+
+def test_golden_purchase_posts_the_excess_vat_to_vat_difference():
+    from app.services.accounting.books.chart import Chart, default_books, standard_chart
+    from app.services.accounting.compute.books import BooksInput, document_entries
+    from tests.aa_factories import company
+
+    chart = Chart(standard_chart("corporation"))
+    assert chart.get(chart.code("vat_difference")).name == "VAT difference - for review"
+    inp = BooksInput(company=company(), chart=chart, books_kept=frozenset(default_books(True)),
+                     start=date(2026, 1, 1), through=date(2026, 12, 31))
+    [e] = document_entries(_golden_line(), inp)
+    got = {(l.account, "Dr" if l.debit else "Cr"): l.debit or l.credit for l in e.lines}
+    assert got == {(chart.code("doc:purchases"), "Dr"): Decimal("20000.00"),
+                   (chart.code("input_vat"), "Dr"): Decimal("2400.00"),
+                   (chart.code("vat_difference"), "Dr"): Decimal("200.00"),
+                   (chart.code("ap"), "Cr"): Decimal("22600.00")}
+
+
+def test_golden_purchase_claims_twelve_percent_on_the_2550q():
+    from app.services.accounting.compute.inputs import PeriodInputs
+    from app.services.accounting.compute.vat import compute_2550q
+
+    i = compute_2550q([_golden_line()], PeriodInputs(), Decimal("0")).items
+    assert i["44A"] == Decimal("20000.00") and i["44B"] == Decimal("2400.00")
+
+
+def test_vat_below_twelve_percent_claims_printed_vat():
+    from app.services.accounting.compute.cogs import claimed_input_vat, vat_difference
+
+    low = _golden_line(vat="2200")
+    assert claimed_input_vat(low, True) == Decimal("2200.00") and vat_difference(low, True) == Decimal("0.00")
+    assert claimed_input_vat(_golden_line(vat="2400"), True) == Decimal("2400.00")
+    assert claimed_input_vat(_golden_line(), False) == Decimal("0.00")
+
+
+def test_charts_seeded_before_vat_difference_get_it():
+    from app.services.accounting.books.chart import missing_standard, standard_chart
+
+    old = [a for a in standard_chart("corporation") if a.system_key != "vat_difference"]
+    assert [a.code for a in missing_standard(old, "corporation")] == ["1310"]

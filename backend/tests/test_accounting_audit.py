@@ -29,7 +29,7 @@ def test_json_safe_handles_decimal_date_uuid_enum():
              "id": uid, "role": _Role.MANAGER, "lines": [{"debit": Decimal("5")}], "pair": (1, None)}
     assert audit.json_safe(value) == {
         "gross": "1200.50", "on": "2026-10-03", "at": "2026-10-03T01:02:00+00:00", "id": str(uid),
-        "role": "manager", "lines": [{"debit": "5"}], "pair": [1, None],
+        "role": "manager", "lines": [{"debit": "5.00"}], "pair": [1, None],
     }
 
 
@@ -158,3 +158,18 @@ def test_labels_read_like_the_ui():
     assert audit.employee_label({"last_name": "Cruz", "first_name": "Juan"}) == "Cruz, Juan"
     assert audit.employee_label({"last_name": "Cruz"}) == "Cruz"
     assert audit.employee_label({}) == "Employee"
+
+
+def test_resent_amount_in_another_scale_is_not_a_change():
+    # The DB returns Numeric(14,2) as Decimal("1000.00"); a PATCH of "1000" parses to Decimal("1000").
+    stored = SimpleNamespace(gross_amount=Decimal("1000.00"))
+    sent = SimpleNamespace(gross_amount=Decimal("1000"))
+    assert audit.diff(audit.snapshot(stored, ("gross_amount",)), audit.snapshot(sent, ("gross_amount",))) == ({}, {})
+    assert audit.json_safe(Decimal("1200.5")) == "1200.50"
+    assert audit.json_safe(Decimal("0.1234")) == "0.1234"
+
+
+def test_audit_label_column_reaches_existing_databases():
+    from app.services.accounting.schema import column_statements
+
+    assert any("aa_audit_events ADD COLUMN IF NOT EXISTS label" in s for s in column_statements())

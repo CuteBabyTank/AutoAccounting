@@ -19,11 +19,15 @@ ENTITIES = frozenset({
     "atc", "upload",
 })
 REASON_MAX = 500
+_CENTS = Decimal("0.01")
 
 
 def json_safe(value: Any) -> Any:
-    """A value JSONB can store: Decimal as plain text, dates as ISO, UUIDs as text, enums by value."""
+    """A value JSONB can store: Decimal as plain text (at least 2 places, so 1000 and 1000.00 compare equal),
+    dates as ISO, UUIDs as text, enums by value."""
     if isinstance(value, Decimal):
+        if value.is_finite() and value.as_tuple().exponent > -2:
+            value = value.quantize(_CENTS)
         return format(value, "f")
     if isinstance(value, (datetime, date)):
         return value.isoformat()

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { UserPlus } from "@phosphor-icons/react";
-import AppBackdrop from "@/components/layout/AppBackdrop";
 import { useAuth } from "@/lib/auth";
 import { teamApi } from "@/lib/api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
@@ -62,7 +61,6 @@ export default function TeamPage() {
 
   return (
     <div className="lp relative min-h-screen">
-      <AppBackdrop />
       <div className="p-4 sm:p-8 max-w-5xl page-enter">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">Team</h1>

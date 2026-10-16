@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { MagnifyingGlass, Spinner, UploadSimple } from "@phosphor-icons/react";
-import AppBackdrop from "@/components/layout/AppBackdrop";
 import CompanyForm from "@/components/accounting/CompanyForm";
 import CompanyPicker from "@/components/accounting/CompanyPicker";
 import DocumentPanel from "@/components/accounting/DocumentPanel";
@@ -207,7 +206,6 @@ export default function AccountingPage() {
 
   return (
     <div className="lp relative min-h-screen">
-      <AppBackdrop />
       <div className="p-4 sm:p-8 page-enter">
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <div className="mr-auto">

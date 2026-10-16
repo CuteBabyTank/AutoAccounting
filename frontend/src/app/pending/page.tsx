@@ -14,6 +14,7 @@ import {
 import Image from "next/image";
 import { useAuth } from "@/lib/auth";
 import { HOMEPAGE } from "@/lib/roles";
+import AppFlow from "@/components/layout/AppFlow";
 
 const CONTACT_EMAIL = "matthewfrasersim@gmail.com";
 
@@ -51,16 +52,8 @@ export default function PendingPage() {
   }, []);
 
   return (
-    <div className="lp min-h-screen w-full relative overflow-hidden bg-[var(--bg-primary)]">
-      {/* Decorative gradient blobs */}
-      <div
-        className="pointer-events-none absolute -top-40 -left-40 w-[480px] h-[480px] rounded-full opacity-60 blur-3xl"
-        style={{ background: "radial-gradient(circle at center, var(--lp-glow), transparent 70%)" }}
-      />
-      <div
-        className="pointer-events-none absolute -bottom-48 -right-32 w-[520px] h-[520px] rounded-full opacity-50 blur-3xl"
-        style={{ background: "radial-gradient(circle at center, var(--lp-glow2), transparent 70%)" }}
-      />
+    <div className="lp min-h-screen w-full relative">
+      <AppFlow />
 
       {/* Top bar */}
       <div className="relative flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass, Plus, PushPin } from "@phosphor-icons/react";
-import AppBackdrop from "@/components/layout/AppBackdrop";
 import CompanyForm from "@/components/accounting/CompanyForm";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatTin } from "@/lib/accounting-format";
@@ -64,7 +63,6 @@ export default function AccountingCompaniesPage() {
 
   return (
     <div className="lp relative min-h-screen">
-      <AppBackdrop />
       <div className="p-4 sm:p-8 max-w-6xl page-enter">
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <div className="mr-auto">

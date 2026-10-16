@@ -7,7 +7,7 @@ import { GoogleLogin, GoogleOAuthProvider } from "@react-oauth/google";
 import { useAuth } from "@/lib/auth";
 import { HOMEPAGE, roleHome } from "@/lib/roles";
 import api from "@/lib/api";
-import AppBackdrop from "@/components/layout/AppBackdrop";
+import AppFlow from "@/components/layout/AppFlow";
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 
@@ -60,7 +60,7 @@ export default function LoginPage() {
 
   return (
     <div className="lp relative min-h-screen flex items-center justify-center p-4">
-      <AppBackdrop />
+      <AppFlow />
       <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)] p-8 shadow-2xl page-enter">
         <div className="mb-8 flex flex-col items-center text-center">
           <a href={HOMEPAGE} aria-label="AutoAccounting homepage" className="transition-opacity hover:opacity-80">

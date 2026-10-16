@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, ReactNode } from "react";
 import Sidebar from "@/components/layout/Sidebar";
+import AppFlow from "@/components/layout/AppFlow";
 import { PUBLIC_ROUTES, canAccess, roleHome } from "@/lib/roles";
 
 function AuthGate({ children }: { children: ReactNode }) {
@@ -38,7 +39,7 @@ function AuthGate({ children }: { children: ReactNode }) {
     return (
       <div className="flex h-screen overflow-hidden">
         <div className="hidden md:block w-[72px] shrink-0" />
-        <main className="flex-1 overflow-y-auto pt-14 md:pt-0" />
+        <main className="lp flex-1 overflow-y-auto pt-14 md:pt-0" />
       </div>
     );
   }
@@ -55,7 +56,14 @@ function AuthGate({ children }: { children: ReactNode }) {
       <Sidebar />
       {/* pt-14 clears the fixed mobile top bar in Sidebar; at md+ the sidebar is
           static and the bar is hidden, so the offset goes away. */}
-      <main className="flex-1 min-w-0 overflow-y-auto pt-14 md:pt-0">{children}</main>
+      {/* Every signed-in page shares one background (AppFlow); page roots
+          that also carry `.lp` stay transparent so it shows through. */}
+      <main className="lp flex-1 min-w-0 overflow-y-auto pt-14 md:pt-0">
+        <div className="relative min-h-full">
+          <AppFlow />
+          {children}
+        </div>
+      </main>
     </div>
   );
 }

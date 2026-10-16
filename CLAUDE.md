@@ -33,7 +33,7 @@ frontend/src/
   app/{login,pending,accounting,accounting/companies,team,admin}/page.tsx
   app/providers.tsx     # Theme + Auth + AuthGate (role routing from lib/roles.ts)
   components/accounting/  # all accounting UI panels
-  components/layout/    # Sidebar, AppBackdrop
+  components/layout/    # Sidebar, AppFlow (shared page background)
   lib/{api,auth,roles,accounting-api,accounting-format}.ts(x)
   types/{index,accounting}.ts
   middleware.ts         # per-request nonce CSP
@@ -94,3 +94,4 @@ Alphalist DAT export (BIR layout unverified), Gemini read of scanned payroll reg
 - Python: type hints, `Mapped[...]`, `X | None`; routers raise `HTTPException`, services raise `ValueError`.
 - Logging: structured key=value; auth events → `auth.audit`, Gemini → `gemini`.
 - Frontend: strict TS, `@/*` → `src/*`, page-scoped `useState`; accounting UI lives under `components/accounting`.
+- App background: every page shares `components/layout/AppFlow` (the homepage line ribbons in the right gutter + a slow emerald glow). AuthGate mounts it once inside `<main>`, so new signed-in pages get it automatically: give the page root `className="lp ..."` and no background of its own (nested `.lp` roots are transparent). Public pages outside the shell (login, pending) render `<AppFlow />` in their own `.lp` root. No grid or blob backdrops.

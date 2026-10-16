@@ -401,8 +401,6 @@ main textarea:focus-visible {
   --lp-glow2:     rgba(37, 99, 235, 0.12);
   --lp-glow3:     rgba(99, 102, 241, 0.12);
 
-  /* Faint grid backdrop */
-  --lp-grid-line: rgba(11, 11, 18, 0.045);
 
   --ease-out:     cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out:  cubic-bezier(0.77, 0, 0.175, 1);
@@ -552,20 +550,9 @@ main textarea:focus-visible {
   box-shadow: 0 4px 10px rgba(0,0,0,.35), 0 18px 44px -18px rgba(0,0,0,.6);
 }
 
-/* ── Page-wide backdrop (continuous grid + soft colour blooms) ── */
-.lp-page-bg {
-  position: absolute; inset: 0; z-index: -1;
-  overflow: hidden; pointer-events: none;
-}
-.lp-page-grid {
-  position: absolute; inset: 0;
-  background-image:
-    linear-gradient(var(--lp-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--lp-grid-line) 1px, transparent 1px);
-  background-size: 56px 56px;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 5%, #000 95%, transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 5%, #000 95%, transparent 100%);
-}
+/* A page root nested in the app shell's `.lp` <main> keeps the palette but
+   not a second opaque canvas, so the shared AppFlow background shows. */
+.lp .lp { background: transparent; }
 
 /* Display font for landing headings */
 .lp h1, .lp h2 {
@@ -593,7 +580,6 @@ main textarea:focus-visible {
   --lp-glow:      rgba(99, 102, 241, 0.20);
   --lp-glow2:     rgba(59, 130, 246, 0.16);
   --lp-glow3:     rgba(129, 140, 248, 0.12);
-  --lp-grid-line: rgba(255, 255, 255, 0.04);
 }
 
 /* ── Container ── */
@@ -1034,13 +1020,6 @@ main textarea:focus-visible {
 }
 @keyframes lp-draw { to { stroke-dashoffset: 0; } }
 
-/* Gradient text fragment */
-.lp-grad-text {
-  background: linear-gradient(120deg, var(--lp-accent) 0%, var(--lp-accent-2) 100%);
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent; color: transparent;
-}
-
 /* Brushed-silver text with a slow sheen sweeping across */
 .lp-silver {
   background: linear-gradient(
@@ -1074,23 +1053,6 @@ main textarea:focus-visible {
 }
 @media (hover: hover) and (pointer: fine) {
   .lp-logo-strip span:hover { color: var(--lp-muted); opacity: 1; }
-}
-
-/* ── Faint grid backdrop ── */
-.lp-grid-bg {
-  position: absolute; inset: 0; pointer-events: none; z-index: 0;
-  background-image:
-    linear-gradient(var(--lp-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--lp-grid-line) 1px, transparent 1px);
-  background-size: 56px 56px;
-  -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 38%, #000 35%, transparent 80%);
-  mask-image: radial-gradient(ellipse 75% 65% at 50% 38%, #000 35%, transparent 80%);
-}
-
-/* Soft corner colour blooms */
-.lp-bloom {
-  position: absolute; border-radius: 50%; pointer-events: none; z-index: 0;
-  filter: blur(90px);
 }
 
 /* ── Floating decorative UI cards (SOFI-style) ── */
@@ -1431,6 +1393,52 @@ main textarea:focus-visible {
   color: var(--lp-text);
 }
 .aa-ghost:disabled { opacity: .5; cursor: default; }
+/* Background for rail pages: homepage line ribbons in the right gutter plus
+   one slow emerald glow (AppFlow.tsx). The view is sticky so it stays put
+   while <main> scrolls; the canvas draws in page coordinates itself. */
+.aa-flow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: clip;
+}
+.aa-flow-view {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow: hidden;
+}
+.aa-flow-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Fade out before the content column so rows stay easy to read. */
+  -webkit-mask-image: linear-gradient(90deg, transparent 52%, #000 82%);
+  mask-image: linear-gradient(90deg, transparent 52%, #000 82%);
+}
+.aa-flow-glow {
+  position: absolute;
+  top: -22vh;
+  right: -14vw;
+  width: min(62vw, 820px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(5, 150, 105, 0.13) 0%, rgba(5, 150, 105, 0.05) 38%, transparent 68%);
+  animation: aa-glow-drift 26s ease-in-out infinite alternate;
+}
+.dark .aa-flow-glow {
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.10) 0%, rgba(52, 211, 153, 0.035) 38%, transparent 68%);
+}
+@keyframes aa-glow-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(-6vw, 9vh, 0) scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Gentler, not gone. */
+  .aa-flow-glow { animation-duration: 60s; }
+}
 .aa-table { border-collapse: separate; border-spacing: 0; }
 .aa-table tbody td { transition: background-color 140ms ease; }
 .aa-table tbody tr:hover td { background: color-mix(in srgb, var(--lp-text) 3%, transparent); }

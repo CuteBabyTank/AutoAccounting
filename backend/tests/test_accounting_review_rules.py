@@ -232,3 +232,44 @@ def test_sync_flags_uses_the_number_reuse_reason():
     assert again.review_reasons == [NUMBER_FLAG] and again.needs_review is True
     sync_flags([], {first.id: first, again.id: again})
     assert again.review_reasons == [] and again.needs_review is False
+
+
+# --- Payment evidence flags (cleared by evidence; workstream 03 adds bank lines) ---------------------
+
+def _doc(category="payroll", raw=None, reviewed=False, paid_on=None, settles=None, reasons=None):
+    import uuid
+    from types import SimpleNamespace
+
+    raw = {"marked_paid": True} if raw is None else raw
+    return SimpleNamespace(id=uuid.uuid4(), category=category, client_role="buyer", raw=raw, reviewed=reviewed,
+                           paid_on=paid_on, settles_document_id=settles, deleted_at=None, excluded=False,
+                           review_reasons=list(reasons or []), needs_review=bool(reasons))
+
+
+def test_payment_reasons():
+    from app.services.accounting.review_rules import payment_reasons
+
+    assert payment_reasons("payroll", "buyer", {"marked_paid": True}) == ["payment_source_unknown"]
+    assert payment_reasons("purchases", "buyer", {"payment_terms": "Credit"}) == ["payment_unverified"]
+    assert payment_reasons("sales", "seller", {"payment_terms": "credit"}) == []
+    assert payment_reasons("payroll", "buyer", None) == []
+
+
+def test_payment_flags_follow_evidence():
+    from app.services.accounting.review_rules import sync_payment_flags
+
+    payroll = _doc(reasons=["payment_source_unknown"])
+    bill = _doc(category="purchases", raw={"payment_terms": "credit"}, reasons=["payment_unverified"])
+    receipt = _doc(category="support", raw={}, settles=bill.id)
+    sync_payment_flags([payroll, bill, receipt], paid_ids={str(payroll.id)})   # e.g. a matched bank line
+    assert payroll.review_reasons == [] and payroll.needs_review is False
+    assert bill.review_reasons == []
+    sync_payment_flags([payroll, bill])                                         # evidence gone: back again
+    assert payroll.review_reasons == ["payment_source_unknown"] and payroll.needs_review is True
+    assert bill.review_reasons == ["payment_unverified"] and bill.needs_review is False
+    paid = _doc(paid_on=date(2026, 12, 15), reasons=["payment_source_unknown"])
+    sync_payment_flags([paid])
+    assert paid.review_reasons == []
+    done = _doc(reviewed=True)
+    sync_payment_flags([done])
+    assert done.review_reasons == []          # never re-added to a reviewed document

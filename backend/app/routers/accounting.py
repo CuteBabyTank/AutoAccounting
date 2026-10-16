@@ -752,7 +752,7 @@ async def patch_document(
         applied = await _apply_rule_to_supplier_documents(db, doc)
 
     if sent & {"doc_date", "gross_amount", "withholding_amount", "seller_tin", "buyer_tin", "seller_name",
-               "buyer_name", "category", "excluded", "settles_document_id"}:
+               "buyer_name", "category", "excluded", "settles_document_id", "paid_on"}:
         await db.flush()
         await relink_receipts(db, doc.company_id)
     if sent & {"doc_number", "doc_date", "gross_amount", "seller_tin", "buyer_tin", "seller_name", "buyer_name"}:

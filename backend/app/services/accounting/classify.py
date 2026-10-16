@@ -7,6 +7,7 @@ from app.services.accounting.compute.ewt import atc_info, expected_atc, rate_per
 from app.services.accounting.extraction import EXPENSE_ACCOUNTS, ExtractedDoc
 from app.services.accounting.matching import NAME_MATCH_THRESHOLD, name_similarity, normalize_name
 from app.services.accounting.periods import period_for
+from app.services.accounting.review_rules import SOFT_REASONS, needs_review_for, payment_reasons  # noqa: F401
 
 CATEGORIES = ("sales", "purchases", "expenses", "payroll", "2307", "support", "unsorted")
 DOCUMENT_ACCOUNTS = EXPENSE_ACCOUNTS + ("sales", "2307_received", "2307_issued")
@@ -17,8 +18,6 @@ REVIEW_REASONS = (
     "tendered_less_than_total", "ewt_expected", "payment_source_unknown", "payment_unverified",
     "duplicate_invoice_number", "personal_purchase",
 )
-# Shown on the document but never put it in the review queue or block a month close.
-SOFT_REASONS = frozenset({"payment_unverified"})
 _EWT_ACCOUNTS = frozenset({"rent", "professional_fees"})
 
 LOW_CONFIDENCE = 70.0
@@ -42,11 +41,6 @@ class CompanyProfile:
     fiscal_year_end_month: int
     is_withholding_agent: bool = False
     owner_names: tuple[str, ...] = ()     # owner / officers: a purchase in their name is personal
-
-
-def needs_review_for(reasons) -> bool:
-    """Whether these reasons put a document in the review queue (soft reasons alone don't)."""
-    return any(r not in SOFT_REASONS for r in reasons or ())
 
 
 def _name_score(name: str, company: CompanyProfile) -> float:
@@ -273,10 +267,7 @@ def classify_document(
         if ewt:
             reasons.append("ewt_expected")
             notes["ewt_expected"] = ewt
-    if category == "payroll" and ext.marked_paid:
-        reasons.append("payment_source_unknown")
-    if buying and ext.payment_terms == "credit":
-        reasons.append("payment_unverified")
+    reasons += payment_reasons(category, role, {"marked_paid": ext.marked_paid, "payment_terms": ext.payment_terms})
     if _amounts_dont_add_up(ext, vatable):
         reasons.append("amounts_dont_add_up")
 

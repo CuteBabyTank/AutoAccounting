@@ -1,4 +1,4 @@
-"""Keep receipt → invoice links up to date for a company (pure planning + one async apply)."""
+"""Keep receipt → invoice links, and the payment review flags they clear, up to date for a company."""
 
 import uuid
 from dataclasses import dataclass
@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.accounting import AADocument
-from app.services.accounting.classify import needs_review_for
+from app.services.accounting.review_rules import needs_review_for, sync_payment_flags
 from app.services.accounting.books.receipts import DocRef, is_invoice, is_payment_receipt, match_receipts, party_key
 
 _PAYABLE = ("sales", "purchases", "expenses", "payroll")
@@ -68,4 +68,5 @@ async def relink_receipts(db: AsyncSession, company_id: uuid.UUID) -> None:
         if reasons != list(doc.review_reasons or []):
             doc.review_reasons = reasons
             doc.needs_review = needs_review_for(reasons)
+    sync_payment_flags(docs)  # a receipt now linked (or unlinked) is payment evidence for its invoice
     await db.flush()

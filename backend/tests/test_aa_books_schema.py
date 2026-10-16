@@ -25,3 +25,11 @@ def test_existing_databases_get_every_new_column():
     ):
         assert f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} " in sql, (table, column)
     assert "CREATE INDEX IF NOT EXISTS ix_aa_documents_settles_document_id" in sql
+
+
+def test_bank_columns_exist_on_models_and_existing_databases():
+    assert "bank_account_no" in AAAccount.__table__.columns.keys()
+    assert "review_flags" in AACompany.__table__.columns.keys()
+    sql = "\n".join(column_statements())
+    assert "ALTER TABLE aa_accounts ADD COLUMN IF NOT EXISTS bank_account_no " in sql
+    assert "ALTER TABLE aa_companies ADD COLUMN IF NOT EXISTS review_flags " in sql

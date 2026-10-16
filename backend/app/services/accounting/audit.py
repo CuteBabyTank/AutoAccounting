@@ -16,7 +16,7 @@ from app.models.accounting import AAAuditEvent
 
 ENTITIES = frozenset({
     "company", "document", "account", "journal_entry", "books_month", "period", "output", "asset", "employee",
-    "atc", "upload",
+    "atc", "upload", "bank_statement", "bank_line", "bank_rule", "bank_reconciliation",
 })
 REASON_MAX = 500
 _CENTS = Decimal("0.01")

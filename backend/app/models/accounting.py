@@ -81,6 +81,8 @@ class AACompany(Base):
     # Set when a field that changes the returns is edited (not pin/aliases): outputs older than this are stale.
     facts_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Company-level review flags: {"opening_balance_missing": {account code: {date, statement, books}}}
+    review_flags: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -360,6 +362,8 @@ class AAAccount(Base):
     parent_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
     system_key: Mapped[str | None] = mapped_column(String(40), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # A bank account's number as printed on its statements (statements are matched on the last 4 digits).
+    bank_account_no: Mapped[str] = mapped_column(String(40), nullable=False, default="", server_default="")
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -468,3 +472,121 @@ class AAAuditEvent(Base):
     before: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)   # changed fields only
     after: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class AABankStatement(Base):
+    """One bank statement document: header facts and whether its running balance ties."""
+
+    __tablename__ = "aa_bank_statements"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_documents.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    account_code: Mapped[str] = mapped_column(String(10), nullable=False, default="")   # "" = not resolved yet
+    account_number: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    bank_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    opening_balance: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    closing_balance: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    ties: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    tie_breaks: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)      # line numbers that don't tie
+    created_at: Mapped[datetime] = _created()
+
+
+class AABankLine(Base):
+    """One statement line and what it was matched to (a document's payment, a posting, a filed return …)."""
+
+    __tablename__ = "aa_bank_lines"
+    __table_args__ = (Index("ix_aa_bank_lines_account_date", "company_id", "account_code", "line_date"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    statement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_bank_statements.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    account_code: Mapped[str] = mapped_column(String(10), nullable=False, default="")
+    line_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    line_date: Mapped[date] = mapped_column(Date, nullable=False)
+    amount: Mapped[Decimal] = _money()          # signed: + money into the account, − money out
+    balance: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    narration: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    check_no: Mapped[str] = mapped_column(String(30), nullable=False, default="")
+    # unmatched | ambiguous | suggested | matched (by the matcher) | confirmed (by a person) | excluded
+    match_status: Mapped[str] = mapped_column(String(12), nullable=False, default="unmatched")
+    match_kind: Mapped[str] = mapped_column(String(12), nullable=False, default="")   # document | posting | tax | journal
+    matched_ref: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    match_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    posting: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)        # {account, kind, label}
+    candidates: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    rejected: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)       # refs a person said no to
+    review_reason: Mapped[str] = mapped_column(String(30), nullable=False, default="")
+    matched_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class AABankRule(Base):
+    """"Narration contains X → payee Z / account Y", learned from confirmed matches (the bank side of the
+    supplier databank)."""
+
+    __tablename__ = "aa_bank_rules"
+    __table_args__ = (UniqueConstraint("company_id", "pattern", "direction", "kind", name="uq_aa_bank_rule"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    pattern: Mapped[str] = mapped_column(String(80), nullable=False)
+    direction: Mapped[str] = mapped_column(String(3), nullable=False, default="any")   # in | out | any
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)                       # payee | posting
+    account_code: Mapped[str] = mapped_column(String(10), nullable=False, default="")
+    payee_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    payee_tin: Mapped[str] = mapped_column(String(9), nullable=False, default="")
+    hits: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    updated_at: Mapped[datetime] = _updated()
+
+
+class AABankReconciliation(Base):
+    """A bank account reconciled for one month: statement vs book balance, uncleared items, report PDF."""
+
+    __tablename__ = "aa_bank_reconciliations"
+    __table_args__ = (Index("ix_aa_bank_recs_account", "company_id", "account_code", "month_start"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    account_code: Mapped[str] = mapped_column(String(10), nullable=False)
+    month_start: Mapped[date] = mapped_column(Date, nullable=False)
+    month_end: Mapped[date] = mapped_column(Date, nullable=False)
+    statement_balance: Mapped[Decimal] = _money()
+    book_balance: Mapped[Decimal] = _money()
+    uncleared: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    file_path: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    reconciled_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reconciled_at: Mapped[datetime] = _created()
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

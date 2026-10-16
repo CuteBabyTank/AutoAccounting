@@ -53,6 +53,7 @@ _STANDARD = (
     ("4010", "Sales", "income", False, "sales"),
     ("4020", "Sales returns and discounts", "income", True, "sales_returns"),
     ("4100", "Other income", "income", False, "other_income"),
+    ("4110", "Interest income", "income", False, "interest_income"),
     ("5010", "Purchases", "cost", False, "doc:purchases"),
     ("5020", "Raw materials", "cost", False, "doc:raw_materials"),
     ("5030", "Importations", "cost", False, "doc:importation"),
@@ -70,6 +71,7 @@ _STANDARD = (
     ("6100", "Depreciation", "expense", False, "depreciation"),
     ("6110", "Percentage tax", "expense", False, "pt_expense"),
     ("6120", "Non-creditable input VAT", "expense", False, "input_vat_expense"),
+    ("6130", "Bank charges", "expense", False, "bank_charges"),
     ("6900", "Miscellaneous expenses", "expense", False, "doc:other"),
     ("7010", "Income tax expense", "expense", False, "income_tax"),
 )
@@ -111,6 +113,10 @@ class Chart:
             return self._by_key[system_key]
         except KeyError:
             raise KeyError(f"The chart of accounts has no account for {system_key!r}") from None
+
+    def code_or(self, system_key: str, fallback_key: str) -> str:
+        """The account for a key added after a chart was seeded (its code may have been taken), else the fallback."""
+        return self._by_key.get(system_key) or self.code(fallback_key)
 
     def name(self, code: str) -> str:
         account = self._by_code.get(code)

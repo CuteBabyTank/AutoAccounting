@@ -28,3 +28,29 @@ Not done: existing documents are not re-classified (old `vat_math_mismatch` docs
 Review fixes (2026-10-17): `tendered_less_than_total` compares against the total net of withholding (an OR's
 "amount received" after the payer's EWT is not short); month close no longer counts reviewed documents as open
 reviews (`closing.open_review_query`), so a reviewed `ewt_expected` / `payment_source_unknown` doc can't block it.
+
+## 02 Audit log (2026-10-17)
+
+Plan: `2026-10-16-qbo-02-audit-log.md` (Decisions section there).
+
+Shipped:
+- `aa_audit_events` (firm, company, user + email snapshot, at, entity, entity_id, label, action, before/after with
+  changed fields only, reason). FORCE RLS, append-only: SELECT and INSERT policies only (checked with a NOBYPASSRLS
+  role: other firms and unbound sessions see 0 rows, UPDATE/DELETE affect 0 rows).
+- `services/accounting/audit.py`: `json_safe`, `snapshot`, `diff`, `record` (adds to the request session, commits with
+  the change), `document_action`, label helpers.
+- Events from every mutating route in `routers/accounting*.py`: company create/update, upload confirm, document edit /
+  mark reviewed (with the accepted flags) / exclude / include / move / delete / keep both / supplier-rule moves, chart
+  account create/update, JE create/update/delete, month close/reopen/bind, quarter and annual inputs / filed / per-form
+  filed, version generated, assets, employees (incl. sheet import), ATC databank.
+- Optional `reason` on document PATCH, keep-both and reopen month.
+- `GET /api/accounting/audit-events` (company, user, Manila date range, entity, entity_id; limit/offset; distinct
+  users for the filter).
+- UI: document panel Details | History tab; per-company "Audit log" in the folder tree (person / kind / date filters,
+  Load more, Hint, tour line); reason prompts on Mark reviewed, Exclude, Keep both, Reopen.
+
+Tests: 593 → 608 passing. Gates: pytest, ruff, lint, tsc, build all green.
+
+Not done: system side effects (receipt relinking, duplicate re-flagging, background extraction) are not logged; team
+and admin routers (staff/roles/billing) are outside accounting data and not logged; contact merges wait for
+workstream 04 (call `audit.record`).

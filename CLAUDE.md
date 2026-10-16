@@ -80,6 +80,7 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
 - **CORS middleware must be added LAST** in `main.py` so it wraps everything and answers preflight.
 - **Abuse middleware** blocks empty User-Agent always and bot UAs (`curl`, `python-requests`…) in prod; skips `/api/health` + `OPTIONS`.
 - **In-memory rate limiters** are per instance; N instances ≈ N× the limit.
+- **Review reasons:** set `needs_review` with `review_rules.needs_review_for(reasons)`, never `bool(reasons)`: soft reasons (`payment_unverified`) show but don't queue or block close. Per-reason details go in `aa_documents.review_notes`. Payment flags (`payment_source_unknown`, `payment_unverified`) are cleared by `review_rules.sync_payment_flags(docs, paid_ids)` (called from `relink_receipts`); bank matching passes its matched document ids as `paid_ids`. A VAT mismatch claims 12% and posts the excess to `vat_difference` (1310).
 - **Spreadsheet output:** run every untrusted cell through `spreadsheet_safe.csv_safe` (formula injection).
 - **PDF templates** are calibrated comb-cell layouts (`forms/overlay.py`); re-calibrate when BIR revises a form.
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.

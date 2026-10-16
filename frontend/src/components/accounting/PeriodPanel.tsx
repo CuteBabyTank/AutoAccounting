@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CaretDown, CaretRight, FileXls, Spinner } from "@phosphor-icons/react";
 import OutputViewer from "@/components/accounting/OutputViewer";
 import PrepareReturns from "@/components/accounting/PrepareReturns";
+import Hint from "@/components/guide/Hint";
+import PageGuide from "@/components/guide/PageGuide";
+import { GUIDES, useGuide } from "@/lib/guides";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import type { PayrollMonth, Period, PeriodInputs } from "@/types/accounting";
@@ -90,6 +93,7 @@ export default function PeriodPanel({ companyId, year, quarter, refreshKey, onCh
   const newestSeen = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const guide = useGuide("quarter");
 
   const apply = useCallback((p: Period) => {
     setPeriod(p);
@@ -173,8 +177,22 @@ export default function PeriodPanel({ companyId, year, quarter, refreshKey, onCh
 
   return (
     <div className="mb-5 rounded-xl border border-[var(--border)] p-4">
+      <PageGuide compact open={guide.open} onClose={guide.dismiss} title="Preparing this quarter" steps={GUIDES.quarter} />
       <div className="flex flex-wrap items-center gap-3">
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${chip.cls}`}>{chip.text}</span>
+        <span className="flex items-center gap-1">
+          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${chip.cls}`}>{chip.text}</span>
+          <Hint align="right">
+            <span className="block"><b>Collecting</b>: documents are coming in; nothing generated yet.</span>
+            <span className="block"><b>Generated</b>: returns are ready to download.</span>
+            <span className="block"><b>Stale</b>: something changed since that version, so generate again.</span>
+            <span className="block"><b>Filed</b>: you marked it submitted to the BIR.</span>
+          </Hint>
+        </span>
+        {!guide.open && (
+          <button onClick={guide.toggle} className="text-xs font-medium text-[var(--accent)] hover:underline">
+            How to prepare a quarter
+          </button>
+        )}
         {due && <span className="text-xs text-[var(--text-secondary)]">{due}</span>}
         <div className="ml-auto flex flex-wrap gap-2">
           <button className={BTN} onClick={() => setShowInputs((s) => !s)}>

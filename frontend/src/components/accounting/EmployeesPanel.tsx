@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
 import type { Employee, EmployeeData, EmployeesYear, PayrollPreview } from "@/types/accounting";
@@ -108,7 +109,13 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
   return (
     <div className="mb-6">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h2 className="text-base font-semibold text-[var(--text-primary)]">Employees · {year}</h2>
+        <h2 className="text-base font-semibold text-[var(--text-primary)]">
+          Employees · {year}{" "}
+          <Hint align="right">
+            Import the payroll register (Excel or CSV) and match its columns once. We build the 1604-C alphalist and each
+            employee&apos;s 2316 from it. Anything flagged needs a fix before the year-end deadline.
+          </Hint>
+        </h2>
         <span className="text-xs text-[var(--text-secondary)]">1604-C alphalist and 2316s due {data.due}</span>
         <div className="ml-auto flex flex-wrap gap-2">
           {canManage && (

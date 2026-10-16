@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import BookMonths from "@/components/accounting/BookMonths";
@@ -107,7 +108,14 @@ export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndM
   return (
     <div className="mb-6">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h2 className="text-base font-semibold text-[var(--text-primary)]">Books · FY {year}</h2>
+        <h2 className="text-base font-semibold text-[var(--text-primary)]">
+          Books · FY {year}{" "}
+          <Hint align="right">
+            Your client&apos;s BIR loose-leaf books. Filed documents post to the journals automatically; add manual entries
+            (accruals, adjustments) below. Months close in order, and only once their documents are reviewed. Changes to a
+            closed month post as corrections.
+          </Hint>
+        </h2>
         <span className="text-xs text-[var(--text-secondary)]">Books start {booksStart}. Journals, ledger and trial balance are in each quarter&apos;s workbook.</span>
         <button className={`${BTN} ml-auto`} onClick={() => setShowChart((s) => !s)}>{showChart ? "Hide" : "Chart of accounts"}</button>
       </div>

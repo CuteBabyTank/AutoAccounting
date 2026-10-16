@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { UserPlus } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
+import Hint from "@/components/guide/Hint";
+import PageGuide, { GuideButton } from "@/components/guide/PageGuide";
+import { GUIDES, useGuide } from "@/lib/guides";
 import { teamApi } from "@/lib/api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import { roleLabel } from "@/lib/roles";
@@ -18,6 +21,7 @@ export default function TeamPage() {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const guide = useGuide("team");
 
   const load = useCallback(async () => {
     try {
@@ -62,21 +66,36 @@ export default function TeamPage() {
   return (
     <div className="lp relative min-h-screen">
       <div className="p-4 sm:p-8 max-w-5xl page-enter">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-[var(--text-primary)]">Team</h1>
-          <p className="mt-1 text-sm text-[var(--text-secondary)]">
-            {usage?.organization_name ? `${usage.organization_name} · ` : ""}People who can work on your firm&apos;s clients.
-          </p>
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          <div className="mr-auto">
+            <h1 className="text-2xl font-bold text-[var(--text-primary)]">Team</h1>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              {usage?.organization_name ? `${usage.organization_name} · ` : ""}People who can work on your firm&apos;s clients.
+            </p>
+          </div>
+          <GuideButton open={guide.open} onClick={guide.toggle} />
         </div>
+
+        <PageGuide open={guide.open} onClose={guide.dismiss} title="Adding your team" steps={GUIDES.team} />
 
         {usage && (
           <div className="mb-6 grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
-              <p className="text-xs text-[var(--text-secondary)]">Pages extracted in {MONTHS[usage.month - 1]}</p>
+              <p className="flex items-center gap-1 text-xs text-[var(--text-secondary)]">
+                Pages extracted in {MONTHS[usage.month - 1]}
+                <Hint align="right">Every page our AI reads counts once, across everyone in your firm. Duplicates you drop again aren&apos;t counted.</Hint>
+              </p>
               <p className="mt-1 text-2xl font-semibold text-[var(--text-primary)]">{usage.pages_used.toLocaleString()}</p>
             </div>
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
-              <p className="text-xs text-[var(--text-secondary)]">Prepaid budget</p>
+              <p className="flex items-center gap-1 text-xs text-[var(--text-secondary)]">
+                Prepaid budget
+                <Hint align="right">
+                  {usage.billing_enabled
+                    ? "Each extracted page is paid from this balance. Uploads pause at ₱0 until it's topped up."
+                    : "Uploads are free right now, so there's no budget to watch."}
+                </Hint>
+              </p>
               <p className="mt-1 text-2xl font-semibold text-[var(--text-primary)]">
                 {usage.billing_enabled ? `₱${formatPeso(usage.budget)}` : "Not billed"}
               </p>
@@ -115,7 +134,9 @@ export default function TeamPage() {
             <thead>
               <tr className="text-left text-xs text-[var(--text-secondary)]">
                 <th className="px-4 py-3 font-medium">Member</th>
-                <th className="px-4 py-3 font-medium">Role</th>
+                <th className="px-4 py-3 font-medium">
+                  Role <Hint>Employees upload and review documents. Managers can also add and edit companies and manage employees. Deactivated members keep their account but can&apos;t sign in.</Hint>
+                </th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3" />
               </tr>
@@ -164,7 +185,7 @@ export default function TeamPage() {
               {members.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-4 py-8 text-center text-sm text-[var(--text-secondary)]">
-                    No members yet. Add a colleague by email above.
+                    Just you so far. Ask a colleague to sign in with Google once, then add their email above.
                   </td>
                 </tr>
               )}

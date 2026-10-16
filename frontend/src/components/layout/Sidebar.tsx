@@ -16,11 +16,13 @@ import {
   Check,
   X,
   List,
+  Question,
 } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "next-themes";
 import type { UserRole } from "@/types";
 import { HOMEPAGE, roleLabel } from "@/lib/roles";
+import { resetGuides } from "@/lib/guides";
 import LogoMark from "@/components/layout/LogoMark";
 
 interface NavItem {
@@ -302,6 +304,18 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="px-[14px] pb-4">
         <div className="h-px mb-2 bg-[var(--border-sidebar)]" />
+        <button
+          onClick={() => {
+            resetGuides();
+            setDrawerOpen(false);
+          }}
+          aria-label="Show guides"
+          title="Bring back every page guide you've hidden"
+          className="aa-item nav-press flex items-center gap-3 w-full h-10 px-3 rounded-xl text-sm whitespace-nowrap overflow-hidden text-[var(--text-sidebar-muted)] hover:text-[var(--text-sidebar)]"
+        >
+          <Question size={20} weight="light" className="shrink-0" />
+          <span style={fade(lastRow)} className="aa-fade">Show guides</span>
+        </button>
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           aria-label={theme === "dark" ? "Light mode" : "Dark mode"}

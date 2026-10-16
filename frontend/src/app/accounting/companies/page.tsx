@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass, Plus, PushPin } from "@phosphor-icons/react";
 import CompanyForm from "@/components/accounting/CompanyForm";
+import Hint from "@/components/guide/Hint";
+import PageGuide, { GuideButton } from "@/components/guide/PageGuide";
+import { GUIDES, useGuide } from "@/lib/guides";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatTin } from "@/lib/accounting-format";
 import { useAuth } from "@/lib/auth";
@@ -23,6 +26,7 @@ export default function AccountingCompaniesPage() {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Company | "new" | null>(null);
   const [error, setError] = useState("");
+  const guide = useGuide("companies");
 
   const load = useCallback(async () => {
     try {
@@ -65,12 +69,13 @@ export default function AccountingCompaniesPage() {
     <div className="lp relative min-h-screen">
       <div className="p-4 sm:p-8 max-w-6xl page-enter">
         <div className="mb-6 flex flex-wrap items-center gap-3">
-          <div className="mr-auto">
+          <div className="mr-auto min-w-[16rem] flex-1">
             <h1 className="text-2xl font-bold text-[var(--text-primary)]">Companies</h1>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
               Your firm&apos;s client databank. Dropped documents are matched against these by TIN and name.
             </p>
           </div>
+          <GuideButton open={guide.open} onClick={guide.toggle} />
           <label className="relative">
             <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
             <input
@@ -90,6 +95,8 @@ export default function AccountingCompaniesPage() {
           )}
         </div>
 
+        <PageGuide open={guide.open} onClose={guide.dismiss} title="How Companies works" steps={GUIDES.companies} />
+
         {error && (
           <div className="mb-4 rounded-lg border border-[var(--alert-error-border)] bg-[var(--alert-error-bg)] px-4 py-2 text-sm text-[var(--alert-error-text)]">
             {error}
@@ -101,10 +108,16 @@ export default function AccountingCompaniesPage() {
             <thead>
               <tr className="text-left text-xs text-[var(--text-secondary)]">
                 <th className="px-4 py-3 font-medium">Company</th>
-                <th className="px-4 py-3 font-medium">TIN</th>
+                <th className="px-4 py-3 font-medium">
+                  TIN <Hint>The 9-digit tax ID plus the branch code (000 for the head office). This is how dropped documents are matched to the company.</Hint>
+                </th>
                 <th className="px-4 py-3 font-medium">Type</th>
-                <th className="px-4 py-3 font-medium">Tax</th>
-                <th className="px-4 py-3 font-medium">FY ends</th>
+                <th className="px-4 py-3 font-medium">
+                  Tax <Hint>VAT clients file the 2550-Q. Non-VAT clients file the 2551-Q percentage tax, unless they chose the 8% income tax rate, which replaces it.</Hint>
+                </th>
+                <th className="px-4 py-3 font-medium">
+                  FY ends <Hint align="left">The last month of the client&apos;s fiscal year. Quarters and the annual return follow it, so a June year-end makes July–September Q1.</Hint>
+                </th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -152,7 +165,9 @@ export default function AccountingCompaniesPage() {
           {!loading && filtered.length === 0 && (
             <p className="px-4 py-10 text-center text-sm text-[var(--text-secondary)]">
               {companies.length === 0
-                ? "No companies yet. Add one here, or drop documents on the Documents page and add them from the prompt."
+                ? canManage
+                  ? "No clients yet. Click Add company, or just drop their documents on the Documents page and add the company when we ask."
+                  : "No clients yet. A manager or the firm owner adds them, or they're created when documents are dropped."
                 : "No company matches your search."}
             </p>
           )}

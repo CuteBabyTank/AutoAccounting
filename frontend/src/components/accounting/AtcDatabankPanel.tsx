@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
+import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { ACCOUNT_LABELS, EWT_ATC_OPTIONS, apiErrorMessage } from "@/lib/accounting-format";
 import type { AtcDatabank } from "@/types/accounting";
@@ -70,7 +71,13 @@ export default function AtcDatabankPanel({ companyId, companyName, onChanged }: 
   return (
     <div className="mb-6">
       <div className="mb-1 flex flex-wrap items-center gap-2">
-        <h2 className="text-base font-semibold text-[var(--text-primary)]">ATC databank · {companyName}</h2>
+        <h2 className="text-base font-semibold text-[var(--text-primary)]">
+          ATC databank · {companyName}{" "}
+          <Hint align="right">
+            An ATC (alphanumeric tax code) is the BIR code for a kind of payment, and it sets the withholding rate. It decides
+            what goes on the 0619-E, the 1601-EQ and the 2307s you issue to suppliers.
+          </Hint>
+        </h2>
       </div>
       <p className="mb-4 text-xs text-[var(--text-secondary)]">
         Set each supplier&apos;s ATC once and every document from them uses it. A document&apos;s own ATC wins, then the

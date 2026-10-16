@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
+import Hint from "@/components/guide/Hint";
+import PageGuide, { GuideButton } from "@/components/guide/PageGuide";
+import { GUIDES, useGuide } from "@/lib/guides";
 import { adminApi } from "@/lib/api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import { roleLabel } from "@/lib/roles";
@@ -18,6 +21,7 @@ export default function AdminPage() {
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const guide = useGuide("admin");
 
   const load = useCallback(async () => {
     try {
@@ -118,12 +122,17 @@ export default function AdminPage() {
   return (
     <div className="lp min-h-screen">
       <div className="px-4 sm:px-10 pt-6 sm:pt-8 pb-12 max-w-6xl page-enter">
-        <header className="mb-8">
-          <h1 className="text-[22px] font-semibold tracking-tight text-[var(--lp-text)]">Platform admin</h1>
-          <p className="mt-1 text-sm text-[var(--lp-muted)]">
-            New sign-ups wait here as unverified. Turn one into a firm, or attach them to an existing firm.
-          </p>
+        <header className="mb-8 flex flex-wrap items-center gap-3">
+          <div className="mr-auto">
+            <h1 className="text-[22px] font-semibold tracking-tight text-[var(--lp-text)]">Platform admin</h1>
+            <p className="mt-1 text-sm text-[var(--lp-muted)]">
+              New sign-ups wait here as unverified. Turn one into a firm, or attach them to an existing firm.
+            </p>
+          </div>
+          <GuideButton open={guide.open} onClick={guide.toggle} />
         </header>
+
+        <PageGuide open={guide.open} onClose={guide.dismiss} title="Running the platform" steps={GUIDES.admin} />
 
         {error && (
           <div className="mb-6 rounded-xl border border-[var(--alert-error-border)] bg-[var(--alert-error-bg)] px-4 py-2.5 text-sm text-[var(--alert-error-text)]">
@@ -188,10 +197,14 @@ export default function AdminPage() {
               <thead>
                 <tr className="text-left text-[11px] text-[var(--lp-muted)]">
                   <th className="px-3 pt-2 pb-2.5 font-medium">Account</th>
-                  <th className="px-3 pt-2 pb-2.5 font-medium">Role</th>
+                  <th className="px-3 pt-2 pb-2.5 font-medium">
+                    Role <Hint align="right">Firm owner runs a firm and its Team page. Manager and Employee join an existing firm (you&apos;ll be asked which). Unverified sees nothing until you choose.</Hint>
+                  </th>
                   <th className="px-3 pt-2 pb-2.5 font-medium">Firm</th>
                   <th className="px-3 pt-2 pb-2.5 font-medium text-right">Pages this month</th>
-                  <th className="px-3 pt-2 pb-2.5 font-medium text-right">Budget</th>
+                  <th className="px-3 pt-2 pb-2.5 font-medium text-right">
+                    Budget <Hint align="left">Prepaid pesos per firm. Only used while a price per page is set; Top up adds, Deduct removes, Set overwrites.</Hint>
+                  </th>
                   <th className="px-3 pt-2 pb-2.5"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>

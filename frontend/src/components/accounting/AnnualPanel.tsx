@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CaretDown, CaretRight, FileXls, Plus, Spinner, Trash } from "@phosphor-icons/react";
 import OutputViewer from "@/components/accounting/OutputViewer";
+import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatAmount } from "@/lib/accounting-format";
 import type { AnnualInputs, AnnualPeriod, Asset, OpeningRow } from "@/types/accounting";
@@ -265,7 +266,12 @@ export default function AnnualPanel({ companyId, companyName, year, refreshKey, 
     <div className="mb-5 rounded-xl border border-[var(--border)] p-4">
       <div className="mb-3">
         <h2 className="text-base font-semibold text-[var(--text-primary)]">
-          {companyName} — FY {year} annual return ({FORM_NAMES[period.form] ?? period.form})
+          {companyName} — FY {year} annual return ({FORM_NAMES[period.form] ?? period.form}){" "}
+          <Hint align="right">
+            Generate this after the last quarter is in. It adds up all four quarters, subtracts the income tax already paid
+            on the quarterly returns, and uses the asset register for depreciation. Fill in anything the documents can&apos;t
+            show below, then generate and file as you would a quarter.
+          </Hint>
         </h2>
         <p className="text-xs text-[var(--text-secondary)]">
           Built from all four quarters&apos; documents ({period.document_count}), the asset register and the carry-overs.

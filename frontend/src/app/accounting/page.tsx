@@ -17,7 +17,12 @@ import PeriodPanel from "@/components/accounting/PeriodPanel";
 import AppendPrompt from "@/components/accounting/AppendPrompt";
 import UploadReviewDialog from "@/components/accounting/UploadReviewDialog";
 import DuplicateBanner from "@/components/accounting/DuplicateBanner";
+import GettingStarted from "@/components/guide/GettingStarted";
+import Hint from "@/components/guide/Hint";
+import PageGuide, { GuideButton } from "@/components/guide/PageGuide";
 import { accountingApi } from "@/lib/accounting-api";
+import { teamApi } from "@/lib/api";
+import { GUIDES, useGuide } from "@/lib/guides";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import { useAuth } from "@/lib/auth";
 import type {
@@ -55,6 +60,9 @@ export default function AccountingPage() {
   const [error, setError] = useState("");
   const [append, setAppend] = useState<AffectedPeriod[] | null>(null);
   const [periodRefresh, setPeriodRefresh] = useState(0);
+  const [memberCount, setMemberCount] = useState<number | null>(null);
+  // The getting-started checklist covers first visits here; this guide opens from its button.
+  const guide = useGuide("documents", { autoOpen: false });
 
   useEffect(() => {
     try {
@@ -83,6 +91,12 @@ export default function AccountingPage() {
   useEffect(() => {
     Promise.all([loadCompanies(), loadTree()]).catch((e) => setError(apiErrorMessage(e, "Couldn't load your documents")));
   }, [loadCompanies, loadTree]);
+
+  // Only for the getting-started checklist; platform admins outside a firm get an error and skip that step.
+  useEffect(() => {
+    if (!canManage) return;
+    teamApi.members().then((m) => setMemberCount(m.length)).catch(() => setMemberCount(null));
+  }, [canManage]);
 
   // Resume a drop that is still waiting for company confirmation (e.g. after "Decide later" + reload).
   useEffect(() => {
@@ -208,12 +222,13 @@ export default function AccountingPage() {
     <div className="lp relative min-h-screen">
       <div className="p-4 sm:p-8 page-enter">
         <div className="mb-6 flex flex-wrap items-center gap-3">
-          <div className="mr-auto">
+          <div className="mr-auto min-w-[16rem] flex-1">
             <h1 className="text-2xl font-bold text-[var(--text-primary)]">Documents</h1>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
               Drop a client&apos;s receipts and invoices. They&apos;re matched to the company and filed by quarter.
             </p>
           </div>
+          <GuideButton open={guide.open} onClick={guide.toggle} />
           <label className="relative">
             <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
             <input
@@ -223,8 +238,24 @@ export default function AccountingPage() {
               className="w-64 rounded-full border border-[var(--border)] bg-[var(--bg-secondary)] py-1.5 pl-8 pr-3 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
             />
           </label>
-          <CompanyPicker companies={companies} value={picker} onChange={choosePicker} />
+          <div className="flex items-center gap-1">
+            <CompanyPicker companies={companies} value={picker} onChange={choosePicker} />
+            <Hint align="left">
+              Auto-detect reads each document&apos;s TIN and name to find the company. Pick a company instead when every file
+              you&apos;re about to drop belongs to one client; it&apos;s filled in for you when you confirm.
+            </Hint>
+          </div>
         </div>
+
+        <PageGuide open={guide.open} onClose={guide.dismiss} title="How Documents works" steps={GUIDES.documents} />
+        <GettingStarted
+          tree={tree}
+          canManage={canManage}
+          memberCount={memberCount}
+          onAddCompany={() => setCompanyForm({})}
+          onUpload={open}
+          onOpenQuarter={(q, companyId) => setSelected({ companyId, year: q.year, quarter: q.quarter })}
+        />
 
         {error && (
           <div className="mb-4 rounded-lg border border-[var(--alert-error-border)] bg-[var(--alert-error-bg)] px-4 py-2 text-sm text-[var(--alert-error-text)]">
@@ -334,7 +365,9 @@ export default function AccountingPage() {
             ) : selected?.quarter === 0 || selected?.view ? null : (
               <>
                 <p className="py-10 text-center text-sm text-[var(--text-secondary)]">
-                  Pick a quarter on the left, or drop documents to get started.
+                  {tree.length === 0
+                    ? "Nothing filed yet. Drop a client's documents below and they'll show up on the left, sorted by company and quarter."
+                    : "Open a company on the left and pick a quarter to see its documents and returns."}
                 </p>
                 <AlphalistChecklist onOpen={(companyId, year) => setSelected({ companyId, year, quarter: null, view: "employees" })} />
               </>

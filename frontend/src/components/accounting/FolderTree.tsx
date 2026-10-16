@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Buildings, CaretDown, CaretRight, Plus } from "@phosphor-icons/react";
+import Hint from "@/components/guide/Hint";
 import type { FolderRef, TreeAnnual, TreeCompany } from "@/types/accounting";
 
 interface Props {
@@ -117,6 +118,18 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
       )}
       {tree.length === 0 && (
         <p className="px-2 py-3 text-sm text-[var(--text-secondary)]">No companies yet. Drop documents or add a company.</p>
+      )}
+      {tree.length > 0 && (
+        <p className="mt-2 flex items-center gap-1 px-2 text-xs text-[var(--text-secondary)]">
+          What the badges mean
+          <Hint align="right">
+            <span className="block"><b className="text-[var(--badge-yellow-text)]">3</b> documents to review</span>
+            <span className="block"><b className="text-[var(--badge-blue-text)]">v2</b> returns generated (version 2)</span>
+            <span className="block"><b className="text-[var(--badge-yellow-text)]">Stale</b> changed since the last version; generate again</span>
+            <span className="block"><b className="text-[var(--badge-green-text)]">Filed</b> marked as filed with the BIR</span>
+            <span className="mt-1 block">Books, Employees and the ATC databank show up once a company has books or payroll set up.</span>
+          </Hint>
+        </p>
       )}
       {canManage && (
         <button onClick={onAddCompany} className="mt-3 flex items-center gap-1.5 px-2 text-sm font-semibold text-[var(--accent)]">

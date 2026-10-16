@@ -54,3 +54,7 @@ Tests: 593 → 608 passing. Gates: pytest, ruff, lint, tsc, build all green.
 Not done: system side effects (receipt relinking, duplicate re-flagging, background extraction) are not logged; team
 and admin routers (staff/roles/billing) are outside accounting data and not logged; contact merges wait for
 workstream 04 (call `audit.record`).
+
+Review fixes (2026-10-17): `json_safe` writes Decimals with at least two places, so re-sending an amount as "1000"
+against a stored 1000.00 (documents, asset cost) no longer writes a no-op "Edited" event; `schema.py` adds
+`aa_audit_events.label` for databases created before that column existed. Tests 610 passing.

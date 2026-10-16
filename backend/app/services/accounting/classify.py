@@ -132,7 +132,9 @@ def _personal(ext: ExtractedDoc, company: CompanyProfile) -> bool:
 def _tendered_short(ext: ExtractedDoc) -> bool:
     if ext.change_amount < 0:
         return True
-    return ext.cash_tendered > 0 and ext.gross_amount > 0 and ext.cash_tendered < ext.gross_amount
+    # "Amount received" on an OR is net of the EWT the payer withheld: that is paid in full, not short.
+    due = ext.gross_amount - max(ext.withholding_amount, _ZERO)
+    return ext.cash_tendered > 0 and ext.gross_amount > 0 and ext.cash_tendered < due - _VAT_TOLERANCE
 
 
 def _ewt_note(ext: ExtractedDoc, account: str) -> dict | None:

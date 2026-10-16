@@ -24,3 +24,7 @@ Tests: 569 → 592 passing. Gates: pytest, ruff, lint, tsc, build all green.
 Not done: existing documents are not re-classified (old `vat_math_mismatch` docs keep input VAT disallowed);
 `payment_source_unknown` for BOC freight/brokerage waits on the landed-cost CPA question; A/P aging display of
 `payment_unverified` belongs to workstream 04.
+
+Review fixes (2026-10-17): `tendered_less_than_total` compares against the total net of withholding (an OR's
+"amount received" after the payer's EWT is not short); month close no longer counts reviewed documents as open
+reviews (`closing.open_review_query`), so a reviewed `ewt_expected` / `payment_source_unknown` doc can't block it.

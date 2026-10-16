@@ -273,3 +273,27 @@ def test_payment_flags_follow_evidence():
     done = _doc(reviewed=True)
     sync_payment_flags([done])
     assert done.review_reasons == []          # never re-added to a reviewed document
+
+
+def test_amount_received_net_of_withholding_is_not_short():
+    # An OR printing "amount received" net of the EWT the payer withheld is fully paid, not short.
+    net = _classify(_ext(gross_amount=Decimal("112000.00"), vatable_amount=Decimal("100000.00"),
+                         vat_amount=Decimal("12000.00"), withholding_amount=Decimal("2000.00"),
+                         cash_tendered=Decimal("110000.00")))
+    assert "tendered_less_than_total" not in net["review_reasons"]
+    short = _classify(_ext(gross_amount=Decimal("112000.00"), vatable_amount=Decimal("100000.00"),
+                           vat_amount=Decimal("12000.00"), withholding_amount=Decimal("2000.00"),
+                           cash_tendered=Decimal("100000.00")))
+    assert "tendered_less_than_total" in short["review_reasons"]
+
+
+def test_month_close_ignores_reviewed_documents():
+    # A reviewed document keeps its reasons (and needs_review) for the record; it must not block the close.
+    from datetime import date as d
+    import uuid
+
+    from app.services.accounting.books.closing import open_review_query
+
+    sql = str(open_review_query(uuid.uuid4(), d(2026, 10, 1), d(2026, 10, 31)).compile())
+    assert "aa_documents.reviewed IS false" in sql and "aa_documents.needs_review IS true" in sql
+    assert "aa_documents.excluded IS false" in sql and "aa_documents.deleted_at IS NULL" in sql

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
+import FirmPicker from "@/components/admin/FirmPicker";
 import Hint from "@/components/guide/Hint";
 import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
 import { ADMIN_TOUR } from "@/components/guide/tours";
@@ -23,6 +24,7 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const guide = useGuide("admin");
+  const [assigning, setAssigning] = useState<{ account: Account; role: "manager" | "employee" } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -73,18 +75,7 @@ export default function AdminPage() {
         setError("Create a firm first, then assign members to it.");
         return;
       }
-      const current = a.enterprise_id ?? firms[0].id;
-      const choice = window.prompt(
-        `Firm for ${a.email}:\n${firms.map((f, i) => `${i + 1}. ${f.organization_name || f.email}`).join("\n")}`,
-        String(Math.max(1, firms.findIndex((f) => f.id === current) + 1)),
-      );
-      if (choice === null) return;
-      const firm = firms[Number(choice) - 1];
-      if (!firm) {
-        setError("Pick a firm by its number.");
-        return;
-      }
-      run(() => adminApi.setRole(a.id, role, firm.id), "Couldn't change the role");
+      setAssigning({ account: a, role });
       return;
     }
     run(() => adminApi.setRole(a.id, role), "Couldn't change the role");
@@ -290,6 +281,21 @@ export default function AdminPage() {
           </div>
         </section>
       </div>
+
+      {assigning && (
+        <FirmPicker
+          account={assigning.account}
+          role={assigning.role}
+          firms={firms}
+          busy={busy}
+          onClose={() => setAssigning(null)}
+          onConfirm={(firmId) => {
+            const { account, role } = assigning;
+            setAssigning(null);
+            run(() => adminApi.setRole(account.id, role, firmId), "Couldn't change the role");
+          }}
+        />
+      )}
     </div>
   );
 }

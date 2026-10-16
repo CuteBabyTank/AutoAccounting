@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ComponentType } from "react";
+import { useEffect, useId, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, ArrowRight, CheckCircle, Question, X } from "@phosphor-icons/react";
 
@@ -18,6 +18,13 @@ interface Props {
   /** Shown above each slide title, e.g. "Documents". */
   label: string;
   slides: Slide[];
+}
+
+/** Keeps BIR form codes like "0619-E" or "1604-C" from breaking across lines at the hyphen. */
+function noBreakForms(text: string): ReactNode[] {
+  return text.split(/(\b\d{4}-[A-Z]{1,3}\b)/).map((part, i) =>
+    i % 2 ? <span key={i} className="whitespace-nowrap">{part}</span> : part,
+  );
 }
 
 /** Step-by-step walkthrough: an illustration on the left, the explanation on the right. */
@@ -84,13 +91,13 @@ export default function GuideTour({ open, onClose, label, slides }: Props) {
             <h2 id={titleId} className="mt-3 text-xl font-semibold tracking-tight text-[var(--lp-text)] sm:text-[22px]">
               {slide.title}
             </h2>
-            <p className="mt-2 text-sm leading-relaxed text-[var(--lp-muted)]">{slide.body}</p>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--lp-muted)]">{noBreakForms(slide.body)}</p>
             {slide.points && (
               <ul className="mt-5 space-y-2.5">
                 {slide.points.map((p) => (
                   <li key={p} className="flex gap-2.5 text-[13px] leading-relaxed text-[var(--lp-text)]">
                     <CheckCircle size={17} weight="fill" className="mt-0.5 shrink-0 text-[var(--lp-accent)]" />
-                    <span>{p}</span>
+                    <span>{noBreakForms(p)}</span>
                   </li>
                 ))}
               </ul>

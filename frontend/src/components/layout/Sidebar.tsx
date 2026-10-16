@@ -39,17 +39,17 @@ const FIRM: UserRole[] = ["admin", "enterprise", "manager", "employee"];
 
 const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   {
+    label: "Manage",
+    items: [
+      { id: "admin", label: "Platform admin", icon: Crown, href: "/admin", roles: ["admin"] },
+      { id: "team", label: "Team", icon: UsersThree, href: "/team", roles: ["admin", "enterprise", "manager"] },
+    ],
+  },
+  {
     label: "Workspace",
     items: [
       { id: "documents", label: "Documents", icon: Files, href: "/accounting", roles: FIRM, exact: true },
       { id: "companies", label: "Companies", icon: Buildings, href: "/accounting/companies", roles: FIRM },
-    ],
-  },
-  {
-    label: "Manage",
-    items: [
-      { id: "team", label: "Team", icon: UsersThree, href: "/team", roles: ["admin", "enterprise", "manager"] },
-      { id: "admin", label: "Platform admin", icon: Crown, href: "/admin", roles: ["admin"] },
     ],
   },
 ];

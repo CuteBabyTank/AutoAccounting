@@ -136,7 +136,7 @@ export default function TeamPage() {
               <tr className="text-left text-xs text-[var(--text-secondary)]">
                 <th className="px-4 py-3 font-medium">Member</th>
                 <th className="px-4 py-3 font-medium">
-                  Role <Hint>Employees upload and review documents. Managers can also add and edit companies and manage employees. Deactivated members keep their account but can&apos;t sign in.</Hint>
+                  Role <Hint>Employees upload and review documents. Managers can also set up clients and add or deactivate staff. Deactivated members keep their account but can&apos;t sign in.</Hint>
                 </th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3" />

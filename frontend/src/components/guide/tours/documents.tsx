@@ -85,7 +85,7 @@ function DetectArt() {
           <span className="whitespace-nowrap font-semibold !text-[var(--lp-text)]">1 file</span>
           <span className="flex flex-col items-end gap-1 whitespace-nowrap">
             <span>Bayani Bakeshop</span>
-            <Pill tone="yellow">Not in your list</Pill>
+            <Pill tone="yellow">New: add company</Pill>
           </span>
         </div>
         <div className="flex justify-end gap-2 px-3.5 py-2.5">
@@ -340,7 +340,7 @@ export const INPUTS_SLIDE: Slide = {
     "Inventory, tax your client's customers withheld (2307s received), advance payments and other income.",
     "Most fields can stay blank. Carry-overs flow in from earlier quarters prepared on AutoAccounting.",
     "Clients with employees get monthly payroll totals here for the 1601-C.",
-    "Each field names the line on the BIR form it feeds, so you know where it lands.",
+    "Many fields show the form line they feed (for example 2550-Q item 16), so you know where each figure ends up.",
   ],
   Art: InputsArt,
 };
@@ -350,10 +350,10 @@ export const GENERATE_SLIDE: Slide = {
   title: "Generate the returns",
   body: "Click Generate and you get filled BIR forms plus an Excel workbook. Which forms depends on the client.",
   points: [
-    "VAT clients get the 2550-Q. Non-VAT clients get the 2551-Q, except individuals on the 8% rate.",
-    "Income tax: 1701-Q for individuals, 1702-Q for corporations and partnerships, in Q1–Q3. Q4 is covered by the annual return.",
-    "Employers add the monthly 1601-C. Withholding agents add the 0619-E and 1601-EQ, with their outgoing 2307s as a zip.",
-    "The workbook highlights what changed since the last version. Use Clean copy or Clean PDF for an unmarked file.",
+    "Business tax: 2550-Q for VAT-registered clients, 2551-Q for non-VAT (individuals on the 8% rate skip it).",
+    "Income tax in Q1–Q3: 1701-Q for individuals, 1702-Q for corporations and partnerships. Q4 goes on the annual return.",
+    "Clients who withhold from suppliers add the 0619-E, 1601-EQ and the 2307s to give those suppliers. Employers add the monthly 1601-C.",
+    "Download a form's PDF to file it, or the workbook to check the figures. Changes since the last version are highlighted; the Clean versions leave them out.",
   ],
   Art: GenerateArt,
 };
@@ -378,9 +378,9 @@ export const DOCUMENTS_TOUR: Slide[] = [
     body: "Drag files onto the Documents page or click Upload files. A whole month's pile can go in at once.",
     points: [
       "PDF, PNG and JPG. A PDF holding many receipts is split into separate documents.",
-      "Sales invoices, official receipts, supplier bills, BIR 2307s and payslips all go in the same place.",
-      "Keep Drop files for on Auto-detect, or pick a client when the whole batch is theirs.",
-      "A file you've already dropped is caught and skipped, and never charged twice.",
+      "Sales invoices, official receipts, supplier bills, BIR 2307s and payroll records all go in the same place.",
+      "Mixed clients in one batch? Leave \"Drop files for\" on Auto-detect. If every file is one client's, pick them there instead.",
+      "Drop the same file twice and the copy is skipped, so it isn't read or charged again.",
     ],
     Art: DropArt,
   },
@@ -390,21 +390,21 @@ export const DOCUMENTS_TOUR: Slide[] = [
     body: "Each document is matched to a company in your databank, and you confirm before anything is filed.",
     points: [
       "The TIN is matched first, then the registered name and any trade names you've saved as aliases.",
-      "Change a wrong match from the dropdown, or skip files that don't belong.",
-      "A client you don't have yet? Add them from the prompt with the name and TIN already filled in.",
-      "Decide later keeps the batch waiting. A banner on Documents brings it back.",
+      "Wrong match? Pick the right company from the dropdown beside the files, or skip files that don't belong.",
+      "New client? Add them right there. The name and TIN we read are filled in for you.",
+      "Not sure yet? Decide later keeps the batch waiting, and a banner on Documents takes you back to it.",
     ],
     Art: DetectArt,
   },
   {
     id: "extract",
     title: "Every figure, read off the page",
-    body: "AutoAccounting reads each document the way you would and turns it into a journal entry you can trace back.",
+    body: "Each document becomes a journal entry, and every figure in it points back to where it came from on the page.",
     points: [
-      "Supplier or customer, TIN, date, invoice number, VATable sales, VAT and total.",
+      "We read the supplier or customer, TIN, date, invoice number, VATable sales, VAT and total.",
       "Each document is sorted as sales, purchases, expenses, payroll, 2307 or support, and given an account.",
-      "The VAT math is checked: 12% of VATable sales, and every line has to add up to the total.",
-      "Fix a supplier's account once and later documents from them follow it.",
+      "The math is checked: VAT must be 12% of VATable sales, and the amounts must add up to the total.",
+      "Correct the account on one of a supplier's documents and their future documents use it too.",
     ],
     Art: ExtractArt,
   },
@@ -415,7 +415,7 @@ export const DOCUMENTS_TOUR: Slide[] = [
     points: [
       "Each document goes to the quarter its date falls in, following the client's fiscal year.",
       "No readable date? It waits in Undated until you set one.",
-      "Yellow number: documents to review. v1, v2: returns generated. Stale: changed since then. Filed: submitted.",
+      "Badges: a yellow number counts documents to review, v1/v2 is the latest returns version, Stale means it needs regenerating, Filed means it's submitted.",
       "Pin busy clients on the Companies page to keep them at the top.",
     ],
     Art: TreeArt,
@@ -426,8 +426,8 @@ export const DOCUMENTS_TOUR: Slide[] = [
     body: "When something looks off, the document is flagged with the reason. You decide.",
     points: [
       "Common flags: an unreadable date, VAT that isn't 12%, a possible duplicate, or a receipt that can't support input VAT.",
-      "Open the document to see the page beside the fields, and correct anything.",
-      "Click Mark reviewed when it's right. Returns generated with open flags are marked DRAFT.",
+      "Open a document to see the scanned page next to what we read, and correct any field.",
+      "Click Mark reviewed when it's right. Until every flag is cleared, generated returns are marked DRAFT.",
     ],
     Art: ReviewArt,
   },
@@ -439,7 +439,7 @@ export const DOCUMENTS_TOUR: Slide[] = [
     title: "Beyond the quarter",
     body: "Each company's folder also holds the year-end work.",
     points: [
-      "Annual return: after Q4, built from all four quarters less the tax already paid.",
+      "Annual return: after Q4. It adds up all four quarters and subtracts the income tax already paid.",
       "Books: set a Books start on the company to keep BIR loose-leaf journals, ledger and trial balance.",
       "Employees: import the payroll register for the 1604-C alphalist and each 2316, due January 31.",
       "ATC databank: set each supplier's withholding tax code once and every document from them uses it.",

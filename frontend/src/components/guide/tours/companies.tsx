@@ -10,10 +10,10 @@ function ProfileArt() {
   const reg = useRef<HTMLDivElement>(null);
   const forms = useRef<HTMLDivElement>(null);
   const list = [
-    ["2550-Q", "VAT-registered"],
-    ["1702-Q", "Corporation"],
-    ["0619-E · 1601-EQ", "Withholds from suppliers"],
-    ["1601-C", "Has employees"],
+    ["2550-Q", "Quarterly · VAT-registered"],
+    ["1702-Q", "Quarterly · corporation"],
+    ["0619-E · 1601-EQ", "Monthly + quarterly EWT"],
+    ["1601-C", "Monthly · has employees"],
   ];
   return (
     <div ref={box} className="gd-art grid grid-cols-[1fr_170px] items-center gap-10">
@@ -31,7 +31,7 @@ function ProfileArt() {
         </div>
       </Card>
       <div ref={forms} className="gd-in space-y-2" style={d(2)}>
-        <p className="text-[11px] font-semibold text-[var(--lp-muted)]">Files every quarter</p>
+        <p className="text-[11px] font-semibold text-[var(--lp-muted)]">Returns we prepare</p>
         {list.map(([f, why], i) => (
           <div key={f} className="gd-card gd-in px-3 py-2" style={d(3 + i)}>
             <span className="flex items-center gap-1.5 text-[12px] font-semibold"><FilePdf size={14} className="text-[var(--lp-accent)]" /> {f}</span>
@@ -88,7 +88,7 @@ function FiscalArt() {
         <div className="grid grid-cols-4 gap-2">
           {[0, 1, 2, 3].map((q) => (
             <div key={q} className={`gd-in rounded-lg border p-2 ${q === 0 ? "border-[var(--lp-accent)] bg-[var(--lp-accent-soft)]" : "border-[var(--lp-border)]"}`} style={d(1 + q)}>
-              <p className="mb-1.5 text-[11.5px] font-semibold">{q < 3 ? `Q${q + 1}` : "Annual"}</p>
+              <p className="mb-1.5 text-[11.5px] font-semibold">Q{q + 1}</p>
               <div className="flex gap-1">
                 {months.slice(q * 3, q * 3 + 3).map((m) => (
                   <span key={m} className="flex-1 rounded bg-[var(--lp-bg-card)] py-1 text-center text-[10px] text-[var(--lp-muted)] shadow-sm">{m}</span>
@@ -97,7 +97,7 @@ function FiscalArt() {
             </div>
           ))}
         </div>
-        <p className="mt-3 text-[11px] text-[var(--lp-muted)]">Q4 has no quarterly income tax return. The annual return covers it.</p>
+        <p className="mt-3 text-[11px] text-[var(--lp-muted)]">In Q4 the VAT return is filed as usual; income tax goes on the annual return.</p>
       </Card>
     </div>
   );
@@ -147,8 +147,8 @@ export const COMPANIES_TOUR: Slide[] = [
     body: "Each client's profile decides which BIR returns AutoAccounting prepares for them, and what goes on each form's header.",
     points: [
       "Registered name, TIN, branch code, RDO and address print on every form.",
-      "Taxpayer type, VAT registration and the income tax option pick the business and income tax returns.",
-      "Tick Withholds tax on supplier payments to add the 0619-E and 1601-EQ, and Has employees to add the 1601-C.",
+      "Taxpayer type, VAT registration and the income tax option decide the VAT or percentage tax return and the income tax return.",
+      "Tick \"Withholds tax on supplier payments\" to add the 0619-E and 1601-EQ. Tick \"Has employees\" to add the 1601-C.",
       "Only managers and the firm owner can add or edit companies.",
     ],
     Art: ProfileArt,

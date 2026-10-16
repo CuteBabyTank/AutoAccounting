@@ -229,15 +229,6 @@ export default function AccountingPage() {
             </p>
           </div>
           <GuideButton open={guide.open} onClick={guide.toggle} />
-          <label className="relative">
-            <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search companies or TINs"
-              className="w-64 rounded-full border border-[var(--border)] bg-[var(--bg-secondary)] py-1.5 pl-8 pr-3 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-            />
-          </label>
           <div className="flex items-center gap-1">
             <CompanyPicker companies={companies} value={picker} onChange={choosePicker} />
             <Hint align="left">
@@ -286,6 +277,16 @@ export default function AccountingPage() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[250px_minmax(0,1fr)]">
           <aside className="h-fit rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3">
+            <label className="relative mb-2 block">
+              <span className="sr-only">Search companies or TINs</span>
+              <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search companies or TINs"
+                className="w-full rounded-full border border-[var(--border)] bg-[var(--bg-secondary)] py-1.5 pl-8 pr-3 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+              />
+            </label>
             <FolderTree
               tree={filteredTree}
               selected={selected}

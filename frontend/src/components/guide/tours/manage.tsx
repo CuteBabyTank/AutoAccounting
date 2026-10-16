@@ -70,8 +70,8 @@ function AddArt() {
 function RolesArt() {
   const rows: [string, boolean, boolean, boolean][] = [
     ["Upload, review and generate returns", true, true, true],
-    ["Add and edit companies, books, payroll", false, true, true],
-    ["Add and deactivate employees", false, true, true],
+    ["Set up clients: companies, books, payroll", false, true, true],
+    ["Add and deactivate staff", false, true, true],
     ["Make someone a manager", false, false, true],
   ];
   const mark = (on: boolean) =>
@@ -124,10 +124,10 @@ export const TEAM_TOUR: Slide[] = [
   {
     id: "roles",
     title: "Who can do what",
-    body: "Two roles keep the day-to-day work separate from setup.",
+    body: "Staff are Employees or Managers. You, the firm owner, can do everything.",
     points: [
       "Employees upload, review, generate and mark quarters filed for every client.",
-      "Managers can also maintain the client list, books setup and payroll, and manage employees.",
+      "Managers can also set up clients (companies, books and payroll) and add or deactivate staff.",
       "Only the firm owner can promote someone to manager or demote them back.",
       "The usage cards show pages read this month and, if billing is on, your prepaid balance.",
     ],

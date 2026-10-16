@@ -60,6 +60,7 @@ class Payment:
     amount: Decimal | None     # None = whatever is still open
     via: str                   # cash | bank | ewallet
     ref: str
+    account: str = ""          # the cash / bank account code it moved through ("" = by via)
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,20 @@ class FiledPayment:
     quarter: int
     on: date
     amount: Decimal
+    account: str = ""          # the bank account a matched statement line shows it left ("" = Cash in bank)
+
+
+@dataclass(frozen=True)
+class BankPosting:
+    """A statement line no document explains, posted against the account a person (or a safe rule) chose."""
+
+    id: str                    # the bank line id
+    on: date
+    amount: Decimal            # signed: + into the bank account
+    bank_account: str
+    counter_account: str
+    particulars: str
+    ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -118,6 +133,7 @@ class BooksInput:
     filed: tuple[FiledPayment, ...] = ()
     assets: tuple[Asset, ...] = ()
     annual: tuple[AnnualTaxes, ...] = ()
+    bank: tuple[BankPosting, ...] = ()
 
 
 def _dr(account: str, amount) -> Line | None:
@@ -252,7 +268,7 @@ def payment_entries(inp: BooksInput, warnings: list[str]) -> list[Entry]:
             continue
         if amount > left + _OVERPAY:
             over += 1
-        cash = chart.code(CASH_KEYS.get(p.via, "cash"))
+        cash = p.account or chart.code(CASH_KEYS.get(p.via, "cash"))
         party, ref = _party(l), p.ref or l.doc_number
         if l.category == "sales":
             entry = make_entry(f"pay:{p.id}", p.on, _book(inp, "CRJ"), ref, party,
@@ -389,7 +405,7 @@ def tax_entries(inp: BooksInput) -> list[Entry]:
         out += _kept(make_entry(
             f"tax:{p.form}:{p.year}Q{p.quarter}:paid", p.on, _book(inp, "CDJ"), p.form, ("Bureau of Internal Revenue", ""),
             f"Payment of BIR {p.form} for {period}", "tax",
-            _dr(code(account), p.amount), _cr(code("bank"), p.amount),
+            _dr(code(account), p.amount), _cr(p.account or code("bank"), p.amount),
         ))
     return out
 
@@ -476,6 +492,20 @@ def manual_entries(inp: BooksInput) -> list[Entry]:
     return out
 
 
+def bank_entries(inp: BooksInput) -> list[Entry]:
+    """Statement lines posted on their own: money in to the CRJ, money out to the CDJ."""
+    out: list[Entry] = []
+    for b in inp.bank:
+        if not inp.start <= b.on <= inp.through or b.amount == 0:
+            continue
+        incoming = b.amount > 0
+        out += _kept(make_entry(
+            f"bank:{b.id}", b.on, _book(inp, "CRJ" if incoming else "CDJ"), b.ref, _NO_PARTY, b.particulars, "bank",
+            _dr(b.bank_account, b.amount), _cr(b.counter_account, b.amount),
+        ))
+    return out
+
+
 def post_all(inp: BooksInput) -> tuple[list[Entry], list[str]]:
     """Every entry from the books' start to ``through``, in posting order, plus warnings."""
     warnings: list[str] = []
@@ -487,6 +517,7 @@ def post_all(inp: BooksInput) -> tuple[list[Entry], list[str]]:
     entries += tax_entries(inp)
     entries += depreciation_entries(inp)
     entries += manual_entries(inp)
+    entries += bank_entries(inp)
     entries += contribution_entries(inp, warnings)
     entries += inventory_entries(inp, entries, warnings)
     entries.sort(key=lambda e: (e.date, JOURNAL_BOOKS.index(e.book) if e.book in JOURNAL_BOOKS else 9, e.id))

@@ -99,6 +99,11 @@
     ctx.rotate(d.rot);
     // Ease toward a lower opacity behind the copy instead of popping.
     d.dim = (d.dim ?? 1) + ((overCopy(d) ? 0.35 : 1) - (d.dim ?? 1)) * 0.08;
+    // Solid backing in the page colour first, so the page's wave lines (on a
+    // layer below) are hidden behind the document rather than showing through it.
+    ctx.globalAlpha = fade;
+    roundRect(-d.w / 2, -d.h / 2, d.w, d.h, 5);
+    ctx.fillStyle = "#F8FAFC"; ctx.fill();
     ctx.globalAlpha = fade * d.dim;
     ctx.shadowColor = "rgba(15,23,42,0.16)";
     ctx.shadowBlur = 20; ctx.shadowOffsetY = 8;

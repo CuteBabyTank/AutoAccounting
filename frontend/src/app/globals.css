@@ -1382,6 +1382,61 @@ main textarea:focus-visible {
   border: 1px solid var(--lp-border);
   box-shadow: 0 1px 2px rgba(11,11,18,.04), 0 6px 16px -10px rgba(11,11,18,.18);
 }
+
+/* App pages that sit beside the rail reuse its vocabulary: same canvas,
+   section labels over a hairline, aa-card surfaces, and rows that tint
+   on hover like nav items. */
+.aa-field {
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--lp-border);
+  background: var(--lp-bg-card);
+  color: var(--lp-text);
+  font-size: 14px;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.aa-field::placeholder { color: var(--lp-faint); }
+.aa-field:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--lp-accent) 55%, var(--lp-border));
+  box-shadow: 0 0 0 3px var(--lp-accent-soft);
+}
+.aa-btn {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  background: var(--lp-text);
+  color: var(--lp-bg);
+  transition: background-color 140ms ease, color 140ms ease, transform 160ms var(--ease-out);
+}
+.aa-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--lp-text) 86%, var(--lp-bg)); }
+.aa-btn:active:not(:disabled) { transform: scale(0.97); }
+.aa-btn:disabled {
+  background: color-mix(in srgb, var(--lp-text) 6%, transparent);
+  color: var(--lp-faint);
+  cursor: default;
+}
+.aa-ghost {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--lp-muted);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.aa-ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lp-text) 6%, transparent);
+  color: var(--lp-text);
+}
+.aa-ghost:disabled { opacity: .5; cursor: default; }
+.aa-table { border-collapse: separate; border-spacing: 0; }
+.aa-table tbody td { transition: background-color 140ms ease; }
+.aa-table tbody tr:hover td { background: color-mix(in srgb, var(--lp-text) 3%, transparent); }
+.aa-table tbody td:first-child { border-radius: 12px 0 0 12px; }
+.aa-table tbody td:last-child { border-radius: 0 12px 12px 0; }
+
 @media (min-width: 768px) {
   .aa-rail {
     width: 72px;

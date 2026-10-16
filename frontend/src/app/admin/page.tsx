@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
-import AppBackdrop from "@/components/layout/AppBackdrop";
 import { useAuth } from "@/lib/auth";
 import { adminApi } from "@/lib/api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
@@ -109,131 +108,173 @@ export default function AdminPage() {
     run(() => adminApi.setPageRate(value), "Couldn't save the page rate");
   }
 
+  const sectionLabel = (text: string) => (
+    <>
+      <p className="px-1 text-[11px] font-medium text-[var(--lp-muted)]">{text}</p>
+      <div className="h-px mt-1.5 mb-3 bg-[var(--lp-border)]" />
+    </>
+  );
+
   return (
-    <div className="lp relative min-h-screen">
-      <AppBackdrop />
-      <div className="p-4 sm:p-8 max-w-6xl page-enter">
-        <div className="mb-6 flex flex-wrap items-end gap-3">
-          <div className="mr-auto">
-            <h1 className="text-2xl font-bold text-[var(--text-primary)]">Platform admin</h1>
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">
-              New sign-ups wait here as unverified. Turn one into a firm, or attach them to an existing firm.
-            </p>
-          </div>
-          <form onSubmit={saveRate} className="flex items-center gap-2 text-sm">
-            <label className="text-[var(--text-secondary)]" htmlFor="page-rate">₱ per page</label>
-            <input
-              id="page-rate"
-              inputMode="decimal"
-              value={pageRate}
-              onChange={(e) => setPageRate(e.target.value)}
-              placeholder="Free"
-              className="w-24 rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-1.5 text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-            />
-            <button
-              type="submit"
-              disabled={busy || pageRate.trim() === (savedRate == null ? "" : String(savedRate))}
-              className="rounded-lg bg-[var(--accent)] px-3 py-1.5 font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
-            >
-              Save
-            </button>
-          </form>
-        </div>
-
-        <p className="mb-4 text-xs text-[var(--text-secondary)]">
-          {savedRate == null
-            ? "Billing is off: uploads are never blocked on budget."
-            : `Billing is on: each extracted page costs ₱${formatPeso(savedRate)} and uploads stop when a firm's budget reaches zero.`}
-        </p>
-
-        <label className="relative mb-4 inline-block">
-          <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search email, name or firm"
-            className="w-64 rounded-full border border-[var(--border)] bg-[var(--bg-secondary)] py-1.5 pl-8 pr-3 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-          />
-        </label>
+    <div className="lp min-h-screen">
+      <div className="px-4 sm:px-10 pt-6 sm:pt-8 pb-12 max-w-6xl page-enter">
+        <header className="mb-8">
+          <h1 className="text-[22px] font-semibold tracking-tight text-[var(--lp-text)]">Platform admin</h1>
+          <p className="mt-1 text-sm text-[var(--lp-muted)]">
+            New sign-ups wait here as unverified. Turn one into a firm, or attach them to an existing firm.
+          </p>
+        </header>
 
         {error && (
-          <div className="mb-4 rounded-lg border border-[var(--alert-error-border)] bg-[var(--alert-error-bg)] px-4 py-2 text-sm text-[var(--alert-error-text)]">
+          <div className="mb-6 rounded-xl border border-[var(--alert-error-border)] bg-[var(--alert-error-bg)] px-4 py-2.5 text-sm text-[var(--alert-error-text)]">
             {error}
           </div>
         )}
 
-        <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-[var(--text-secondary)]">
-                <th className="px-4 py-3 font-medium">Account</th>
-                <th className="px-4 py-3 font-medium">Role</th>
-                <th className="px-4 py-3 font-medium">Firm</th>
-                <th className="px-4 py-3 font-medium text-right">Pages (month)</th>
-                <th className="px-4 py-3 font-medium text-right">Budget</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((a) => {
-                const isSelf = a.id === user?.id;
-                const isFirm = a.role === "enterprise";
-                return (
-                  <tr key={a.id} className={`border-t border-[var(--border)] text-[var(--text-primary)] ${a.is_active ? "" : "opacity-60"}`}>
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{a.nickname || a.email}</div>
-                      {a.nickname && <div className="text-xs text-[var(--text-secondary)]">{a.email}</div>}
-                      {!a.is_active && <div className="text-xs text-[var(--error)]">Deactivated</div>}
-                    </td>
-                    <td className="px-4 py-3">
-                      {a.role === "admin" ? (
-                        roleLabel(a.role)
-                      ) : (
-                        <select
-                          value={a.role}
-                          disabled={busy}
-                          onChange={(e) => changeRole(a, e.target.value as AssignableRole)}
-                          className="rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] px-2 py-1 text-sm text-[var(--text-primary)]"
-                        >
-                          <option value="unverified">Unverified</option>
-                          <option value="enterprise" disabled={a.role === "unverified"}>Firm owner</option>
-                          <option value="manager">Manager</option>
-                          <option value="employee">Employee</option>
-                        </select>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-[var(--text-secondary)]">
-                      {isFirm ? a.organization_name || "—" : a.enterprise_email || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums">{isFirm ? a.pages_used.toLocaleString() : ""}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{isFirm ? `₱${formatPeso(a.budget)}` : ""}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap justify-end gap-3 text-xs">
-                        {a.role === "unverified" && (
-                          <button disabled={busy} onClick={() => promoteFirm(a)} className="text-[var(--accent)] hover:underline">
-                            Make firm
-                          </button>
-                        )}
-                        {isFirm && (
-                          <>
-                            <button disabled={busy} onClick={() => adjustBudget(a, "add")} className="text-[var(--accent)] hover:underline">Top up</button>
-                            <button disabled={busy} onClick={() => adjustBudget(a, "subtract")} className="text-[var(--accent)] hover:underline">Deduct</button>
-                            <button disabled={busy} onClick={() => adjustBudget(a, "set")} className="text-[var(--accent)] hover:underline">Set</button>
-                          </>
-                        )}
-                        {!isSelf && a.role !== "admin" && (
-                          <button disabled={busy} onClick={() => run(() => adminApi.toggleActive(a.id), "Couldn't update")} className="text-[var(--accent)] hover:underline">
-                            {a.is_active ? "Deactivate" : "Reactivate"}
-                          </button>
-                        )}
-                      </div>
+        <section className="mb-8">
+          {sectionLabel("Billing")}
+          <form onSubmit={saveRate} className="aa-card rounded-2xl p-1.5 pl-4 flex flex-wrap items-center gap-3">
+            <div className="mr-auto min-w-0 py-1.5">
+              <label htmlFor="page-rate" className="block text-sm font-medium text-[var(--lp-text)]">Price per page</label>
+              <p className="text-xs text-[var(--lp-muted)]">
+                {savedRate == null
+                  ? "Billing is off: uploads are never blocked on budget."
+                  : `Each extracted page costs ₱${formatPeso(savedRate)}. Uploads stop when a firm's budget reaches zero.`}
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--lp-faint)]">₱</span>
+                <input
+                  id="page-rate"
+                  inputMode="decimal"
+                  value={pageRate}
+                  onChange={(e) => setPageRate(e.target.value)}
+                  placeholder="Free"
+                  className="aa-field w-28 pl-7 pr-3 tabular-nums"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={busy || pageRate.trim() === (savedRate == null ? "" : String(savedRate))}
+                className="aa-btn"
+              >
+                Save
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <p className="px-1 text-[11px] font-medium text-[var(--lp-muted)]">
+              Accounts <span className="text-[var(--lp-faint)] tabular-nums">· {accounts.length}</span>
+            </p>
+            <label className="relative">
+              <MagnifyingGlass size={16} weight="light" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--lp-muted)]" />
+              <span className="sr-only">Search accounts</span>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search email, name or firm"
+                className="aa-field w-64 max-w-full pl-9 pr-3"
+              />
+            </label>
+          </div>
+          <div className="h-px mt-2 mb-3 bg-[var(--lp-border)]" />
+
+          <div className="aa-card overflow-x-auto rounded-2xl p-1.5">
+            <table className="aa-table w-full text-sm">
+              <thead>
+                <tr className="text-left text-[11px] text-[var(--lp-muted)]">
+                  <th className="px-3 pt-2 pb-2.5 font-medium">Account</th>
+                  <th className="px-3 pt-2 pb-2.5 font-medium">Role</th>
+                  <th className="px-3 pt-2 pb-2.5 font-medium">Firm</th>
+                  <th className="px-3 pt-2 pb-2.5 font-medium text-right">Pages this month</th>
+                  <th className="px-3 pt-2 pb-2.5 font-medium text-right">Budget</th>
+                  <th className="px-3 pt-2 pb-2.5"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center text-sm text-[var(--lp-muted)]">
+                      {accounts.length === 0 ? "No accounts yet." : "No accounts match that search."}
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                )}
+                {filtered.map((a) => {
+                  const isSelf = a.id === user?.id;
+                  const isFirm = a.role === "enterprise";
+                  const name = a.nickname || a.email;
+                  return (
+                    <tr key={a.id} className={`text-[var(--lp-text)] ${a.is_active ? "" : "opacity-60"}`}>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="shrink-0 grid place-items-center w-9 h-9 rounded-xl bg-[var(--lp-accent-soft)] text-[var(--lp-accent)] text-[13px] font-semibold">
+                            {name.charAt(0).toUpperCase()}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">
+                              {name}
+                              {isSelf && <span className="ml-1.5 font-normal text-[var(--lp-faint)]">(you)</span>}
+                            </span>
+                            {a.nickname && <span className="block truncate text-xs text-[var(--lp-muted)]">{a.email}</span>}
+                            {!a.is_active && <span className="block text-xs text-[var(--error)]">Deactivated</span>}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        {a.role === "admin" ? (
+                          <span className="text-[var(--lp-muted)]">{roleLabel(a.role)}</span>
+                        ) : (
+                          <select
+                            value={a.role}
+                            disabled={busy}
+                            onChange={(e) => changeRole(a, e.target.value as AssignableRole)}
+                            aria-label={`Role for ${a.email}`}
+                            className="aa-field !h-8 !rounded-[9px] px-2 text-[13px]"
+                          >
+                            <option value="unverified">Unverified</option>
+                            <option value="enterprise" disabled={a.role === "unverified"}>Firm owner</option>
+                            <option value="manager">Manager</option>
+                            <option value="employee">Employee</option>
+                          </select>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--lp-muted)]">
+                        {isFirm ? a.organization_name || "—" : a.enterprise_email || "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{isFirm ? a.pages_used.toLocaleString() : ""}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{isFirm ? `₱${formatPeso(a.budget)}` : ""}</td>
+                      <td className="px-2 py-2">
+                        <div className="flex flex-wrap justify-end gap-0.5">
+                          {a.role === "unverified" && (
+                            <button disabled={busy} onClick={() => promoteFirm(a)} className="aa-ghost !text-[var(--lp-accent)]">
+                              Make firm
+                            </button>
+                          )}
+                          {isFirm && (
+                            <>
+                              <button disabled={busy} onClick={() => adjustBudget(a, "add")} className="aa-ghost">Top up</button>
+                              <button disabled={busy} onClick={() => adjustBudget(a, "subtract")} className="aa-ghost">Deduct</button>
+                              <button disabled={busy} onClick={() => adjustBudget(a, "set")} className="aa-ghost">Set</button>
+                            </>
+                          )}
+                          {!isSelf && a.role !== "admin" && (
+                            <button disabled={busy} onClick={() => run(() => adminApi.toggleActive(a.id), "Couldn't update")} className="aa-ghost">
+                              {a.is_active ? "Deactivate" : "Reactivate"}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </div>
   );

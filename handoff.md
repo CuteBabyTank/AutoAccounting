@@ -47,6 +47,8 @@ Date: 2026-10-16. Nothing here is committed yet; all of it is new, untracked fil
   - Freight and brokerage on the import entry are payable to "R. Villanueva (Customs Broker)".
   - Reyes Santos RS-1048 was booked with no EWT.
 - The bank feed was switched to QBO's **previous** UI. Switch back with "Try new banking page".
+- QBO added two zero-balance accounts by itself while pages were being opened: *Reconciliation Discrepancies*
+  (10:07 pm) and *Inventory Shrinkage* (10:13 pm), shown as "System Administration" in the audit log.
 - QBO auto-drafted a wrong 13-month prepaid schedule for the ₱1,515 Sulit-Stop bill (Advanced accounting → Prepaid
   expenses). It's a draft and wasn't approved.
 - Sales tax is still off; VAT lives in custom accounts (Input VAT, Input VAT – Importation, Output VAT).

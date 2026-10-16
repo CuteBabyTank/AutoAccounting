@@ -3,7 +3,9 @@
 Reference for AutoAccounting planning. Captured 2026-10-16 by walking every page of QuickBooks Online **Accountant**
 (company subscription **Advanced**, region PH, home currency PHP) in the `MFS_Test` company after loading the Q4 2026
 test pack. Every page, menu, form, settings panel and report area below was opened. Nothing was saved, except the test
-data described in `../plans/2026-10-16-quickbooks-parity-plan.md`.
+data described in `../plans/2026-10-16-quickbooks-parity-plan.md`, and two zero-balance accounts QBO added on its own
+("System Administration" in the audit log): *Reconciliation Discrepancies* and *Inventory Shrinkage*. A second pass
+re-opened every nav, gear-menu and Accountant-tools URL and confirmed the catalogue below.
 
 Each feature lists **what it is**, then **what it does** in practice, plus the URL where useful. The last column of each
 table, **AA**, is a one-word read on AutoAccounting: ✅ have · 🟡 partial · ❌ missing · ⛔ out of scope.
@@ -40,9 +42,9 @@ table, **AA**, is a one-word read on AutoAccounting: ✅ have · 🟡 partial ·
 | **Work** (`/app/work`) | Practice-management board: **Projects** and **All tasks** across clients, filter by client, due date, status; columns client, project, due date, status, tasks done, assigned to. **Manage templates** (reusable checklists such as monthly close), **Create project**, notification settings. | ❌ |
 | **Team** (`/app/usermgt`) | Firm users: name, email, status, role; **Roles** tab (custom roles); **Configure Single Sign-On (SSO)**; transfer primary admin; add user. | ✅ (team page; SSO = Google) |
 | **Training** | ProAdvisor training/certification hub. | ⛔ |
-| **Apps** (`/app/appcenter/allapps`) | App marketplace: client apps vs firm apps, categories, industries, featured, popular, editors' picks, free; e.g. Double (AI month-end close), Dext (receipt/invoice capture), Fathom, Syft (reporting and consolidations). Note: these are AutoAccounting's direct competitors in the capture layer. | ⛔ |
+| **Apps** (`/app/appcenter/allapps`, `/clientapps`, `/firmapps`) | App marketplace: client apps vs firm apps, categories, industries, featured, popular, editors' picks, free; e.g. Double (AI month-end close), Dext (receipt/invoice capture), Fathom, Syft (reporting and consolidations). Note: these are AutoAccounting's direct competitors in the capture layer. | ⛔ |
 | **Merge duplicate clients / Transfer clients / Share screen** | Gear → Tools; firm housekeeping and remote support. | ⛔ |
-| **Subscriptions and billing** (`/app/yourAccount`) | Accountant-billed vs client-billed subscriptions, billing details, payment method, VAT-registered toggle and VAT ID for the invoice. | 🟡 (page-rate billing) |
+| **Subscriptions and billing** (`/app/yourAccount`) | Accountant-billed vs client-billed subscriptions, billing details, payment method, VAT-registered toggle and VAT ID for the invoice; **Tax location** tab. | 🟡 (page-rate billing) |
 
 ---
 
@@ -55,7 +57,7 @@ table, **AA**, is a one-word read on AutoAccounting: ✅ have · 🟡 partial ·
 | **Business overview** (`/app/business-overview`) | Widget dashboard: **Cash flow** (12-month line of cash balance, projected balance, threshold; money in/out toggle), **Profit & loss** (net profit last month vs prior, income/expense bars), **Expenses** (spending last 30 days by account, change vs prior period), **Bank accounts**, **Invoices** (unpaid/overdue/not due/paid/deposited), **Sales**. **Customise**: drag, resize, add/remove widgets. | ❌ |
 | **Cash flow** (`/app/cashflowoverview`) | Today's cash across bank and card accounts; cash-flow chart with projection and threshold; **Monthly outlook**: money in (overdue/open invoices, paid this month) and money out (overdue/open bills, paid); **Coming up** calendar of due invoices and bills; loans upsell; insights. | ❌ |
 | **Planner** (`/app/cashflowplanner`) | Cash-flow forecast from past trends, add planned in/out items, what-if scenarios without touching the books. | ⛔ |
-| **Tasks** (`/app/taskmanager`) | To-dos with due dates and assignees, linked to invoices/bills. | ❌ |
+| **Tasks** (`/app/taskmanager`) | To-dos linked to invoices/bills; columns task, status, **priority**, due date, assigned to, created by. | ❌ |
 
 ---
 
@@ -212,7 +214,7 @@ Settings → Reports. **AA:** 🟡 (XLSX/PDF outputs; no drill-down or compariso
 |---|---|---|
 | **Employees / Payroll** (`/app/employees`) | Payroll subscription: add employees, run paycheques, file and pay payroll taxes (not for PH here). | ✅ compliance side (1601-C, alphalist, 2316); ⛔ running payroll |
 | **Time** (`/app/time/...`) | Overview (setup checklist, to-dos, shortcuts), **Time entries**, **Approvals**, **Schedule**, **Time team**, **Assignments** (assign workers to customers, time-tracking fields, **geofence** per site), **Time off**, **Time projects**, **Time reports** (payroll report: regular hours/breaks/overtime by pay period; itemised total time). | ⛔ |
-| **Inventory** (`/app/inventory/...`) | **Overview** (low stock, out of stock, top-selling products with qty, sales, COS, gross profit, margin; customisable layout), **Inventory** (products, adjustments), **Purchase orders**, **Item receipts** (receive vs PO/bill, discrepancies). | 🟡 periodic COGS only |
+| **Inventory** (`/app/inventory/...`) | **Overview** (low stock, out of stock, top-selling products with qty, sales, COS, gross profit, margin; open sales orders; open purchase orders; inventory reports; customisable layout), **Inventory** (products, adjustments), **Purchase orders**, **Item receipts** (receive vs PO/bill, discrepancies). | 🟡 periodic COGS only |
 | **Projects** (`/app/projects`) | Project per customer job; tag transactions; project P&L, unbilled time, budget. | ⛔ |
 | **Forecasts** (`/app/forecasts`) | Forecast from past trends; adjust accounts by fixed %; play with numbers without affecting the books. | ⛔ |
 | **Budgets** (`/app/budgets`) | Create a budget from QBO data (by account/month, optionally by customer/class/location), **budget vs actual**, create in Spreadsheet Sync, **import budget**. | ⛔ |

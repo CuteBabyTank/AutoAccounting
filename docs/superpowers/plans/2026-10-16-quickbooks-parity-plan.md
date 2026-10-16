@@ -289,6 +289,8 @@ QBO can't do.
   Only "CREDIT CARD ****4412" went to the card account.
 - The bank-feed screen was switched to QBO's **previous** banking UI, because the new one's Match buttons didn't
   respond. Switch back with "Try new banking page".
+- QBO added two zero-balance accounts by itself while pages were being opened: *Reconciliation Discrepancies*
+  (10:07 pm) and *Inventory Shrinkage* (10:13 pm), shown as "System Administration" in the audit log.
 - QBO auto-created a draft prepaid-expense schedule for the Sulit-Stop ₱1,515 bill (Advanced accounting → Prepaid
   expenses). It's a draft and wasn't approved.
 - Import files used are in `docs/superpowers/research/2026-10-16-qbo-q4-run/` (`gen.py` generated them).

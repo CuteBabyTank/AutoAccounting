@@ -52,6 +52,10 @@ Reply with ONLY valid JSON, no markdown fences, no explanation:
   "exempt_amount": <VAT-exempt amount>,
   "zero_rated_amount": <zero-rated amount>,
   "withholding_amount": <withholding tax deducted>,
+  "cash_tendered": <cash tendered / amount received printed on a cash receipt, 0 when not shown>,
+  "change": <change printed on the receipt exactly as shown, negative if it shows a negative change, 0 when not shown>,
+  "payment_terms": "<credit if the document shows credit terms, a due date, PDC, charge or a balance still due; cash if paid in full on the spot; empty if unclear>",
+  "marked_paid": <true when the document says PAID, RELEASED or RECEIVED (e.g. a payroll sheet marked released), else false>,
   "nature": "<goods_for_resale|raw_materials|capital_goods|services|import|payroll|other>",
   "expense_account": "<purchases|raw_materials|importation|capital_goods|salaries|rent|utilities|professional_fees|office_supplies|representation|transportation|repairs|taxes_licenses|other>",
   "confidence": <0-100, your certainty in the amounts and date>
@@ -128,6 +132,10 @@ class ExtractedDoc:
     nature: str = "other"
     expense_account: str = "other"
     confidence: float = 0.0
+    cash_tendered: Decimal = Decimal("0.00")
+    change_amount: Decimal = Decimal("0.00")   # negative when the receipt shows negative change
+    payment_terms: str = ""                    # cash | credit | "" (unclear / not read)
+    marked_paid: bool = False
     raw: dict = field(default_factory=dict)
 
 
@@ -175,6 +183,19 @@ def _int(value, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _signed_money(value) -> Decimal:
+    """parse_money, keeping a leading minus sign on text amounts ("-60.00")."""
+    amount = parse_money(value)
+    if isinstance(value, str) and value.strip().startswith("-") and amount > 0:
+        return -amount
+    return amount
+
+
+def _terms(value) -> str:
+    text = str(value or "").strip().lower()
+    return text if text in ("cash", "credit") else ""
 
 
 def parse_detection(raw: str) -> Detection:
@@ -231,6 +252,10 @@ def parse_extraction(raw: str, page_offset: int = 0, chunk_pages: int | None = N
             nature=_choice(item.get("nature"), NATURES),
             expense_account=_choice(item.get("expense_account"), EXPENSE_ACCOUNTS),
             confidence=min(100.0, max(0.0, confidence)),
+            cash_tendered=max(parse_money(item.get("cash_tendered")), Decimal("0.00")),
+            change_amount=_signed_money(item.get("change")),
+            payment_terms=_terms(item.get("payment_terms")),
+            marked_paid=_bool_or_none(item.get("marked_paid")) is True,
             raw=item,
         ))
     return docs

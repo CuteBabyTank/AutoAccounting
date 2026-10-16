@@ -83,3 +83,53 @@ def test_record_rejects_unknown_entities():
     with pytest.raises(ValueError):
         audit.record(_Session(), ent=ENT, company_id=COMPANY, user=USER, entity="nope", entity_id="x",
                      action="update", always=True)
+
+
+def _sql(stmt) -> str:
+    from sqlalchemy.dialects import postgresql
+
+    return str(stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+
+
+def test_day_bounds_cover_manila_days():
+    from zoneinfo import ZoneInfo
+
+    from app.routers.accounting_audit import day_bounds
+
+    manila = ZoneInfo("Asia/Manila")
+    start, end = day_bounds(date(2026, 10, 1), date(2026, 10, 31))
+    assert start == datetime(2026, 10, 1, tzinfo=manila)
+    assert end == datetime(2026, 11, 1, tzinfo=manila)
+    late = datetime(2026, 10, 31, 23, 30, tzinfo=manila)
+    next_day = datetime(2026, 11, 1, 0, 10, tzinfo=manila)
+    assert start <= late < end and not next_day < end
+    assert day_bounds(None, None) == (None, None)
+
+
+def test_events_query_always_scopes_to_firm():
+    from app.routers.accounting_audit import events_query
+
+    sql = _sql(events_query(ENT))
+    assert f"aa_audit_events.enterprise_id = '{ENT}'" in sql
+    assert "ORDER BY aa_audit_events.at DESC" in sql
+
+
+def test_events_query_applies_filters():
+    from app.routers.accounting_audit import events_query
+
+    user_id, doc_id = uuid.uuid4(), uuid.uuid4()
+    sql = _sql(events_query(ENT, company_id=COMPANY, user_id=user_id, start=date(2026, 10, 1), end=date(2026, 10, 31),
+                            entity="document", entity_id=str(doc_id)))
+    assert f"aa_audit_events.enterprise_id = '{ENT}'" in sql
+    assert f"aa_audit_events.company_id = '{COMPANY}'" in sql
+    assert f"aa_audit_events.user_id = '{user_id}'" in sql
+    assert "aa_audit_events.entity = 'document'" in sql
+    assert f"aa_audit_events.entity_id = '{doc_id}'" in sql
+    assert "aa_audit_events.at >= '2026-10-01 00:00:00+08:00'" in sql
+    assert "aa_audit_events.at < '2026-11-01 00:00:00+08:00'" in sql
+
+
+def test_audit_route_resolves():
+    from tests.test_accounting_annual_routes import _endpoint
+
+    assert _endpoint("GET", "/audit-events") == "list_audit_events"

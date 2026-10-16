@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { GoogleLogin, GoogleOAuthProvider } from "@react-oauth/google";
 import { useAuth } from "@/lib/auth";
 import { HOMEPAGE, roleHome } from "@/lib/roles";
 import api from "@/lib/api";
 import AppFlow from "@/components/layout/AppFlow";
+import LogoMark from "@/components/layout/LogoMark";
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 
@@ -64,7 +64,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)] p-8 shadow-2xl page-enter">
         <div className="mb-8 flex flex-col items-center text-center">
           <a href={HOMEPAGE} aria-label="AutoAccounting homepage" className="transition-opacity hover:opacity-80">
-            <Image src="/logo-mark.svg" alt="" width={56} height={40} priority />
+            <LogoMark width={56} height={40} />
           </a>
           <h1 className="mt-4 text-2xl font-bold text-[var(--text-primary)]">Sign in to AutoAccounting</h1>
           <p className="mt-1 text-sm text-[var(--text-secondary)]">

@@ -31,8 +31,8 @@
   --bg-secondary: #ffffff;          /* Pure white: cards & surfaces */
   --bg-card: #ffffff;               /* Card / floating-panel surface */
   --bg-sidebar: #ffffff;           /* White sidebar for clear separation */
-  --bg-sidebar-active: rgba(42, 142, 158, 0.1);
-  --bg-sidebar-hover: rgba(42, 142, 158, 0.05);
+  --bg-sidebar-active: rgba(5, 150, 105, 0.1);
+  --bg-sidebar-hover: rgba(5, 150, 105, 0.05);
   --bg-hover: rgba(0, 0, 0, 0.04);
 
   /* ── Typography ── */
@@ -47,9 +47,9 @@
   --border-sidebar: #e5eaeb;        /* Clear sidebar border */
 
   /* ── Primary Accent (teal) ── */
-  --accent: #2A8E9E;                /* Teal: main interactive color */
-  --accent-hover: #237a88;          /* Darker teal: hover/pressed */
-  --accent-subtle: rgba(42, 142, 158, 0.08);
+  --accent: #059669;                /* Emerald: main interactive color */
+  --accent-hover: #047857;          /* Darker emerald: hover/pressed */
+  --accent-subtle: rgba(5, 150, 105, 0.08);
 
   /* ── Semantic Feedback ── */
   --success: #15803d;
@@ -98,8 +98,8 @@
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
 
   /* ── Scrollbar (teal-tinted, integrated) ── */
-  --scrollbar-thumb: rgba(42, 142, 158, 0.28);
-  --scrollbar-thumb-hover: rgba(42, 142, 158, 0.5);
+  --scrollbar-thumb: rgba(5, 150, 105, 0.28);
+  --scrollbar-thumb-hover: rgba(5, 150, 105, 0.5);
 }
 
 .dark {
@@ -108,7 +108,7 @@
   --bg-secondary: #27282b;
   --bg-card: #27282b;
   --bg-sidebar: #1D1E20;
-  --bg-sidebar-active: rgba(42, 142, 158, 0.15);
+  --bg-sidebar-active: rgba(5, 150, 105, 0.15);
   --bg-sidebar-hover: rgba(255, 255, 255, 0.05);
   --bg-hover: rgba(255, 255, 255, 0.04);
 
@@ -124,9 +124,9 @@
   --border-sidebar: #3a3b3e;
 
   /* ── Accent (teal, brighter for dark bg) ── */
-  --accent: #3bbacf;
-  --accent-hover: #33a5b8;
-  --accent-subtle: rgba(59, 186, 207, 0.1);
+  --accent: #059669;
+  --accent-hover: #047857;
+  --accent-subtle: rgba(16, 185, 129, 0.12);
 
   /* ── Semantic ── */
   --success: #34d399;
@@ -291,7 +291,7 @@ main textarea:focus-visible {
 }
 @media (hover: hover) and (pointer: fine) {
   .row-hover:hover {
-    background-color: var(--bg-hover, rgba(42, 142, 158, 0.06));
+    background-color: var(--bg-hover, rgba(5, 150, 105, 0.06));
   }
 }
 
@@ -380,11 +380,11 @@ main textarea:focus-visible {
 
 .lp {
   /* ── Palette: teal color scheme ──
-     #2A8E9E  accent teal
+     #059669  accent emerald
      #E9F3F4  light teal-gray background
      #180D39  dark navy (headings)
      #1D1E20  charcoal (dark mode bg) */
-  /* ── Palette: indigo / royal-blue on near-white canvas ── */
+  /* ── Palette: emerald (the homepage "books done" green) on near-white canvas ── */
   --lp-bg:        #FAFBFC;
   --lp-bg-gray:   #F2F4F8;
   --lp-bg-card:   #ffffff;
@@ -392,14 +392,14 @@ main textarea:focus-visible {
   --lp-muted:     #5A6473;
   --lp-faint:     #6B7585;
   --lp-border:    #E6E8EE;
-  --lp-accent:    #4F46E5;
-  --lp-accent-2:  #2563EB;
-  --lp-accent-hover: #4338CA;
-  --lp-accent-soft: rgba(79, 70, 229, 0.10);
+  --lp-accent:    #059669;
+  --lp-accent-2:  #0D9488;
+  --lp-accent-hover: #047857;
+  --lp-accent-soft: rgba(5, 150, 105, 0.10);
   --lp-radius:    10px;
-  --lp-glow:      rgba(79, 70, 229, 0.16);
-  --lp-glow2:     rgba(37, 99, 235, 0.12);
-  --lp-glow3:     rgba(99, 102, 241, 0.12);
+  --lp-glow:      rgba(5, 150, 105, 0.14);
+  --lp-glow2:     rgba(13, 148, 136, 0.10);
+  --lp-glow3:     rgba(16, 185, 129, 0.10);
 
 
   --ease-out:     cubic-bezier(0.23, 1, 0.32, 1);
@@ -416,7 +416,7 @@ main textarea:focus-visible {
 /* ═══════════════════════════════════════════════════
    App → LP token bridge
    ───────────────────────────────────────────────────
-   When a signed-in app surface opts into the indigo
+   When a signed-in app surface opts into the emerald
    design system by adding the `lp` class, its existing
    semantic neutral / accent tokens are remapped onto the
    --lp-* palette. This lets dense app pages adopt the
@@ -424,7 +424,7 @@ main textarea:focus-visible {
 
    Status hues (success / error / warning / badges /
    alerts / section-*) are intentionally left untouched —
-   red/green/amber read correctly on the indigo canvas.
+   red/green/amber read correctly on the emerald canvas.
 
    Light + dark follow automatically: the targets are
    --lp-* vars, which `.dark .lp` already overrides below.
@@ -456,17 +456,17 @@ main textarea:focus-visible {
   --text-sidebar-muted:  var(--lp-muted);
   --border-sidebar:      var(--lp-border);
 
-  /* Integrated scrollbar picks up the indigo accent */
-  --scrollbar-thumb:       rgba(79, 70, 229, 0.30);
-  --scrollbar-thumb-hover: rgba(79, 70, 229, 0.52);
+  /* Integrated scrollbar picks up the emerald accent */
+  --scrollbar-thumb:       rgba(5, 150, 105, 0.30);
+  --scrollbar-thumb-hover: rgba(5, 150, 105, 0.52);
 }
 .dark .lp {
-  --scrollbar-thumb:       rgba(129, 140, 248, 0.30);
-  --scrollbar-thumb-hover: rgba(129, 140, 248, 0.52);
+  --scrollbar-thumb:       rgba(52, 211, 153, 0.30);
+  --scrollbar-thumb-hover: rgba(52, 211, 153, 0.52);
 }
 
 /* ───────────────────────────────────────────────────
-   .lp-skin — token-only indigo skin for app chrome.
+   .lp-skin — token-only emerald skin for app chrome.
    ───────────────────────────────────────────────────
    For elements that carry their own positioning utilities
    (sticky sidebar, fixed sign-out modal, fixed chat bubble/
@@ -487,10 +487,10 @@ main textarea:focus-visible {
   --lp-muted:     #5A6473;
   --lp-faint:     #6B7585;
   --lp-border:    #E6E8EE;
-  --lp-accent:    #4F46E5;
-  --lp-accent-2:  #2563EB;
-  --lp-accent-hover: #4338CA;
-  --lp-accent-soft:  rgba(79, 70, 229, 0.10);
+  --lp-accent:    #059669;
+  --lp-accent-2:  #0D9488;
+  --lp-accent-hover: #047857;
+  --lp-accent-soft:  rgba(5, 150, 105, 0.10);
 
   --accent:           var(--lp-accent);
   --accent-hover:     var(--lp-accent-hover);
@@ -512,8 +512,8 @@ main textarea:focus-visible {
   --text-sidebar-muted:  var(--lp-muted);
   --border-sidebar:      var(--lp-border);
 
-  --scrollbar-thumb:       rgba(79, 70, 229, 0.30);
-  --scrollbar-thumb-hover: rgba(79, 70, 229, 0.52);
+  --scrollbar-thumb:       rgba(5, 150, 105, 0.30);
+  --scrollbar-thumb-hover: rgba(5, 150, 105, 0.52);
 }
 .dark .lp-skin {
   --lp-bg:        #0B0C10;
@@ -523,13 +523,13 @@ main textarea:focus-visible {
   --lp-muted:     #9BA6B8;
   --lp-faint:     #7E8A9C;
   --lp-border:    #242736;
-  --lp-accent:    #6366F1;
-  --lp-accent-2:  #3B82F6;
-  --lp-accent-hover: #818CF8;
-  --lp-accent-soft:  rgba(99, 102, 241, 0.16);
+  --lp-accent:    #059669;
+  --lp-accent-2:  #14B8A6;
+  --lp-accent-hover: #10B981;
+  --lp-accent-soft:  rgba(16, 185, 129, 0.16);
 
-  --scrollbar-thumb:       rgba(129, 140, 248, 0.30);
-  --scrollbar-thumb-hover: rgba(129, 140, 248, 0.52);
+  --scrollbar-thumb:       rgba(52, 211, 153, 0.30);
+  --scrollbar-thumb-hover: rgba(52, 211, 153, 0.52);
 }
 
 /* App cards inside .lp inherit the soft, multi-layer landing elevation
@@ -573,13 +573,13 @@ main textarea:focus-visible {
   --lp-muted:     #9BA6B8;
   --lp-faint:     #7E8A9C;
   --lp-border:    #242736;
-  --lp-accent:    #6366F1;
-  --lp-accent-2:  #3B82F6;
-  --lp-accent-hover: #818CF8;
-  --lp-accent-soft: rgba(99, 102, 241, 0.16);
-  --lp-glow:      rgba(99, 102, 241, 0.20);
-  --lp-glow2:     rgba(59, 130, 246, 0.16);
-  --lp-glow3:     rgba(129, 140, 248, 0.12);
+  --lp-accent:    #059669;
+  --lp-accent-2:  #14B8A6;
+  --lp-accent-hover: #10B981;
+  --lp-accent-soft: rgba(16, 185, 129, 0.16);
+  --lp-glow:      rgba(16, 185, 129, 0.18);
+  --lp-glow2:     rgba(20, 184, 166, 0.14);
+  --lp-glow3:     rgba(52, 211, 153, 0.12);
 }
 
 /* ── Container ── */
@@ -610,7 +610,7 @@ main textarea:focus-visible {
   animation: lp-float 14s ease-in-out infinite;
 }
 
-/* Indigo gradient orb — hero bottom-left */
+/* Teal gradient orb — hero bottom-left */
 .lp-bg-orb-2 {
   position: absolute; top: 280px; left: -240px;
   width: 600px; height: 600px; border-radius: 50%;
@@ -656,16 +656,6 @@ main textarea:focus-visible {
   width: 160px; height: 160px; bottom: 60px; left: -50px;
   opacity: 0.16;
   animation: lp-float-reverse 20s ease-in-out infinite;
-}
-
-/* Dot grid pattern — more visible */
-.lp-dot-grid {
-  position: absolute; inset: 0; z-index: 0; pointer-events: none;
-  background-image: radial-gradient(circle, var(--lp-accent) 1px, transparent 1px);
-  background-size: 32px 32px;
-  opacity: 0.08;
-  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 35%, black 30%, transparent 75%);
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 35%, black 30%, transparent 75%);
 }
 
 /* Cross/plus accent — larger, bolder */
@@ -867,7 +857,7 @@ main textarea:focus-visible {
 .lp-cta-orb {
   position: absolute; top: -60px; left: -100px;
   width: 300px; height: 300px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(59, 186, 207, 0.15) 0%, transparent 65%);
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, transparent 65%);
   pointer-events: none; z-index: 0;
 }
 .lp-cta-diamond {
@@ -930,12 +920,12 @@ main textarea:focus-visible {
   background: linear-gradient(180deg, var(--lp-accent) 0%, var(--lp-accent-hover) 100%);
   color: #fff; font-weight: 600;
   border-radius: var(--lp-radius);
-  box-shadow: 0 1px 2px rgba(79,70,229,0.25), 0 6px 18px -6px rgba(79,70,229,0.45);
+  box-shadow: 0 1px 2px rgba(5,150,105,0.25), 0 6px 18px -6px rgba(5,150,105,0.45);
   transition: filter 160ms ease, transform 140ms var(--ease-out), box-shadow 200ms ease;
   cursor: pointer;
 }
 @media (hover: hover) and (pointer: fine) {
-  .lp-btn-primary:hover { filter: brightness(1.07); box-shadow: 0 2px 4px rgba(79,70,229,0.3), 0 10px 28px -6px rgba(79,70,229,0.55); }
+  .lp-btn-primary:hover { filter: brightness(1.07); box-shadow: 0 2px 4px rgba(5,150,105,0.3), 0 10px 28px -6px rgba(5,150,105,0.55); }
 }
 .lp-btn-primary:active { transform: scale(0.97); }
 
@@ -1253,7 +1243,7 @@ main textarea:focus-visible {
   background: linear-gradient(135deg, var(--lp-accent) 0%, var(--lp-accent-2) 100%);
   position: relative; overflow: hidden;
   border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: 0 30px 70px -30px rgba(79,70,229,0.6);
+  box-shadow: 0 30px 70px -30px rgba(5,150,105,0.6);
 }
 /* Soft top-light gloss across the card */
 .lp-cta::before {
@@ -1335,6 +1325,16 @@ main textarea:focus-visible {
   width: 264px;
   background: var(--lp-bg);
   transition: transform 300ms var(--ease-out);
+}
+/* Logo mark (LogoMark.tsx): the SVG is used as a mask so it can be tinted
+   from CSS. One emerald (#10B981) in both light and dark mode. */
+.aa-logo {
+  --logo-color: #10B981;
+  display: inline-block;
+  flex-shrink: 0;
+  background-color: var(--logo-color);
+  -webkit-mask: url("/logo-mark.svg") center / contain no-repeat;
+  mask: url("/logo-mark.svg") center / contain no-repeat;
 }
 .aa-item { transition: background-color 140ms ease, color 140ms ease, transform 160ms var(--ease-out); }
 .aa-item:hover { background: color-mix(in srgb, var(--lp-text) 4%, transparent); }

@@ -3,7 +3,6 @@
 import { useState, useMemo, useEffect, useRef, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   Files,
@@ -22,6 +21,7 @@ import { useAuth } from "@/lib/auth";
 import { useTheme } from "next-themes";
 import type { UserRole } from "@/types";
 import { HOMEPAGE, roleLabel } from "@/lib/roles";
+import LogoMark from "@/components/layout/LogoMark";
 
 interface NavItem {
   id: string;
@@ -131,7 +131,7 @@ export default function Sidebar() {
       </button>
       {/* Plain <a>: the homepage is static HTML, not a Next route. */}
       <a href={HOMEPAGE} aria-label="AutoAccounting homepage" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-        <Image src="/logo-mark.svg" alt="" width={34} height={24} />
+        <LogoMark width={34} height={24} />
         <span className="lp-logo-text text-[18px] tracking-tight text-[var(--text-sidebar)]">AutoAccounting</span>
       </a>
     </header>
@@ -168,7 +168,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="px-[19px] pt-5 pb-4 flex items-center justify-between gap-2">
         <a href={HOMEPAGE} aria-label="AutoAccounting homepage" className="flex items-center gap-2.5 min-w-0 hover:opacity-80 transition-opacity">
-          <Image src="/logo-mark.svg" alt="" width={34} height={24} className="shrink-0" />
+          <LogoMark width={34} height={24} className="shrink-0" />
           <span style={fade(0)} className="aa-fade lp-logo-text text-[17px] tracking-tight whitespace-nowrap">AutoAccounting</span>
         </a>
         {/* Close drawer (mobile only) */}

@@ -43,6 +43,17 @@ def open_review_query(company_id: uuid.UUID, start: date, end: date):
     )
 
 
+BANK_BLOCK = "bank_unreconciled"
+
+
+def bank_block_message(accounts: list[str], month_start: date, override_reason: str) -> str | None:
+    """The soft block on closing a month whose bank statement isn't reconciled (None = may close)."""
+    if not accounts or len(override_reason.strip()) >= 5:
+        return None
+    return (f"{BANK_BLOCK}: bank account {', '.join(accounts)} has statement lines in {month_start:%B %Y} that "
+            "aren't reconciled. Reconcile it under Bank first, or close anyway with a reason.")
+
+
 @dataclass(frozen=True)
 class MonthStatus:
     start: date

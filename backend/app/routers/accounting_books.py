@@ -18,8 +18,9 @@ from app.schemas.accounting_books import (
     JournalEntryOut, PaymentLinksOut, ReopenMonthIn,
 )
 from app.services.accounting import audit
+from app.services.accounting.books import bank
 from app.services.accounting.books.closing import (
-    CloseError, bind_deadline, bind_year, close_month, reopen_month, stored_file, year_status,
+    CloseError, bank_block_message, bind_deadline, bind_year, close_month, reopen_month, stored_file, year_status,
 )
 from app.services.accounting.books.links import doc_ref, invoice_docs, receipt_docs
 from app.services.accounting.books.loader import ensure_chart, touch_books
@@ -28,7 +29,7 @@ from app.services.accounting.compute.depreciation import fiscal_year_window
 
 router = APIRouter()
 
-_ACCOUNT_FIELDS = ("code", "name", "type", "parent_code", "active")
+_ACCOUNT_FIELDS = ("code", "name", "type", "parent_code", "active", "bank_account_no")
 _ENTRY_FIELDS = ("kind", "book", "entry_date", "reference", "particulars", "lines")
 
 
@@ -108,6 +109,10 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, user: User = 
                                                              "move them to another account first")
     if body.active is not None:
         row.active = body.active
+    if body.bank_account_no is not None:
+        if row.type != "asset":
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only asset accounts can carry a bank account number")
+        row.bank_account_no = body.bank_account_no.strip()
     audit.record(db, label=f"{row.code} {row.name}",
                  ent=ent, company_id=company.id, user=user, entity="account", entity_id=row.id,
                  action="update", before=before, after=audit.snapshot(row, _ACCOUNT_FIELDS))
@@ -288,6 +293,11 @@ async def close_books_month(body: CloseMonthIn, company_id: uuid.UUID, user: Use
     _require_manager(user)
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
+    month_start, month_end = bank.month_bounds(body.month_start)
+    unreconciled = await bank.unreconciled_accounts(db, company.id, month_start, month_end)
+    blocked = bank_block_message(unreconciled, month_start, body.override_reason)
+    if blocked:
+        raise HTTPException(status.HTTP_409_CONFLICT, blocked)
     try:
         row = await close_month(db, company, user.id, ent, body.month_start)
     except CloseError as exc:
@@ -296,7 +306,8 @@ async def close_books_month(body: CloseMonthIn, company_id: uuid.UUID, user: Use
     await db.flush()
     audit.record(db, label=audit.month_label(row.month_start),
                  ent=ent, company_id=company.id, user=user, entity="books_month", entity_id=row.id,
-                 action="close", after=_month(row))
+                 action="close", after={**_month(row), **({"unreconciled_bank": unreconciled} if unreconciled else {})},
+                 reason=body.override_reason.strip() if unreconciled else "")
     await db.commit()
     return await _books_year(db, company, row.fiscal_year)
 

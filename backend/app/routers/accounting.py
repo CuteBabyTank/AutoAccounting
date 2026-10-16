@@ -19,11 +19,13 @@ from app.auth.security import RateLimiter
 from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.models.accounting import (
-    AAAccount, AAAsset, AACompany, AADocument, AAFile, AAJournalEntry, AAOutput, AAPeriod, AASupplierRule, AAUpload,
+    AAAccount, AAAsset, AABankLine, AABankReconciliation, AACompany, AADocument, AAFile, AAJournalEntry, AAOutput,
+    AAPeriod, AASupplierRule, AAUpload,
 )
 from app.models.user import User, UserRole
 from app.routers import (
-    accounting_annual, accounting_atc, accounting_audit, accounting_books, accounting_employees, accounting_periods,
+    accounting_annual, accounting_atc, accounting_audit, accounting_bank, accounting_books, accounting_employees,
+    accounting_periods,
 )
 from app.routers.accounting_scope import (
     MANAGER_ROLES as _MANAGER_ROLES, company_or_404 as _company_or_404, scope_for as _scope,
@@ -44,7 +46,7 @@ from app.services.accounting.periods import period_fields, period_for, quarter_l
 from app.services.accounting.storage import (
     UploadRejected, filed_hashes, is_stored_path_safe, read_page_bytes, stream_upload, upload_dir,
 )
-from app.services.accounting.tree import TreeCompanyInput, build_tree, folder_counts, stale_periods
+from app.services.accounting.tree import TreeCompanyInput, bank_nodes, build_tree, folder_counts, stale_periods
 from app.services.usage_service import get_effective_rate_config, get_enterprise_for_user
 
 router = APIRouter()
@@ -578,7 +580,25 @@ async def get_tree(user: User = Depends(get_current_user), db: AsyncSession = De
     )).all()
     facts = {str(c.id): c.facts_updated_at for c in companies if c.facts_updated_at is not None}
     status_map = _quarter_status(outputs, filed, doc_changes, input_changes, asset_changes, annual_changes, facts)
-    return build_tree(inputs, [tuple(r) for r in rows], status_map)
+    return build_tree(inputs, [tuple(r) for r in rows], status_map, await _bank_tree(db, ent, fye))
+
+
+async def _bank_tree(db: AsyncSession, ent: uuid.UUID, fye: dict[str, int]) -> dict:
+    month = func.date_trunc("month", AABankLine.line_date)
+    open_line = case((AABankLine.match_status.in_(("unmatched", "ambiguous", "suggested")), 1), else_=0)
+    rows = (await db.execute(
+        select(AABankLine.company_id, AABankLine.account_code, month, func.count(), func.sum(open_line))
+        .where(AABankLine.enterprise_id == ent).group_by(AABankLine.company_id, AABankLine.account_code, month)
+    )).all()
+    if not rows:
+        return {}
+    reconciled = {(str(c), code, m) for c, code, m in (await db.execute(
+        select(AABankReconciliation.company_id, AABankReconciliation.account_code, AABankReconciliation.month_start)
+        .where(AABankReconciliation.enterprise_id == ent, AABankReconciliation.voided_at.is_(None)))).all()}
+    accounts = {(str(c), code): (name, number or "") for c, code, name, number in (await db.execute(
+        select(AAAccount.company_id, AAAccount.code, AAAccount.name, AAAccount.bank_account_no)
+        .where(AAAccount.enterprise_id == ent, AAAccount.code.in_({r[1] for r in rows if r[1]})))).all()}
+    return bank_nodes([tuple(r) for r in rows], reconciled, accounts, fye)
 
 
 @router.get("/folders", response_model=FolderOut)
@@ -906,6 +926,7 @@ async def file_page(
 
 
 router.include_router(accounting_books.router)
+router.include_router(accounting_bank.router)
 router.include_router(accounting_audit.router)
 router.include_router(accounting_employees.router)
 router.include_router(accounting_atc.router)

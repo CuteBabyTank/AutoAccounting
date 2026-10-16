@@ -21,6 +21,7 @@ class AccountOut(BaseModel):
     parent_code: str | None
     system_key: str | None
     active: bool
+    bank_account_no: str = ""
 
 
 class AccountIn(BaseModel):
@@ -34,6 +35,7 @@ class AccountPatch(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
     active: bool | None = None
+    bank_account_no: str | None = Field(default=None, max_length=40)
 
 
 class JournalLineIn(BaseModel):
@@ -118,6 +120,8 @@ class BooksYearOut(BaseModel):
 
 class CloseMonthIn(BaseModel):
     month_start: date
+    # Close although a bank statement month isn't reconciled (kept in the audit log).
+    override_reason: str = Field(default="", max_length=500)
 
 
 class ReopenMonthIn(BaseModel):

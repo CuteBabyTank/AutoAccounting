@@ -20,7 +20,7 @@ from app.models.accounting import (
     AAJournalEntry, AAOutput, AAPeriod,
 )
 from app.services.accounting.bank_match import (
-    BankLineFact, Candidate, Rule, learn_rule, match_all, open_items,
+    BankLineFact, Candidate, Match, Rule, learn_rule, match_all, open_items,
 )
 from app.services.accounting.bank_report_pdf import reconciliation_pdf
 from app.services.accounting.bank_statement import parse_statement, resolve_account, tie_out
@@ -66,6 +66,7 @@ async def store_statement(db: AsyncSession, doc: AADocument) -> AABankStatement 
         opening_balance=data.opening, closing_balance=data.closing, ties=ties, tie_breaks=breaks,
     )
     db.add(statement)
+    await db.flush()  # no ORM relationship orders the inserts: the statement must exist before its lines
     for l in data.lines:
         db.add(AABankLine(enterprise_id=doc.enterprise_id, company_id=doc.company_id, statement_id=statement.id,
                           account_code=code, line_no=l.line_no, line_date=l.on, amount=l.amount, balance=l.balance,
@@ -230,6 +231,9 @@ async def rematch(db: AsyncSession, company: AACompany) -> int:
     matched = 0
     for l in pending:
         m = results[str(l.id)]
+        if m.kind == "posting" and "posting" in (l.rejected or []):   # a person said no to posting it this way
+            m = Match("ambiguous" if m.candidates else "unmatched", candidates=m.candidates,
+                      reason="bank_match_ambiguous" if m.candidates else "bank_line_unmatched")
         posting = dict(m.posting)
         if posting.get("key"):
             posting["account"] = chart.code_or(posting["key"], "doc:other" if l.amount < 0 else "other_income")

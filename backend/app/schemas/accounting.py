@@ -196,10 +196,25 @@ class TreeAnnualOut(BaseModel):
     filed: bool = False
 
 
+class TreeBankMonthOut(BaseModel):
+    month_start: date
+    lines: int
+    open: int
+    reconciled: bool
+
+
+class TreeBankAccountOut(BaseModel):
+    account_code: str
+    name: str
+    last4: str = ""
+    months: list[TreeBankMonthOut]
+
+
 class TreeYearOut(BaseModel):
     year: int
     quarters: list[TreeQuarterOut]
     annual: TreeAnnualOut = Field(default_factory=TreeAnnualOut)
+    bank: list[TreeBankAccountOut] = Field(default_factory=list)
 
 
 class TreeCompanyOut(BaseModel):

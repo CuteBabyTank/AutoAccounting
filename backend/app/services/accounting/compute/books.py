@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
+from app.services.accounting.bank_match import due_amount
 from app.services.accounting.books.chart import Chart, JOURNAL_BOOKS
 from app.services.accounting.compute.cogs import claimed_input_vat, cost_base, is_capital_goods, vat_difference
 from app.services.accounting.compute.depreciation import Asset, depreciation_between
@@ -194,13 +195,7 @@ def document_entries(l: DocLine, inp: BooksInput) -> list[Entry]:
 def amount_due(l: DocLine, inp: BooksInput, contributions: dict[str, Decimal] | None = None) -> Decimal:
     """What the counterparty pays / is paid in cash: net of tax withheld (and, for payroll, the employees'
     SSS / PhilHealth / Pag-IBIG share deducted from their pay)."""
-    if l.category == "sales":
-        return c2(l.gross - l.withholding)
-    if l.category in ("purchases", "expenses"):
-        return c2(l.gross - inp.ewt.get(l.id, ZERO))
-    if l.category == "payroll":
-        return c2(l.gross - l.withholding - (contributions or {}).get(l.id, ZERO))
-    return ZERO
+    return due_amount(l, inp.ewt, contributions or {})
 
 
 def _month_contributions(inp: BooksInput) -> dict[tuple[int, int], tuple[date, Decimal, Decimal]]:

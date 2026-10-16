@@ -437,3 +437,32 @@ class AAEmployee(Base):
     data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # alphalist fields (compute/alphalist.py)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
+
+
+class AAAuditEvent(Base):
+    """One change a person made to a firm's data (append-only: RLS allows select and insert only)."""
+
+    __tablename__ = "aa_audit_events"
+    __table_args__ = (
+        Index("ix_aa_audit_events_company_at", "company_id", "at"),
+        Index("ix_aa_audit_events_entity", "entity", "entity_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    user_label: Mapped[str] = mapped_column(String(255), nullable=False, default="")  # email when it happened
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+    entity: Mapped[str] = mapped_column(String(30), nullable=False)        # audit.ENTITIES
+    entity_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    before: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)   # changed fields only
+    after: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")

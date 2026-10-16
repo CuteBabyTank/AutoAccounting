@@ -23,7 +23,7 @@ Drop-and-done for PH compliance: one batch of mixed client papers becomes the mo
 
 ## Capabilities and Constraints
 - Real review reasons the app raises include: possible duplicate, not addressed to the client, seller not VAT-registered, VAT math mismatch, another company's TIN, missing date/amount, low confidence.
-- The marketing site is static HTML/CSS/JS in frontend/public/ (index.html, styles.css, app.js), served at /homepage; no build step. The hero (headline, CTAs, sorting demo) is approved as-is and should not change.
+- The marketing site is static HTML/CSS/JS in frontend/public/ (index.html, styles.css, app.js), served at /homepage; no build step. The hero headline and sorting demo are approved as-is. The main CTA is "Book a demo" (a demo sells better than self-serve trial); keep subheads out, or to one sentence.
 - Billing is per extracted page (₱), opt-in per platform; pricing and free-tier terms are undecided.
 - No e-filing integration: AutoAccounting fills returns; the firm submits them.
 

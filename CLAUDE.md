@@ -6,7 +6,7 @@ Extracted from the SnagStock repo's `AutoAccounting` branch (2026-10-15). The br
 
 ## Repo layout
 
-The **static marketing site** lives in `frontend/public/` (`index.html`, `styles.css`, `app.js`, `assets/`; product notes in root `PRODUCT.md`): plain HTML/CSS/JS with no build step. `next.config.ts` serves it at `/homepage` (a rewrite) and redirects `/` there, so it is the app's default page. Every AutoAccounting logo and sign-out lead to `/homepage` (`HOMEPAGE` in `lib/roles.ts`; use a plain `<a>`, not `next/link`, since it isn't a Next route). Its CTAs and "Log in" go to `/login`. Changes to `next.config.ts` need `docker compose restart frontend`.
+The **static marketing site** lives in `frontend/public/` (`index.html`, `styles.css`, `app.js`, `assets/`; product notes in root `PRODUCT.md`): plain HTML/CSS/JS with no build step. `next.config.ts` serves it at `/homepage` (a rewrite) and redirects `/` there, so it is the app's default page. Every AutoAccounting logo and sign-out lead to `/homepage` (`HOMEPAGE` in `lib/roles.ts`; use a plain `<a>`, not `next/link`, since it isn't a Next route). "Log in" goes to `/login`; the "Book a demo" CTAs open an email to the contact address (no booking tool yet). Copy rule: no subheads under section headings; if one is unavoidable, one sentence. Changes to `next.config.ts` need `docker compose restart frontend`.
 
 ```
 backend/app/

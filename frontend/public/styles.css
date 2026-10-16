@@ -69,6 +69,11 @@ ul, ol, dl, dd { margin: 0; padding: 0; list-style: none; }
   box-shadow: 0 1px 0 rgba(255, 255, 255, .18) inset, 0 8px 20px -8px rgba(5, 150, 105, .55);
 }
 .btn-primary:hover { background: #047857; box-shadow: 0 1px 0 rgba(255, 255, 255, .18) inset, 0 16px 32px -12px rgba(5, 150, 105, .6); }
+/* Main CTA: lifts and its arrow slides forward on hover. (On mouse devices the
+   magnetic effect in app.js sets the transform itself, already lifted 2px.) */
+.btn-primary:hover { transform: translateY(-2px); }
+.btn-primary .arrow { flex-shrink: 0; transition: transform .35s var(--ease); }
+.btn-primary:hover .arrow, .btn-primary:focus-visible .arrow { transform: translateX(4px); }
 .btn-ghost { background: rgba(255, 255, 255, .85); color: var(--ink); border: 1px solid var(--line); box-shadow: var(--shadow-sm); }
 .btn-ghost:hover { border-color: var(--line-2); box-shadow: var(--shadow); }
 .btn:active { transform: scale(.98); }
@@ -94,7 +99,7 @@ main, .footer { position: relative; z-index: 1; }
 .nav-links a { transition: color .2s; }
 .nav-links a:hover { color: var(--ink); }
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
-.nav-login { padding: 8px 10px; font-size: 14.5px; font-weight: 600; color: var(--ink-2); border-radius: 10px; transition: color .2s; }
+.nav-login { padding: 8px 10px; white-space: nowrap; font-size: 14.5px; font-weight: 600; color: var(--ink-2); border-radius: 10px; transition: color .2s; }
 .nav-login:hover { color: var(--ink); }
 
 /* ───────── Hero ───────── */
@@ -263,7 +268,7 @@ main, .footer { position: relative; z-index: 1; }
 /* ───────── Sections ───────── */
 .section { padding: 120px 0; }
 .section--tint { background: transparent; }
-.section-head { max-width: 640px; margin-bottom: 56px; }
+.section-head { max-width: 640px; margin-bottom: 40px; }
 .section-head h2, .trace-copy h2, .final h2 { font-size: clamp(32px, 3.8vw, 48px); font-weight: 800; letter-spacing: -.035em; }
 .section-sub { margin-top: 16px; font-size: 17.5px; color: var(--ink-2); max-width: 34em; }
 
@@ -443,6 +448,9 @@ main, .footer { position: relative; z-index: 1; }
   .logo span { font-size: 15px; }
   .btn .long { display: none; }
   .btn .short { display: inline; }
+  .nav-right { gap: 2px; }
+  .nav-login { padding: 8px 8px; }
+  .nav .btn-sm { padding: 9px 13px; }
   .hero { padding: 104px 0 72px; }
   .lede { font-size: 17px; }
   .section { padding: 80px 0; }
@@ -480,3 +488,7 @@ main, .footer { position: relative; z-index: 1; }
   .js .reveal { transform: none; transition: opacity .5s ease; }
 }
 @keyframes fadeIn { from { opacity: 0; } }
+@media (max-width: 380px) {
+  /* Smallest phones: the mark alone keeps "Log in" and "Book a demo" on one line. */
+  .nav .logo span { display: none; }
+}

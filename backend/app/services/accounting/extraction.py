@@ -58,7 +58,13 @@ Reply with ONLY valid JSON, no markdown fences, no explanation:
   "marked_paid": <true when the document says PAID, RELEASED or RECEIVED (e.g. a payroll sheet marked released), else false>,
   "nature": "<goods_for_resale|raw_materials|capital_goods|services|import|payroll|other>",
   "expense_account": "<purchases|raw_materials|importation|capital_goods|salaries|rent|utilities|professional_fees|office_supplies|representation|transportation|repairs|taxes_licenses|other>",
-  "confidence": <0-100, your certainty in the amounts and date>
+  "confidence": <0-100, your certainty in the amounts and date>,
+  "statement": <ONLY for a bank or e-wallet statement, else omit: {"bank_name": "", "account_number": "<as printed>",
+    "period_start": "<YYYY-MM-DD>", "period_end": "<YYYY-MM-DD>", "opening_balance": <beginning balance>,
+    "closing_balance": <ending balance>,
+    "lines": [{"date": "<YYYY-MM-DD>", "description": "<narration exactly as printed>", "debit": <withdrawal / money out, 0 if none>,
+               "credit": <deposit / money in, 0 if none>, "balance": <running balance as printed, or "" if not shown>,
+               "ref": "<check or reference number, or "">"}]}>
 }]}
 
 Rules:
@@ -74,6 +80,7 @@ Rules:
 - Meals or entertainment with clients use expense_account "representation".
 - Every page that carries its own complete document (its own header, number and total) is a separate entry, even when it
   repeats a document already in this file (a second copy or a rescan). Only merge pages that continue one document.
+- For a bank statement list every transaction line in order, across all its pages, in "statement".lines.
 - Amounts are plain numbers without currency symbols; use 0 when not shown.
 - Use "" for text that is not printed. Never invent a TIN or a document number."""
 

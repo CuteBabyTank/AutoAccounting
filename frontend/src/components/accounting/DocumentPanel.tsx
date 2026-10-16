@@ -5,7 +5,7 @@ import { X } from "@phosphor-icons/react";
 import AssetSection from "@/components/accounting/AssetSection";
 import DuplicateCompare from "@/components/accounting/DuplicateCompare";
 import { accountingApi } from "@/lib/accounting-api";
-import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, EWT_ATC_OPTIONS, REASON_LABELS, apiErrorMessage, formatPeso } from "@/lib/accounting-format";
+import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, EWT_ATC_OPTIONS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, formatPeso, reasonDetail } from "@/lib/accounting-format";
 import type { AADocument, Account, DocumentPatch, DuplicatePair, PaymentLinks } from "@/types/accounting";
 
 const AMOUNTS = [
@@ -212,7 +212,8 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
     </div>
   );
 
-  const openReasons = doc.needs_review && !doc.reviewed ? doc.review_reasons : [];
+  const openReasons = doc.needs_review && !doc.reviewed ? doc.review_reasons.filter((r) => !SOFT_REASONS.has(r)) : [];
+  const notes = doc.reviewed ? [] : doc.review_reasons.filter((r) => SOFT_REASONS.has(r));
 
   async function compareDuplicates() {
     setError("");
@@ -266,12 +267,21 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
             {openReasons.map((r) => (
               <li key={r}>
                 • {REASON_LABELS[r] ?? r}
-                {r === "possible_duplicate" && (
+                {reasonDetail(r, doc.review_notes) && <span className="ml-1 font-medium">{reasonDetail(r, doc.review_notes)}</span>}
+                {(r === "possible_duplicate" || r === "duplicate_invoice_number") && (
                   <button className="ml-2 font-semibold underline" disabled={busy} onClick={compareDuplicates}>
                     Compare side by side
                   </button>
                 )}
               </li>
+            ))}
+          </ul>
+        )}
+
+        {notes.length > 0 && (
+          <ul className="mb-4 space-y-1 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-sm text-[var(--text-secondary)]">
+            {notes.map((r) => (
+              <li key={r}>• {REASON_LABELS[r] ?? r}</li>
             ))}
           </ul>
         )}

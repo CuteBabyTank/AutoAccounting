@@ -9,6 +9,7 @@ import type { Company, CompanyInput } from "@/types/accounting";
 const EMPTY: CompanyInput = {
   registered_name: "",
   aliases: [],
+  owner_names: [],
   tin: "",
   branch_code: "00000",
   rdo_code: "",
@@ -49,6 +50,7 @@ interface Props {
 export default function CompanyForm({ initial, companyId, onClose, onSaved }: Props) {
   const [form, setForm] = useState<CompanyInput>({ ...EMPTY, ...initial });
   const [aliases, setAliases] = useState((initial?.aliases ?? []).join(", "));
+  const [owners, setOwners] = useState((initial?.owner_names ?? []).join(", "));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -63,6 +65,7 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
       ...EMPTY,
       ...form,
       aliases: aliases.split(",").map((a) => a.trim()).filter(Boolean),
+      owner_names: owners.split(",").map((a) => a.trim()).filter(Boolean),
       income_tax_option: form.taxpayer_type === "individual" ? form.income_tax_option : "graduated",
       operations_start_year: form.taxpayer_type === "individual" ? null : form.operations_start_year,
       has_compensation_income: form.taxpayer_type === "individual" && form.has_compensation_income,
@@ -110,6 +113,11 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
           <div className="sm:col-span-2">
             <label className={LABEL}>Trade names / aliases (comma-separated)</label>
             <input className={INPUT} value={aliases} onChange={(e) => setAliases(e.target.value)} placeholder="JCT, Juan Cloth Shop" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={LABEL}>Owner / officer names (comma-separated)</label>
+            <input className={INPUT} value={owners} onChange={(e) => setOwners(e.target.value)} placeholder="Juan Dela Cruz" />
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">Receipts made out to these people personally are excluded as personal purchases.</p>
           </div>
           <div>
             <label className={LABEL}>TIN *</label>

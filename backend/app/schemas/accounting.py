@@ -36,6 +36,7 @@ def _tin_base(value: str) -> str:
 class CompanyIn(BaseModel):
     registered_name: str = Field(min_length=1, max_length=255)
     aliases: list[str] = Field(default_factory=list, max_length=20)
+    owner_names: list[str] = Field(default_factory=list, max_length=20)
     tin: str = Field(min_length=9, max_length=25)
     branch_code: str = "00000"
     rdo_code: str = Field(default="", max_length=5)
@@ -69,7 +70,7 @@ class CompanyIn(BaseModel):
             raise ValueError("Registered name is required")
         return v
 
-    @field_validator("aliases")
+    @field_validator("aliases", "owner_names")
     @classmethod
     def _clean_aliases(cls, v: list[str]) -> list[str]:
         return [a.strip()[:255] for a in v if a and a.strip()]
@@ -262,6 +263,7 @@ class DocumentOut(BaseModel):
     confidence: float
     needs_review: bool
     review_reasons: list[str]
+    review_notes: dict = Field(default_factory=dict)
     reviewed: bool
     excluded: bool
     created_at: datetime

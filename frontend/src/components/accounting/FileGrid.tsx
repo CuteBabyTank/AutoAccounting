@@ -92,8 +92,8 @@ export default function FileGrid({ folder, category, onCategory, onOpen, onEditC
                   <td className="py-2 pr-3 text-right tabular-nums">{formatPeso(d.vat_amount)}</td>
                   <td className="py-2 text-right">
                     {d.excluded ? (
-                      <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-secondary)]">Excluded</span>
-                    ) : d.needs_review && !d.reviewed && d.review_reasons.includes("possible_duplicate") ? (
+                      <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-secondary)]">{d.review_reasons.includes("personal_purchase") ? "Excluded: personal" : "Excluded"}</span>
+                    ) : d.needs_review && !d.reviewed && (d.review_reasons.includes("possible_duplicate") || d.review_reasons.includes("duplicate_invoice_number")) ? (
                       <span className="rounded-full bg-[var(--badge-red-bg)] px-2 py-0.5 text-xs font-medium text-[var(--badge-red-text)]">Duplicate?</span>
                     ) : d.needs_review && !d.reviewed ? (
                       <span className="rounded-full bg-[var(--badge-yellow-bg)] px-2 py-0.5 text-xs font-medium text-[var(--badge-yellow-text)]">Review</span>

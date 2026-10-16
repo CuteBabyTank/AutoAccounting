@@ -3,6 +3,8 @@ export type TaxpayerType = "individual" | "corporation" | "partnership";
 export interface CompanyInput {
   registered_name: string;
   aliases: string[];
+  /** Owner / officers: a purchase made out to one of them personally is excluded as personal. */
+  owner_names: string[];
   tin: string;
   branch_code: string;
   rdo_code: string;
@@ -165,6 +167,8 @@ export interface AADocument {
   confidence: number;
   needs_review: boolean;
   review_reasons: string[];
+  /** Details per reason, e.g. review_notes.ewt_expected = { atc, rate, base, amount }. */
+  review_notes?: Record<string, Record<string, string>>;
   reviewed: boolean;
   excluded: boolean;
   paid_on: string | null;
@@ -180,7 +184,7 @@ export interface AADocument {
 export interface DuplicatePair {
   original: AADocument;
   duplicate: AADocument;
-  reason: "same_number" | "same_details";
+  reason: "same_number" | "same_details" | "number_reused";
   original_file: string;
   duplicate_file: string;
 }

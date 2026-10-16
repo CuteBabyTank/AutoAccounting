@@ -113,7 +113,7 @@ async def create_company(
 
 
 _BOOKS_SETTINGS = frozenset({"books_start", "books_kept", "books_signatory", "books_signatory_title"})
-_NOT_TAX_FACTS = frozenset({"pinned", "aliases"}) | _BOOKS_SETTINGS
+_NOT_TAX_FACTS = frozenset({"pinned", "aliases", "owner_names"}) | _BOOKS_SETTINGS
 
 
 def tax_facts_changed(changed: dict) -> bool:

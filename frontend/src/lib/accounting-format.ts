@@ -42,14 +42,33 @@ export const REASON_LABELS: Record<string, string> = {
   not_addressed_to_client: "Not addressed to the company's name or TIN, so no input VAT.",
   seller_not_vat_registered: "Seller isn't shown as VAT-registered, so no input VAT.",
   not_an_invoice: "Not an invoice. Receipts don't support input VAT.",
-  vat_math_mismatch: "VAT isn't 12% of the VATable amount.",
+  vat_math_mismatch: "VAT isn't 12% of the VATable amount. Input VAT is claimed at 12% and the excess goes to VAT difference - for review.",
   amounts_dont_add_up: "VATable, VAT, exempt and zero-rated amounts don't add up to the total. Check them against the page.",
   possible_duplicate: "Possible duplicate of a document already filed.",
   other_company_tin: "Shows another company's TIN from your databank.",
   nothing_extracted: "Nothing could be read from these pages.",
   possible_payment: "Looks like a payment receipt for one of several invoices. Choose the invoice it pays.",
   supplier_rule_mismatch: "This supplier's remembered account doesn't fit this document (goods vs services), so it wasn't applied. Check the account.",
+  tendered_less_than_total: "Cash tendered is less than the total (negative change). The total is posted. Ask whether there was another payment or the receipt was altered.",
+  ewt_expected: "The company withholds tax, but this bill for professional fees or rent shows no EWT.",
+  payment_source_unknown: "Marked paid or released, but nothing shows where the money came from. Ask the client.",
+  payment_unverified: "On credit terms and no payment is linked yet.",
+  duplicate_invoice_number: "This supplier used the same invoice number on another document with a different date.",
+  personal_purchase: "Made out to the owner personally, so it was excluded from the books. If the company paid for it, record it as drawings.",
 };
+
+/** Reasons shown as a note only: they never put a document in the review queue or block a month close. */
+export const SOFT_REASONS = new Set(["payment_unverified"]);
+
+/** The extra detail a reason carries (suggested ATC, recomputed VAT, cash tendered), or "". */
+export function reasonDetail(reason: string, notes?: Record<string, Record<string, string>>): string {
+  const n = notes?.[reason];
+  if (!n) return "";
+  if (reason === "ewt_expected") return `Suggested ${n.atc} at ${n.rate}% of ₱${formatPeso(n.base)}: ₱${formatPeso(n.amount)}.`;
+  if (reason === "vat_math_mismatch") return `12% is ₱${formatPeso(n.expected)}; difference ₱${formatPeso(n.difference)}.`;
+  if (reason === "tendered_less_than_total") return `Tendered ₱${formatPeso(n.tendered)} on a total of ₱${formatPeso(n.total)}.`;
+  return "";
+}
 
 export const BOOK_LABELS: Record<string, string> = {
   SJ: "Sales Journal",

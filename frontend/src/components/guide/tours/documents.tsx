@@ -426,6 +426,7 @@ export const DOCUMENTS_TOUR: Slide[] = [
     body: "When something looks off, the document is flagged with the reason. You decide.",
     points: [
       "Common flags: an unreadable date, VAT that isn't 12%, a possible duplicate, or a receipt that can't support input VAT.",
+      "Also flagged: cash tendered below the total, EWT the company should have withheld, a supplier reusing an invoice number, a purchase in the owner's own name, and pay marked released with no payment behind it.",
       "Open a document to see the scanned page next to what we read, and correct any field.",
       "Click Mark reviewed when it's right. Until every flag is cleared, generated returns are marked DRAFT.",
     ],

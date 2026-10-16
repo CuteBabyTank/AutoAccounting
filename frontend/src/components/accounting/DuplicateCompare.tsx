@@ -12,6 +12,7 @@ const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-m
 const REASONS: Record<DuplicatePair["reason"], string> = {
   same_number: "Same counterparty and document number.",
   same_details: "Same counterparty, date and total. The number is different or missing, so it may have been misread.",
+  number_reused: "Same supplier and invoice number, but a different date. A supplier shouldn't reuse an invoice number.",
 };
 
 type Side = "original" | "duplicate";

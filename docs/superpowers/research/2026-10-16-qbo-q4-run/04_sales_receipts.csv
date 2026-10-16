@@ -1,0 +1,8 @@
+Sales Receipt No,Customer,Sales Receipt Date,Deposit To,Product/Service,Description,Qty,Rate,Amount
+0007,Juan Dela Cruz,11/22/2026,Cash on hand,Cordless Drill 18V,Cordless Drill 18V,3,4250.00,12750.00
+0007,Juan Dela Cruz,11/22/2026,Cash on hand,Socket Wrench Set 40pc,Socket Wrench Set 40pc,1,2150.00,2150.00
+0007,Juan Dela Cruz,11/22/2026,Cash on hand,Enamel Paint Black,Enamel Paint Black,4,1100.00,4400.00
+0007,Juan Dela Cruz,11/22/2026,Cash on hand,Output VAT 12%,Output VAT 12%,1,2316.00,2316.00
+0009,San Roque Parish Church,12/20/2026,Cash on hand,Elastomeric Paint White,Elastomeric Paint White,20,1525.00,30500.00
+0009,San Roque Parish Church,12/20/2026,Cash on hand,LED Bulb 12W,LED Bulb 12W,40,180.00,7200.00
+0009,San Roque Parish Church,12/20/2026,Cash on hand,Output VAT 12%,Output VAT 12%,1,4524.00,4524.00

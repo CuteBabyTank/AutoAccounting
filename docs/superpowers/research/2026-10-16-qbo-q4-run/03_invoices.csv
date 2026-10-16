@@ -1,0 +1,20 @@
+Invoice No,Customer,Invoice Date,Due Date,Terms,Product/Service,Description,Qty,Rate,Amount
+0005,Mabuhay Builders Inc.,10/03/2026,11/02/2026,Net 30,Portland Cement 40kg,Portland Cement 40kg,140,265.00,37100.00
+0005,Mabuhay Builders Inc.,10/03/2026,11/02/2026,Net 30,Deformed Bar 10mm x 6m,Deformed Bar 10mm x 6m,56,245.00,13720.00
+0005,Mabuhay Builders Inc.,10/03/2026,11/02/2026,Net 30,Deformed Bar 12mm x 6m,Deformed Bar 12mm x 6m,28,387.50,10850.00
+0005,Mabuhay Builders Inc.,10/03/2026,11/02/2026,Net 30,Tie Wire #16,Tie Wire #16,35,84.00,2940.00
+0005,Mabuhay Builders Inc.,10/03/2026,11/02/2026,Net 30,Hollow Block 4in,Hollow Block 4in,70,18.00,1260.00
+0005,Mabuhay Builders Inc.,10/03/2026,11/02/2026,Net 30,Plywood 1/4 Marine,Plywood 1/4 Marine,14,690.00,9660.00
+0005,Mabuhay Builders Inc.,10/03/2026,11/02/2026,Net 30,Common Nails 3in,Common Nails 3in,42,93.00,3906.00
+0005,Mabuhay Builders Inc.,10/03/2026,11/02/2026,Net 30,Elastomeric Paint White,Elastomeric Paint White,17,1525.00,25925.00
+0005,Mabuhay Builders Inc.,10/03/2026,11/02/2026,Net 30,Output VAT 12%,Output VAT 12%,1,12643.32,12643.32
+0006,Kalayaan Construction Co.,10/18/2026,11/17/2026,Net 30,Portland Cement 40kg,Portland Cement 40kg,420,265.00,111300.00
+0006,Kalayaan Construction Co.,10/18/2026,11/17/2026,Net 30,Deformed Bar 12mm x 6m,Deformed Bar 12mm x 6m,168,387.50,65100.00
+0006,Kalayaan Construction Co.,10/18/2026,11/17/2026,Net 30,GI Sheet Gauge 26 x 8ft,GI Sheet Gauge 26 x 8ft,84,560.00,47040.00
+0006,Kalayaan Construction Co.,10/18/2026,11/17/2026,Net 30,Coco Lumber 2x3x10,Coco Lumber 2x3x10,98,185.00,18130.00
+0006,Kalayaan Construction Co.,10/18/2026,11/17/2026,Net 30,Output VAT 12%,Output VAT 12%,1,28988.40,28988.40
+0006,Kalayaan Construction Co.,10/18/2026,11/17/2026,Net 30,Creditable withholding tax,1% EWT withheld by customer (2307 to follow),-1,2415.70,-2415.70
+0008,Mabuhay Builders Inc.,12/10/2026,01/09/2027,Net 30,Portland Cement 40kg,Portland Cement 40kg,210,265.00,55650.00
+0008,Mabuhay Builders Inc.,12/10/2026,01/09/2027,Net 30,PVC Pipe 4in x 3m,PVC Pipe 4in x 3m,84,420.00,35280.00
+0008,Mabuhay Builders Inc.,12/10/2026,01/09/2027,Net 30,THHN Wire #12 (150m),THHN Wire #12 (150m),14,1890.00,26460.00
+0008,Mabuhay Builders Inc.,12/10/2026,01/09/2027,Net 30,Output VAT 12%,Output VAT 12%,1,14086.80,14086.80

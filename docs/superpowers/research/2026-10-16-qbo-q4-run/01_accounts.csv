@@ -1,0 +1,20 @@
+Account Name,Type,Detail Type,Description
+Pinoy Commerce Bank - Checking 0041-2288-7710,Bank,Bank,Business checking
+Cash on hand,Bank,Cash on hand,"Petty cash / store cash, e-wallets and other cards"
+Credit card ****4412,Credit Card,Credit Card,Company credit card ending 4412
+Input VAT,Other Current Assets,Other current assets,Input VAT on domestic purchases
+Input VAT - Importation,Other Current Assets,Other current assets,VAT paid to BOC on imports
+Creditable withholding tax,Other Current Assets,Other current assets,EWT withheld by customers (2307 to receive)
+Office equipment,Fixed Assets,Machinery and equipment,Computers and office equipment
+Output VAT,Other Current Liabilities,Other current liabilities,VAT on sales
+Expanded withholding tax payable,Other Current Liabilities,Other current liabilities,EWT withheld from suppliers (0619-E/1601-EQ)
+Withholding tax on compensation payable,Other Current Liabilities,Other current liabilities,1601-C
+SSS payable,Other Current Liabilities,Other current liabilities,
+PhilHealth payable,Other Current Liabilities,Other current liabilities,
+Pag-IBIG payable,Other Current Liabilities,Other current liabilities,
+Suspense - for review,Other Current Liabilities,Other current liabilities,Items needing client confirmation
+Purchases,Cost of Goods Sold,Supplies & Materials - COGS,Goods for resale incl. import landed cost
+Taxes and licenses,Expenses,Taxes Paid,"Local permits, fees, DST"
+Representation and entertainment,Expenses,Entertainment Meals,Client meals and gifts
+Transportation and fuel,Expenses,Auto,"Fuel, tolls, parking, rides"
+13th month pay and other benefits,Expenses,Payroll Expenses,

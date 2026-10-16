@@ -1,0 +1,75 @@
+Bill No,Supplier,Bill Date,Due Date,Terms,Memo,Account,Line Description,Line Amount
+88548,Pacific Steel & Cement Supply Inc.,10/01/2026,10/31/2026,Net 30,Terms: 30 days PDC,Purchases,Cement and deformed bars for resale,143060.00
+88548,Pacific Steel & Cement Supply Inc.,10/01/2026,10/31/2026,Net 30,Terms: 30 days PDC,Input VAT,Input VAT 12%,17167.20
+5838,Luzon Paint Distributors Corp.,11/05/2026,11/20/2026,Net 15,,Purchases,Paints and thinner for resale,62580.00
+5838,Luzon Paint Distributors Corp.,11/05/2026,11/20/2026,Net 15,,Input VAT,Input VAT 12%,7509.60
+10759,Techworld Computer Center Inc.,11/12/2026,11/12/2026,Due on receipt,"2 laptops S/N TW-88412, TW-88413 + laser printer",Office equipment,2 laptops 14in Core i5 + laser printer,75000.00
+10759,Techworld Computer Center Inc.,11/12/2026,11/12/2026,Due on receipt,"2 laptops S/N TW-88412, TW-88413 + laser printer",Input VAT,Input VAT 12% (capital goods),9000.00
+EB-7781-2525,Metro Luzon Electric Company,11/15/2026,11/25/2026,,"Acct 4412-8890-01, 2,840 kWh Oct 14-Nov 13",Utilities,Electricity,8450.00
+EB-7781-2525,Metro Luzon Electric Company,11/15/2026,11/25/2026,,"Acct 4412-8890-01, 2,840 kWh Oct 14-Nov 13",Input VAT,Input VAT 12%,1014.00
+RS-1048,"Reyes Santos & Co., CPAs",10/31/2026,11/15/2026,Net 15,Oct 2026 retainer. CHECK: no EWT on invoice,Legal and professional fees,Bookkeeping & tax compliance retainer Oct 2026,25000.00
+RS-1048,"Reyes Santos & Co., CPAs",10/31/2026,11/15/2026,Net 15,Oct 2026 retainer. CHECK: no EWT on invoice,Input VAT,Input VAT 12%,3000.00
+001190,Kusina ni Lola Restaurant,11/28/2026,11/28/2026,Due on receipt,Client lunch - Kalayaan Construction (6 pax),Representation and entertainment,Client lunch,4200.00
+001190,Kusina ni Lola Restaurant,11/28/2026,11/28/2026,Due on receipt,Client lunch - Kalayaan Construction (6 pax),Input VAT,Input VAT 12%,504.00
+PB-44437,Petro Bayan Gas Station,12/04/2026,12/04/2026,Due on receipt,Diesel 50L - NBC 4521,Transportation and fuel,Diesel delivery truck,3125.00
+PB-44437,Petro Bayan Gas Station,12/04/2026,12/04/2026,Due on receipt,Diesel 50L - NBC 4521,Input VAT,Input VAT 12%,375.00
+0538,Aling Nena's School & Office Supplies,10/22/2026,10/22/2026,Due on receipt,NON-VAT seller,Stationery and printing,"Bond paper, ballpens, record book",1650.00
+OR-0659,QuickFix Aircon Services,12/18/2026,12/18/2026,Due on receipt,"OFFICIAL RECEIPT, not a VAT invoice: input VAT 720 not claimed",Repairs and Maintenance,Aircon cleaning + freon recharge x2,6720.00
+8098,Golden Hardware Wholesale,12/25/2026,12/25/2026,Due on receipt,"VAT MISMATCH: invoice VAT 2,600 vs 12% of 20,000 = 2,400",Purchases,Padlocks and door hinges for resale,20000.00
+8098,Golden Hardware Wholesale,12/25/2026,12/25/2026,Due on receipt,"VAT MISMATCH: invoice VAT 2,600 vs 12% of 20,000 = 2,400",Input VAT,Input VAT 12% (recomputed),2400.00
+8098,Golden Hardware Wholesale,12/25/2026,12/25/2026,Due on receipt,"VAT MISMATCH: invoice VAT 2,600 vs 12% of 20,000 = 2,400",Suspense - for review,"Excess VAT billed, confirm with supplier",200.00
+OR-7781904,City Government of Marikina,11/03/2026,11/03/2026,Due on receipt,AF51 OR 7781904,Taxes and licenses,"Signage permit, building permit, documentary stamp",3500.00
+C-2026-1119-44812,"Guangzhou Hengli Tools Mfg. Co., Ltd.",11/19/2026,11/19/2026,,"Import entry C-2026-1119-44812, B/L COSU6612049981; supplier invoice not in pack",Purchases,"Hand tools assorted 1,200 sets - FOB",176400.00
+BOC-0198832,Bureau of Customs,11/19/2026,11/19/2026,Due on receipt,"Entry C-2026-1119-44812, BOC OR 0198832",Purchases,Customs duty 5%,9250.00
+BOC-0198832,Bureau of Customs,11/19/2026,11/19/2026,Due on receipt,"Entry C-2026-1119-44812, BOC OR 0198832",Input VAT - Importation,Import VAT 12%,23520.00
+C-44812-FRT,R. Villanueva (Customs Broker),11/19/2026,11/19/2026,,ASSUMED payee for freight/insurance + brokerage on entry C-2026-1119-44812,Purchases,Freight and insurance,8600.00
+C-44812-FRT,R. Villanueva (Customs Broker),11/19/2026,11/19/2026,,ASSUMED payee for freight/insurance + brokerage on entry C-2026-1119-44812,Purchases,"Brokerage, arrastre and other charges",1750.00
+0048029,Tindahan Mart Supermarket,10/06/2026,10/06/2026,Due on receipt,"Office pantry. Receipt shows cash 2,000 / change -992.25",Supplies,Pantry supplies,2686.12
+0048029,Tindahan Mart Supermarket,10/06/2026,10/06/2026,Due on receipt,"Office pantry. Receipt shows cash 2,000 / change -992.25",Input VAT,Input VAT 12%,306.13
+221401235,Sulit-Stop Convenience Store,10/09/2026,10/09/2026,Due on receipt,No buyer name/TIN: input VAT 59.36 not claimed,Other general and administrative expenses,"Water, sandwiches, coffee",554.00
+0012151,Botika ng Bayan Pharmacy,10/14/2026,10/14/2026,Due on receipt,"First-aid supplies. Receipt shows cash 1,500 / change -470",Supplies,"First aid, alcohol, paracetamol, masks",1799.64
+0012151,Botika ng Bayan Pharmacy,10/14/2026,10/14/2026,Due on receipt,"First-aid supplies. Receipt shows cash 1,500 / change -470",Input VAT,Input VAT 12%,170.36
+087-0034439,Pahina Bookstore,10/20/2026,10/20/2026,Due on receipt,,Stationery and printing,"Bond paper, stapler, folders, ink, tape",5648.44
+087-0034439,Pahina Bookstore,10/20/2026,10/20/2026,Due on receipt,,Input VAT,Input VAT 12%,677.81
+CK-019150,Kape Kanto Coffee,10/24/2026,10/24/2026,Due on receipt,Meeting w/ supplier (paid by card),Representation and entertainment,Coffee meeting,1290.18
+CK-019150,Kape Kanto Coffee,10/24/2026,10/24/2026,Due on receipt,Meeting w/ supplier (paid by card),Input VAT,Input VAT 12%,154.82
+0128-0442219,Manok House Fast Food,10/31/2026,10/31/2026,Due on receipt,"Staff lunch - month-end inventory. Receipt shows cash 3,000 / change -1,319",Other general and administrative expenses,Staff meal,3856.25
+0128-0442219,Manok House Fast Food,10/31/2026,10/31/2026,Due on receipt,"Staff lunch - month-end inventory. Receipt shows cash 3,000 / change -1,319",Input VAT,Input VAT 12%,462.75
+SG-2026-11-0091564,SakayGo Technologies Inc.,11/02/2026,11/02/2026,Due on receipt,Ride Marikina to Pasig,Transportation and fuel,Car ride + booking fee,380.36
+SG-2026-11-0091564,SakayGo Technologies Inc.,11/02/2026,11/02/2026,Due on receipt,Ride Marikina to Pasig,Input VAT,Input VAT 12%,45.64
+PG-034728,Park-N-Go Parking,11/02/2026,11/02/2026,Due on receipt,"OFFICIAL RECEIPT, not a VAT invoice: input VAT 16.07 not claimed",Transportation and fuel,Parking 3h,150.00
+0052607,Tindahan Mart Supermarket,11/03/2026,11/03/2026,Due on receipt,"Buyer block blank: input VAT 125.01 not claimed; rice/eggs, check if personal. Cash 3,000 / change -101.75",Supplies,Groceries,3101.75
+PB-45304,Petro Bayan Gas Station,11/09/2026,11/09/2026,Due on receipt,"Diesel - NBC 4521, fleet card",Transportation and fuel,Diesel 48.52L,2722.75
+PB-45304,Petro Bayan Gas Station,11/09/2026,11/09/2026,Due on receipt,"Diesel - NBC 4521, fleet card",Input VAT,Input VAT 12%,326.73
+T3-88121248,Metro Expressway Toll Corp.,11/09/2026,11/09/2026,Due on receipt,RFID,Transportation and fuel,Class 2 toll,269.64
+T3-88121248,Metro Expressway Toll Corp.,11/09/2026,11/09/2026,Due on receipt,RFID,Input VAT,Input VAT 12%,32.36
+PX-0045-77440,Padala Express Courier,11/11/2026,11/11/2026,Due on receipt,,Shipping and delivery expense,Courier Cebu/Davao,1214.29
+PX-0045-77440,Padala Express Courier,11/11/2026,11/11/2026,Due on receipt,,Input VAT,Input VAT 12%,145.71
+0729,Kidlat Printing & Xerox,11/14/2026,11/14/2026,Due on receipt,NON-VAT seller,Stationery and printing,"Tarpaulin sale banners, photocopy, lamination",2076.50
+1504,Aqua Pure Water Refilling Station,11/18/2026,11/18/2026,Due on receipt,NON-VAT seller,Utilities,Water refill,270.00
+CH-0991361,Citimart Hardware & Home,11/21/2026,11/21/2026,Due on receipt,Store maintenance supplies,Repairs and Maintenance,"Bulbs, extension cords, brooms, mop, padlocks",4244.64
+CH-0991361,Citimart Hardware & Home,11/21/2026,11/21/2026,Due on receipt,Store maintenance supplies,Input VAT,Input VAT 12%,509.36
+064-0083664,Mega Department Store,11/25/2026,11/25/2026,Due on receipt,Small store fixtures (debit card),Supplies,"Electric fans, wall clock, storage bins",5397.99
+064-0083664,Mega Department Store,11/25/2026,11/25/2026,Due on receipt,Small store fixtures (debit card),Input VAT,Input VAT 12%,647.76
+CH-1129870,Citimart Hardware & Home,11/28/2026,11/28/2026,Due on receipt,Christmas store decorations,Other general and administrative expenses,"Christmas lights, parol, garland",5133.93
+CH-1129870,Citimart Hardware & Home,11/28/2026,11/28/2026,Due on receipt,Christmas store decorations,Input VAT,Input VAT 12%,616.07
+KG-01079,Kaldero Grill & Restaurant,12/05/2026,12/05/2026,Due on receipt,Dinner w/ Mabuhay Builders,Representation and entertainment,Client dinner,2452.23
+KG-01079,Kaldero Grill & Restaurant,12/05/2026,12/05/2026,Due on receipt,Dinner w/ Mabuhay Builders,Input VAT,Input VAT 12%,294.27
+PX-0045-91220,Padala Express Courier,12/10/2026,12/10/2026,Due on receipt,Holiday shipments,Shipping and delivery expense,Courier Iloilo/Baguio,3133.93
+PX-0045-91220,Padala Express Courier,12/10/2026,12/10/2026,Due on receipt,Holiday shipments,Input VAT,Input VAT 12%,376.07
+0061504,Tindahan Mart Supermarket,12/12/2026,12/12/2026,Due on receipt,"Office pantry. Receipt shows cash 2,000 / change -353",Supplies,Pantry supplies,2100.89
+0061504,Tindahan Mart Supermarket,12/12/2026,12/12/2026,Due on receipt,"Office pantry. Receipt shows cash 2,000 / change -353",Input VAT,Input VAT 12%,252.11
+0071420,Tindahan Mart Supermarket,12/14/2026,12/14/2026,Due on receipt,Christmas gifts for clients,Representation and entertainment,"Gift baskets, ham, queso de bola, fruit cocktail",23207.14
+0071420,Tindahan Mart Supermarket,12/14/2026,12/14/2026,Due on receipt,Christmas gifts for clients,Input VAT,Input VAT 12%,2784.86
+PB-45919,Petro Bayan Gas Station,12/19/2026,12/19/2026,Due on receipt,"Diesel + engine oil - NBC 4521, fleet card",Transportation and fuel,Diesel 52.10L + engine oil,3301.91
+PB-45919,Petro Bayan Gas Station,12/19/2026,12/19/2026,Due on receipt,"Diesel + engine oil - NBC 4521, fleet card",Input VAT,Input VAT 12%,396.23
+HC-1219,Handaan Catering Services Inc.,12/19/2026,12/19/2026,,"Christmas party. Terms 50% DP, balance on event; no payment evidence",Other general and administrative expenses,Christmas party buffet 40 pax + venue/sound/host,34500.00
+HC-1219,Handaan Catering Services Inc.,12/19/2026,12/19/2026,,"Christmas party. Terms 50% DP, balance on event; no payment evidence",Input VAT,Input VAT 12%,4140.00
+221402050,Sulit-Stop Convenience Store,12/22/2026,12/22/2026,Due on receipt,No buyer name/TIN: input VAT 1.61 not claimed,Utilities,Prepaid load 3x500 + bills payment fee,1515.00
+KG-01188,Kaldero Grill & Restaurant,12/22/2026,12/22/2026,Due on receipt,Year-end dinner w/ Kalayaan Construction,Representation and entertainment,Client dinner,2383.93
+KG-01188,Kaldero Grill & Restaurant,12/22/2026,12/22/2026,Due on receipt,Year-end dinner w/ Kalayaan Construction,Input VAT,Input VAT 12%,286.07
+CH-1004838,Citimart Hardware & Home,12/27/2026,12/27/2026,Due on receipt,Repainting supplies,Repairs and Maintenance,"Paint rollers, masking tape, sandpaper",1262.50
+CH-1004838,Citimart Hardware & Home,12/27/2026,12/27/2026,Due on receipt,Repainting supplies,Input VAT,Input VAT 12%,151.50
+ACK-20261229,Mang Tomas Sari-Sari Store,12/29/2026,12/29/2026,Due on receipt,"Acknowledgement receipt only, no TIN/serial: not a valid invoice",Other general and administrative expenses,Ice and softdrinks,680.00
+89904,Pacific Steel & Cement Supply Inc.,12/02/2026,01/01/2027,Net 30,Terms: 30 days PDC,Purchases,"Cement, deformed bars, GI sheets for resale",235600.00
+89904,Pacific Steel & Cement Supply Inc.,12/02/2026,01/01/2027,Net 30,Terms: 30 days PDC,Input VAT,Input VAT 12%,28272.00

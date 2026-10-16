@@ -1,0 +1,11 @@
+Journal No,Journal Date,Account,Debits,Credits,Description,Name
+OB-BANK,11/30/2026,Pinoy Commerce Bank - Checking 0041-2288-7710,412880.15,,Opening balance per Dec 2026 bank statement (12/01 beginning balance),
+OB-BANK,11/30/2026,Suspense - for review,,412880.15,Opening balance offset - replace with prior-period balances / opening TB,
+PR-2026-12,12/23/2026,Wage expenses,120000.00,,Payroll register Dec 1-31 2026 gross pay (4 employees),
+PR-2026-12,12/23/2026,SSS payable,,5500.00,Employee share SSS Dec 2026,
+PR-2026-12,12/23/2026,PhilHealth payable,,3000.00,Employee share PhilHealth Dec 2026,
+PR-2026-12,12/23/2026,Pag-IBIG payable,,800.00,Employee share Pag-IBIG Dec 2026,
+PR-2026-12,12/23/2026,Withholding tax on compensation payable,,5294.70,Dec 2026 W/tax on compensation (1601-C),
+PR-2026-12,12/23/2026,Pinoy Commerce Bank - Checking 0041-2288-7710,,105405.30,Payroll credit - 4 employees (net pay),
+13M-2026,12/15/2026,13th month pay and other benefits,120000.00,,13th month pay CY2026 (non-taxable under 90k ceiling),
+13M-2026,12/15/2026,Suspense - for review,,120000.00,13th month released 12/15 - payment source not in bank statement; confirm,

@@ -14,6 +14,7 @@ from app.models.accounting import AAAtcDefault, AACompany, AADocument, AASupplie
 from app.models.user import User
 from app.routers.accounting_scope import company_or_404, scope_for
 from app.schemas.accounting import AtcDatabankOut, AtcDefaultOut, AtcSet, AtcSupplierOut
+from app.services.accounting import audit
 from app.services.accounting.atc_prefs import SeenSupplier, supplier_rows
 from app.services.accounting.extraction import EXPENSE_ACCOUNTS
 from app.services.accounting.parsing import normalize_tin
@@ -101,11 +102,17 @@ async def _set_supplier(db: AsyncSession, company: AACompany, tin: str, atc: str
 @router.put("/companies/{company_id}/atc-databank/suppliers/{tin}", response_model=AtcDatabankOut)
 async def set_supplier_atc(company_id: uuid.UUID, tin: str, body: AtcSet, user: User = Depends(get_current_user),
                            db: AsyncSession = Depends(get_db)):
-    company = await company_or_404(db, scope_for(user), company_id)
+    ent = scope_for(user)
+    company = await company_or_404(db, ent, company_id)
     digits = normalize_tin(tin)[0]
     if not digits:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A supplier needs a 9-digit TIN")
+    before = (await db.execute(select(AASupplierRule.ewt_atc).where(
+        AASupplierRule.company_id == company.id, AASupplierRule.counterparty_tin == digits))).scalar() or ""
     await _set_supplier(db, company, digits, body.ewt_atc, body.name)
+    audit.record(db, label=f"Supplier {digits}",
+                 ent=ent, company_id=company.id, user=user, entity="atc", entity_id=digits, action="supplier",
+                 before={"ewt_atc": before}, after={"ewt_atc": body.ewt_atc})
     await _touch(db, company, AADocument.seller_tin == digits)
     await db.commit()
     return await _databank(db, company)
@@ -115,11 +122,17 @@ async def set_supplier_atc(company_id: uuid.UUID, tin: str, body: AtcSet, user: 
 async def use_suggestions(company_id: uuid.UUID, user: User = Depends(get_current_user),
                           db: AsyncSession = Depends(get_db)):
     """Adopt every supplier ATC suggested from another company (suppliers with no ATC here yet)."""
-    company = await company_or_404(db, scope_for(user), company_id)
+    ent = scope_for(user)
+    company = await company_or_404(db, ent, company_id)
     current = await _databank(db, company)
     adopted = [s for s in current.suppliers if s.suggestion and not s.ewt_atc]
     for s in adopted:
         await _set_supplier(db, company, s.tin, s.suggestion, s.name)
+    if adopted:
+        audit.record(db, label="Suggested supplier ATCs",
+                     ent=ent, company_id=company.id, user=user, entity="atc", entity_id="suppliers",
+                     action="use_suggestions", before={s.tin: "" for s in adopted},
+                     after={s.tin: s.suggestion for s in adopted})
     if adopted:
         await _touch(db, company, AADocument.seller_tin.in_([s.tin for s in adopted]))
     await db.commit()
@@ -129,9 +142,15 @@ async def use_suggestions(company_id: uuid.UUID, user: User = Depends(get_curren
 @router.put("/companies/{company_id}/atc-databank/accounts/{account}", response_model=AtcDatabankOut)
 async def set_account_atc(company_id: uuid.UUID, account: str, body: AtcSet,
                           user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    company = await company_or_404(db, scope_for(user), company_id)
+    ent = scope_for(user)
+    company = await company_or_404(db, ent, company_id)
     if account not in ATC_ACCOUNTS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{account} doesn't carry expanded withholding")
+    before = (await db.execute(select(AAAtcDefault.ewt_atc).where(
+        AAAtcDefault.company_id == company.id, AAAtcDefault.account == account))).scalar() or ""
+    audit.record(db, label=f"Default ATC · {account}",
+                 ent=ent, company_id=company.id, user=user, entity="atc", entity_id=account, action="account",
+                 before={"ewt_atc": before}, after={"ewt_atc": body.ewt_atc})
     if body.ewt_atc:
         stmt = pg_insert(AAAtcDefault).values(id=uuid.uuid4(), company_id=company.id, account=account,
                                               ewt_atc=body.ewt_atc, updated_at=datetime.now(timezone.utc))

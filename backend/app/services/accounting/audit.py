@@ -51,7 +51,7 @@ def diff(before: dict, after: dict) -> tuple[dict, dict]:
 
 
 def record(db, *, ent: uuid.UUID, company_id: uuid.UUID, user, entity: str, entity_id: Any, action: str,
-           before: dict | None = None, after: dict | None = None, reason: str | None = "",
+           before: dict | None = None, after: dict | None = None, reason: str | None = "", label: str = "",
            always: bool = False) -> AAAuditEvent | None:
     """Add an event to the session (never commits). Nothing is written when nothing changed, unless ``always``."""
     if entity not in ENTITIES:
@@ -66,8 +66,41 @@ def record(db, *, ent: uuid.UUID, company_id: uuid.UUID, user, entity: str, enti
     event = AAAuditEvent(
         id=uuid.uuid4(), enterprise_id=ent, company_id=company_id, user_id=getattr(user, "id", None),
         user_label=(getattr(user, "email", "") or "")[:255], entity=entity,
-        entity_id=str(entity_id if entity_id is not None else "")[:64], action=action[:30],
+        entity_id=str(entity_id if entity_id is not None else "")[:64], label=(label or "")[:200],
+        action=action[:30],
         before=old, after=new, reason=(reason or "").strip()[:REASON_MAX],
     )
     db.add(event)
     return event
+
+
+_PERIOD_FIELDS = frozenset({"period_year", "period_quarter", "period_month", "period_locked"})
+
+
+def document_action(old: dict, new: dict) -> str:
+    """The name of a document edit from its diff: overrides first (reviewed, excluded), then a move, else update."""
+    if "reviewed" in new:
+        return "mark_reviewed" if new["reviewed"] else "unmark_reviewed"
+    if "excluded" in new:
+        return "exclude" if new["excluded"] else "include"
+    if new and set(new) <= _PERIOD_FIELDS:
+        return "move"
+    return "update"
+
+
+def document_label(doc) -> str:
+    """``5838 · Luzon Paint``: the number and the other party, as the document panel shows them."""
+    party = doc.buyer_name if getattr(doc, "client_role", "buyer") == "seller" else doc.seller_name
+    return " · ".join(p for p in ((doc.doc_number or "no number"), (party or "").strip()) if p)
+
+
+def month_label(day: date) -> str:
+    return day.strftime("%B %Y")
+
+
+def employee_label(data: dict) -> str:
+    data = data or {}
+    if data.get("last_name"):
+        first = (data.get("first_name") or "").strip()
+        return f"{data['last_name']}, {first}".strip(", ")
+    return (data.get("full_name") or "Employee").strip()

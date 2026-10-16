@@ -14,6 +14,7 @@ class AuditEventOut(BaseModel):
     user_name: str
     entity: str
     entity_id: str
+    label: str
     action: str
     before: dict
     after: dict

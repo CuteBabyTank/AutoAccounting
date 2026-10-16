@@ -58,11 +58,13 @@ def test_record_skips_empty_update_and_adds_otherwise():
     assert db.added == []
     doc_id = uuid.uuid4()
     event = audit.record(db, ent=ENT, company_id=COMPANY, user=USER, entity="document", entity_id=doc_id,
-                         action="update", before=same, after={"gross_amount": "1200.00"}, reason="  typo  ")
+                         action="update", before=same, after={"gross_amount": "1200.00"}, reason="  typo  ",
+                         label="SI 5838 · Luzon Paint")
     assert db.added == [event]
     assert (event.enterprise_id, event.company_id, event.user_id, event.user_label) == (ENT, COMPANY, USER.id,
                                                                                           "ana@firm.ph")
     assert (event.entity, event.entity_id, event.action) == ("document", str(doc_id), "update")
+    assert event.label == "SI 5838 · Luzon Paint"
     assert (event.before, event.after, event.reason) == ({"gross_amount": "1000.00"}, {"gross_amount": "1200.00"},
                                                          "typo")
 
@@ -133,3 +135,26 @@ def test_audit_route_resolves():
     from tests.test_accounting_annual_routes import _endpoint
 
     assert _endpoint("GET", "/audit-events") == "list_audit_events"
+
+
+def test_document_action_names_the_override():
+    act = audit.document_action
+    assert act({"reviewed": False, "gross_amount": "1"}, {"reviewed": True, "gross_amount": "2"}) == "mark_reviewed"
+    assert act({"reviewed": True}, {"reviewed": False}) == "unmark_reviewed"
+    assert act({"excluded": False}, {"excluded": True}) == "exclude"
+    assert act({"excluded": True}, {"excluded": False}) == "include"
+    assert act({"period_year": 2026, "period_quarter": 3, "period_locked": False},
+               {"period_year": 2026, "period_quarter": 4, "period_locked": True}) == "move"
+    assert act({"gross_amount": "1000.00"}, {"gross_amount": "1200.00"}) == "update"
+    assert act({}, {}) == "update"
+
+
+def test_labels_read_like_the_ui():
+    doc = SimpleNamespace(doc_number="5838", client_role="buyer", seller_name="Luzon Paint", buyer_name="Client")
+    assert audit.document_label(doc) == "5838 · Luzon Paint"
+    sale = SimpleNamespace(doc_number="", client_role="seller", seller_name="Client", buyer_name="")
+    assert audit.document_label(sale) == "no number"
+    assert audit.month_label(date(2026, 7, 1)) == "July 2026"
+    assert audit.employee_label({"last_name": "Cruz", "first_name": "Juan"}) == "Cruz, Juan"
+    assert audit.employee_label({"last_name": "Cruz"}) == "Cruz"
+    assert audit.employee_label({}) == "Employee"

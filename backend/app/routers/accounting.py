@@ -33,7 +33,7 @@ from app.schemas.accounting import (
     FolderOut, NotDuplicateIn,
     TreeCompanyOut, UploadFileOut, UploadGroupOut, UploadOut,
 )
-from app.services.accounting import pipeline
+from app.services.accounting import audit, pipeline
 from app.services.accounting.books.links import relink_receipts
 from app.services.accounting.books.loader import touch_books
 from app.services.accounting import duplicates
@@ -102,9 +102,13 @@ async def create_company(
 ):
     ent = _scope(user)
     _require_manager(user)
-    company = AACompany(enterprise_id=ent, created_by=user.id, **body.model_dump())
+    company = AACompany(id=uuid.uuid4(), enterprise_id=ent, created_by=user.id, **body.model_dump())
     db.add(company)
     try:
+        await db.flush()  # the TIN clash surfaces here, before the event is added
+        audit.record(db, label=company.registered_name,
+                     ent=ent, company_id=company.id, user=user, entity="company", entity_id=company.id,
+                     action="create", after=audit.snapshot(company, CompanyIn.model_fields))
         await db.commit()
     except IntegrityError:
         await db.rollback()
@@ -140,8 +144,12 @@ async def update_company(
     company = await _company_or_404(db, ent, company_id)
     fiscal_year_changed = body.fiscal_year_end_month != company.fiscal_year_end_month
     changed = {name: value for name, value in body.model_dump().items() if getattr(company, name) != value}
+    before = audit.snapshot(company, changed)
     for name, value in changed.items():
         setattr(company, name, value)
+    audit.record(db, label=company.registered_name,
+                 ent=ent, company_id=company.id, user=user, entity="company", entity_id=company.id,
+                 action="update", before=before, after=audit.snapshot(company, changed))
     if tax_facts_changed(changed):
         company.facts_updated_at = datetime.now(timezone.utc)
     if books_settings_changed(changed):
@@ -414,6 +422,11 @@ async def confirm_upload(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Every file must be assigned to a company or skipped")
 
     has_work = any(not a.skip for a in body.assignments)
+    for a in body.assignments:
+        if a.company_id and not a.skip and a.file_ids:
+            audit.record(db, label="Upload",
+                         ent=ent, company_id=a.company_id, user=user, entity="upload", entity_id=upload_id,
+                         action="confirm", after={"files": [files[fid].original_filename for fid in a.file_ids]})
     upload = await db.get(AAUpload, upload_id)
     upload.status = "extracting" if has_work else "done"
     await db.commit()
@@ -463,6 +476,9 @@ _PLAIN_FIELDS = (
     "paid_on", "paid_via", "payment_ref",
 )
 _NULLABLE_FIELDS = {"doc_date", "paid_on"}
+# What a person can change on a document (the audit log diffs these).
+_AUDIT_DOC_FIELDS = _PLAIN_FIELDS + ("gl_account_code", "settles_document_id", "period_year", "period_quarter",
+                                     "period_month", "period_locked")
 
 
 def _by_company(rows) -> dict[str, dict]:
@@ -636,7 +652,7 @@ async def _learn_supplier_rule(db: AsyncSession, doc: AADocument, learn_atc: boo
     await db.execute(stmt.on_conflict_do_update(constraint="uq_aa_supplier_rule", set_=learned))
 
 
-async def _apply_rule_to_supplier_documents(db: AsyncSession, doc: AADocument) -> int:
+async def _apply_rule_to_supplier_documents(db: AsyncSession, doc: AADocument, user: User) -> int:
     """A corrected category/account also reaches the supplier's documents nobody has reviewed yet (uploaded
     before the rule existed). One the rule doesn't fit (goods vs services) is flagged instead of changed."""
     seller = doc.client_role == "seller"
@@ -658,7 +674,13 @@ async def _apply_rule_to_supplier_documents(db: AsyncSession, doc: AADocument) -
                 other.review_reasons = [*(other.review_reasons or []), "supplier_rule_mismatch"]
                 other.needs_review = needs_review_for(other.review_reasons)
             continue
+        before = audit.snapshot(other, ("category", "account"))
         other.category, other.account = doc.category, doc.account
+        audit.record(db, label=audit.document_label(other),
+                     ent=other.enterprise_id, company_id=other.company_id, user=user, entity="document",
+                     entity_id=other.id, action="supplier_rule", before=before,
+                     after=audit.snapshot(other, ("category", "account")),
+                     reason=f"Same supplier as document {doc.doc_number or doc.id}, corrected by hand")
         changed += 1
     return changed
 
@@ -702,6 +724,7 @@ async def patch_document(
     doc = await _document_or_404(db, ent, doc_id)
     company = await _company_or_404(db, ent, doc.company_id)
     sent = body.model_fields_set
+    before = audit.snapshot(doc, _AUDIT_DOC_FIELDS)
 
     for name in _PLAIN_FIELDS:
         if name not in sent:
@@ -747,11 +770,19 @@ async def patch_document(
     elif "doc_date" in sent and not doc.period_locked:
         _apply_period_from_date(doc, company)
 
+    after = audit.snapshot(doc, _AUDIT_DOC_FIELDS)
+    old, new = audit.diff(before, after)
+    if new.get("reviewed") is True:  # accepting the flags anyway: record which ones
+        new["overridden_reasons"] = list(doc.review_reasons or [])
+    audit.record(db, label=audit.document_label(doc),
+                 ent=ent, company_id=doc.company_id, user=user, entity="document", entity_id=doc.id,
+                 action=audit.document_action(old, new), before=old, after=new, reason=body.reason)
+
     applied = 0
     if sent & {"category", "account", "ewt_atc", "gl_account_code"}:
         await _learn_supplier_rule(db, doc, learn_atc="ewt_atc" in sent, learn_gl="gl_account_code" in sent)
     if sent & {"category", "account"}:
-        applied = await _apply_rule_to_supplier_documents(db, doc)
+        applied = await _apply_rule_to_supplier_documents(db, doc, user)
 
     if sent & {"doc_date", "gross_amount", "withholding_amount", "seller_tin", "buyer_tin", "seller_name",
                "buyer_name", "category", "excluded", "settles_document_id", "paid_on"}:
@@ -771,8 +802,13 @@ async def patch_document(
 async def delete_document(
     doc_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    doc = await _document_or_404(db, _scope(user), doc_id)
+    ent = _scope(user)
+    doc = await _document_or_404(db, ent, doc_id)
     doc.deleted_at = datetime.now(timezone.utc)
+    audit.record(db, label=audit.document_label(doc),
+                 ent=ent, company_id=doc.company_id, user=user, entity="document", entity_id=doc.id,
+                 action="delete", before=audit.snapshot(doc, ("doc_number", "doc_date", "seller_name", "buyer_name",
+                                                              "gross_amount", "category")), after=None)
     await db.flush()
     await relink_receipts(db, doc.company_id)
     await duplicates.refresh_flags(db, doc.company_id)  # the copy left behind is no longer a duplicate
@@ -834,6 +870,11 @@ async def mark_not_duplicate(
     for a, b in ((doc, other), (other, doc)):
         if str(b.id) not in (a.not_duplicate_of or []):
             a.not_duplicate_of = [*(a.not_duplicate_of or []), str(b.id)]
+            audit.record(db, label=audit.document_label(a),
+                         ent=ent, company_id=a.company_id, user=user, entity="document", entity_id=a.id,
+                         action="not_duplicate", after={"kept_with": b.doc_number or str(b.id),
+                                                        "kept_with_id": str(b.id)},
+                         reason=body.reason, always=True)
     await db.flush()
     await duplicates.refresh_flags(db, doc.company_id)
     await db.commit()

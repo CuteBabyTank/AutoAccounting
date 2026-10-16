@@ -83,8 +83,8 @@ async def list_audit_events(
     return AuditPageOut(
         events=[AuditEventOut(id=r.id, at=r.at, company_id=r.company_id, user_id=r.user_id,
                               user_name=_name(people.get(r.user_id), r.user_label), entity=r.entity,
-                              entity_id=r.entity_id, action=r.action, before=r.before or {}, after=r.after or {},
-                              reason=r.reason) for r in rows],
+                              entity_id=r.entity_id, label=r.label, action=r.action, before=r.before or {},
+                              after=r.after or {}, reason=r.reason) for r in rows],
         total=total,
         users=sorted((AuditUserOut(id=p.id, name=_name(p, "")) for p in people.values() if p.id in set(people_ids)),
                      key=lambda u: u.name.lower()),

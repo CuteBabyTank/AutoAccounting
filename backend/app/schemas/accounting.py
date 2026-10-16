@@ -290,6 +290,7 @@ class DuplicatePairOut(BaseModel):
 
 class NotDuplicateIn(BaseModel):
     other_id: uuid.UUID
+    reason: str = Field(default="", max_length=500)   # why both are kept (audit log)
 
 
 class DocumentPatch(BaseModel):
@@ -320,6 +321,8 @@ class DocumentPatch(BaseModel):
     payment_ref: str | None = Field(default=None, max_length=60)
     gl_account_code: str | None = Field(default=None, max_length=10)
     settles_document_id: uuid.UUID | None = None
+    # Why (audit log only, never stored on the document): e.g. accepting a review flag anyway.
+    reason: str | None = Field(default=None, max_length=500)
 
     @field_validator("seller_tin", "buyer_tin")
     @classmethod

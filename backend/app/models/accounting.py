@@ -462,6 +462,8 @@ class AAAuditEvent(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
     entity: Mapped[str] = mapped_column(String(30), nullable=False)        # audit.ENTITIES
     entity_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    # What it is about, as a person reads it ("SI 5838 · Luzon Paint", "July 2026"), kept as it was then.
+    label: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
     action: Mapped[str] = mapped_column(String(30), nullable=False)
     before: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)   # changed fields only
     after: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)

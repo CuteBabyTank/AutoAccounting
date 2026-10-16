@@ -21,6 +21,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.accounting import AACompany, AAEmployee, AAOutput, AAPeriod
 from app.models.user import User
 from app.routers.accounting_scope import MANAGER_ROLES, company_or_404, scope_for
+from app.services.accounting import audit
 from app.services.accounting.compute.alphalist import (
     FIELD_LABELS, MonthRemittance, build_alphalist, employee_from_json,
 )
@@ -200,7 +201,13 @@ async def import_employees(company_id: uuid.UUID, year: int, file: UploadFile, m
     if not records:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No employee rows found with that mapping."
                             + (f" {errors[0]}" if errors else ""))
+    replaced = (await db.execute(select(func.count(AAEmployee.id)).where(
+        AAEmployee.company_id == company.id, AAEmployee.year == year))).scalar_one()
     await db.execute(delete(AAEmployee).where(AAEmployee.company_id == company.id, AAEmployee.year == year))
+    audit.record(db, label=f"{year} employees",
+                 ent=ent, company_id=company.id, user=user, entity="employee", entity_id=f"{year}",
+                 action="import", before={"employees": replaced},
+                 after={"employees": len(records), "file": (file.filename or "")[:120]}, always=True)
     for data in records:
         db.add(AAEmployee(enterprise_id=ent, company_id=company.id, year=year, data=_clean(data)))
     company.payroll_mapping = {**(company.payroll_mapping or {}), **chosen}
@@ -218,7 +225,11 @@ async def add_employee(company_id: uuid.UUID, year: int, body: dict, user: User 
     company = await company_or_404(db, ent, company_id)
     data = _clean(body)
     _validate(data)
-    db.add(AAEmployee(enterprise_id=ent, company_id=company.id, year=year, data=data))
+    row = AAEmployee(id=uuid.uuid4(), enterprise_id=ent, company_id=company.id, year=year, data=data)
+    db.add(row)
+    audit.record(db, label=audit.employee_label(data),
+                 ent=ent, company_id=company.id, user=user, entity="employee", entity_id=row.id,
+                 action="create", after={"year": year, **data})
     await db.commit()
     return await _out(db, company, year)
 
@@ -248,6 +259,9 @@ async def update_employee(employee_id: uuid.UUID, body: dict, user: User = Depen
     row = await _employee_or_404(db, ent, employee_id)
     data = _clean(body)
     _validate(data)
+    audit.record(db, label=audit.employee_label(data),
+                 ent=ent, company_id=row.company_id, user=user, entity="employee", entity_id=row.id,
+                 action="update", before=row.data or {}, after=data)
     row.data = data
     await db.commit()
     company = await company_or_404(db, ent, row.company_id)
@@ -261,6 +275,9 @@ async def delete_employee(employee_id: uuid.UUID, user: User = Depends(get_curre
     ent = scope_for(user)
     row = await _employee_or_404(db, ent, employee_id)
     company_id, year = row.company_id, row.year
+    audit.record(db, label=audit.employee_label(row.data),
+                 ent=ent, company_id=company_id, user=user, entity="employee", entity_id=row.id,
+                 action="delete", before={"year": year, **(row.data or {})}, after=None)
     await db.delete(row)
     await db.commit()
     company = await company_or_404(db, ent, company_id)

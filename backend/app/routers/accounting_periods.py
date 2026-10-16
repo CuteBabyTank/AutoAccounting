@@ -25,6 +25,7 @@ from app.schemas.accounting import (
     CompanyBrief, FiledFormOut, FiledIn, FormFiledIn, FormOut, ItemOut, OutputBrief, OutputOut, PdfsIn,
     PeriodInputsModel, PeriodOut, PrepareFormOut, PrepareOut, manila_today,
 )
+from app.services.accounting import audit
 from app.services.accounting.compute.annual import annual_form
 from app.services.accounting.compute.due_dates import due_dates, quarter_end, quarter_start
 from app.services.accounting.compute.engine import AMENDED_WARNING, build_quarter, expected_forms
@@ -330,7 +331,11 @@ async def save_period_inputs(
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
     period = await _ensure_period(db, ent, company, year, quarter)
-    period.inputs = inputs_to_json(inputs_from_json(body.model_dump(mode="json")))
+    new_inputs = inputs_to_json(inputs_from_json(body.model_dump(mode="json")))
+    audit.record(db, label=f"{year} Q{quarter}",
+                 ent=ent, company_id=company.id, user=user, entity="period", entity_id=_audit_period(period),
+                 action="inputs", before=period.inputs or {}, after=new_inputs)
+    period.inputs = new_inputs
     period.inputs_updated_at = datetime.now(timezone.utc)
     await db.commit()
     return await _period_out(db, company, year, quarter)
@@ -344,7 +349,11 @@ async def set_period_filed(
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
     period = await _ensure_period(db, ent, company, year, quarter)
+    before = dict(period.filed_forms or {})
     await mark_filed(db, period, body.filed, await _expected(db, company, year, quarter), body.filed_on)
+    audit.record(db, label=f"{year} Q{quarter}",
+                 ent=ent, company_id=company.id, user=user, entity="period", entity_id=_audit_period(period),
+                 action="filed" if body.filed else "unfiled", before=before, after=dict(period.filed_forms or {}))
     await db.commit()
     return await _period_out(db, company, year, quarter)
 
@@ -361,6 +370,7 @@ async def set_form_filed(
     if form not in expected:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{form} isn't filed for this quarter")
     current = await _filed_forms(db, period, expected)
+    before = dict(period.filed_forms or {})
     if body.filed:
         output = (await db.get(AAOutput, body.output_id) if body.output_id
                   else await latest_output(db, period.id))
@@ -373,6 +383,10 @@ async def set_form_filed(
     else:
         current = unset_form(current, form)
     period.filed_forms = current
+    audit.record(db, label=f"{year} Q{quarter} · {form}",
+                 ent=ent, company_id=company.id, user=user, entity="period", entity_id=_audit_period(period),
+                 action="form_filed" if body.filed else "form_unfiled", before={form: before.get(form)},
+                 after={form: current.get(form)})
     period.filed_at, filed_id = derive(current, expected)
     period.filed_output_id = uuid.UUID(filed_id) if filed_id else None
     if form.startswith("0619E-M"):  # the 1601-EQ's items 20–21 read it: the latest version is now stale
@@ -417,6 +431,11 @@ async def generate_output(
     return output_out(output, period, company)
 
 
+def _audit_period(period: AAPeriod) -> str:
+    """How the audit log names a period: ``2026-Q3`` or ``2026-annual``."""
+    return f"{period.year}-annual" if period.quarter == 0 else f"{period.year}-Q{period.quarter}"
+
+
 async def store_output(db: AsyncSession, ent: uuid.UUID, user: User, company: AACompany, period: AAPeriod,
                        snap: dict, warnings: list[str], review_open: int, due: dict[str, str], *,
                        folder: str, amended: bool) -> AAOutput:
@@ -447,12 +466,16 @@ async def store_output(db: AsyncSession, ent: uuid.UUID, user: User, company: AA
 
     await asyncio.get_running_loop().run_in_executor(None, _write)
     output = AAOutput(
-        enterprise_id=ent, company_id=company.id, period_id=period.id, version=version, parent_version=parent,
+        id=uuid.uuid4(), enterprise_id=ent, company_id=company.id, period_id=period.id, version=version,
+        parent_version=parent,
         snapshot=snap, diff=diff, warnings=warnings, review_open=review_open,
         amended=amended, xlsx_path=str(highlighted), xlsx_clean_path=str(clean),
         created_by=user.id,
     )
     db.add(output)
+    audit.record(db, label=f"{_audit_period(period)} v{version}",
+                 ent=ent, company_id=company.id, user=user, entity="output", entity_id=output.id,
+                 action="generate", after={"period": _audit_period(period), "version": version, "amended": amended})
     try:
         await db.commit()
     except IntegrityError:

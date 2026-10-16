@@ -118,3 +118,7 @@ class BooksYearOut(BaseModel):
 
 class CloseMonthIn(BaseModel):
     month_start: date
+
+
+class ReopenMonthIn(BaseModel):
+    reason: str = Field(default="", max_length=500)   # why the closed month is reopened (audit log)

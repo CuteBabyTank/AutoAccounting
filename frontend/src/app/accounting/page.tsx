@@ -19,10 +19,11 @@ import UploadReviewDialog from "@/components/accounting/UploadReviewDialog";
 import DuplicateBanner from "@/components/accounting/DuplicateBanner";
 import GettingStarted from "@/components/guide/GettingStarted";
 import Hint from "@/components/guide/Hint";
-import PageGuide, { GuideButton } from "@/components/guide/PageGuide";
+import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
+import { DOCUMENTS_TOUR } from "@/components/guide/tours";
 import { accountingApi } from "@/lib/accounting-api";
 import { teamApi } from "@/lib/api";
-import { GUIDES, useGuide } from "@/lib/guides";
+import { useGuide } from "@/lib/guides";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import { useAuth } from "@/lib/auth";
 import type {
@@ -61,8 +62,7 @@ export default function AccountingPage() {
   const [append, setAppend] = useState<AffectedPeriod[] | null>(null);
   const [periodRefresh, setPeriodRefresh] = useState(0);
   const [memberCount, setMemberCount] = useState<number | null>(null);
-  // The getting-started checklist covers first visits here; this guide opens from its button.
-  const guide = useGuide("documents", { autoOpen: false });
+  const guide = useGuide("documents");
 
   useEffect(() => {
     try {
@@ -247,7 +247,7 @@ export default function AccountingPage() {
           </div>
         </div>
 
-        <PageGuide open={guide.open} onClose={guide.dismiss} title="How Documents works" steps={GUIDES.documents} />
+        <GuideTour open={guide.open} onClose={guide.dismiss} label="Documents" slides={DOCUMENTS_TOUR} />
         <GettingStarted
           tree={tree}
           canManage={canManage}

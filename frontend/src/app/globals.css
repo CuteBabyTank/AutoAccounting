@@ -1487,3 +1487,104 @@ main textarea:focus-visible {
     transition-delay: 0ms;
   }
 }
+
+/* ── Guide walkthroughs (components/guide) ──
+   Illustrations share the homepage's source-trail look: a paper receipt,
+   white entry cards, emerald highlights and a dashed wire between them. */
+.gd-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--lp-bg-gray);
+  overflow: hidden;
+}
+.gd-art { position: relative; width: 480px; max-width: none; flex: none; }
+@media (max-width: 639px) {
+  .gd-art { transform: scale(.66); transform-origin: center; margin: -60px -82px; }
+}
+.gd-in { animation: gdIn 520ms var(--ease-out) both; animation-delay: calc(var(--d, 0) * 90ms); }
+@keyframes gdIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.gd-receipt {
+  margin: 0;
+  padding: 16px 16px 22px;
+  background: #fff;
+  color: #334155;
+  font: 500 10px/1.55 var(--font-mono), ui-monospace, monospace;
+  box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 12px 32px -12px rgba(15,23,42,.16);
+  transform: rotate(-1.5deg);
+  -webkit-mask: linear-gradient(#000, #000) top / 100% calc(100% - 8px) no-repeat, conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 12px 8px repeat-x;
+  mask: linear-gradient(#000, #000) top / 100% calc(100% - 8px) no-repeat, conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 12px 8px repeat-x;
+}
+.gd-receipt .gd-rule { border-bottom: 1px dashed #CBD5E1; }
+.gd-receipt b { color: #0F172A; }
+.gd-lit {
+  border-radius: 4px;
+  background: #ECFDF5;
+  box-shadow: 0 0 0 3px #ECFDF5, 0 0 0 4.5px #10B981;
+}
+.gd-card {
+  background: var(--lp-bg-card);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(11,11,18,.04), 0 12px 32px -12px rgba(11,11,18,.16);
+  overflow: hidden;
+  color: var(--lp-text);
+}
+.gd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--lp-border);
+  font-size: 12.5px;
+}
+.gd-row:last-child { border-bottom: 0; }
+.gd-row > :first-child { color: var(--lp-muted); }
+.gd-row > :last-child { font-weight: 600; text-align: right; }
+.gd-row--on { background: var(--lp-accent-soft); }
+.gd-row--warn { background: var(--alert-warning-bg); }
+.gd-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--lp-border);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.gd-title small { font: 500 10.5px/1.6 var(--font-mono), monospace; color: var(--lp-muted); }
+.gd-wire { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.gd-wire path { fill: none; stroke: var(--lp-accent); stroke-width: 1.5; stroke-dasharray: 4 4; animation: gdDash 1.2s linear infinite; }
+.gd-wire circle { fill: var(--lp-accent); }
+@keyframes gdDash { to { stroke-dashoffset: -16; } }
+.gd-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.gd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--lp-accent);
+  color: #fff;
+  white-space: nowrap;
+}
+.gd-btn--ghost { background: var(--lp-bg-card); color: var(--lp-text); border: 1px solid var(--lp-border); }
+@media (prefers-reduced-motion: reduce) {
+  .gd-in { animation: none; }
+  .gd-wire path { animation: none; }
+}

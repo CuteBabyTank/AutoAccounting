@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { UserPlus } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
 import Hint from "@/components/guide/Hint";
-import PageGuide, { GuideButton } from "@/components/guide/PageGuide";
-import { GUIDES, useGuide } from "@/lib/guides";
+import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
+import { TEAM_TOUR } from "@/components/guide/tours";
+import { useGuide } from "@/lib/guides";
 import { teamApi } from "@/lib/api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import { roleLabel } from "@/lib/roles";
@@ -76,7 +77,7 @@ export default function TeamPage() {
           <GuideButton open={guide.open} onClick={guide.toggle} />
         </div>
 
-        <PageGuide open={guide.open} onClose={guide.dismiss} title="Adding your team" steps={GUIDES.team} />
+        <GuideTour open={guide.open} onClose={guide.dismiss} label="Team" slides={TEAM_TOUR} />
 
         {usage && (
           <div className="mb-6 grid gap-3 sm:grid-cols-2">

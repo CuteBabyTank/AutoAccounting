@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
 import Hint from "@/components/guide/Hint";
-import PageGuide, { GuideButton } from "@/components/guide/PageGuide";
-import { GUIDES, useGuide } from "@/lib/guides";
+import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
+import { ADMIN_TOUR } from "@/components/guide/tours";
+import { useGuide } from "@/lib/guides";
 import { adminApi } from "@/lib/api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import { roleLabel } from "@/lib/roles";
@@ -132,7 +133,7 @@ export default function AdminPage() {
           <GuideButton open={guide.open} onClick={guide.toggle} />
         </header>
 
-        <PageGuide open={guide.open} onClose={guide.dismiss} title="Running the platform" steps={GUIDES.admin} />
+        <GuideTour open={guide.open} onClose={guide.dismiss} label="Platform admin" slides={ADMIN_TOUR} />
 
         {error && (
           <div className="mb-6 rounded-xl border border-[var(--alert-error-border)] bg-[var(--alert-error-bg)] px-4 py-2.5 text-sm text-[var(--alert-error-text)]">

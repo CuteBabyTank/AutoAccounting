@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { Space_Grotesk, Inter, Lexend_Deca } from "next/font/google";
+import { Space_Grotesk, Inter, Lexend_Deca, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 
@@ -21,6 +21,14 @@ const logo = Lexend_Deca({
   display: "swap",
 });
 
+// Receipt artwork in the guides, matching the homepage illustration.
+const mono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["500", "700"],
+  variable: "--font-mono",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "AutoAccounting",
   description: "Drop client documents; get sorted records, BIR returns and books of accounts.",
@@ -35,7 +43,7 @@ export default async function RootLayout({
   // pre-hydration theme script is allow-listed under the nonce CSP.
   const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
-    <html lang="en" className={`${display.variable} ${sans.variable} ${logo.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${display.variable} ${sans.variable} ${logo.variable} ${mono.variable}`} suppressHydrationWarning>
       <body className="antialiased" suppressHydrationWarning>
         <Providers nonce={nonce}>{children}</Providers>
       </body>

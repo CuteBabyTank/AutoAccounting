@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass, Plus, PushPin } from "@phosphor-icons/react";
 import CompanyForm from "@/components/accounting/CompanyForm";
 import Hint from "@/components/guide/Hint";
-import PageGuide, { GuideButton } from "@/components/guide/PageGuide";
-import { GUIDES, useGuide } from "@/lib/guides";
+import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
+import { COMPANIES_TOUR } from "@/components/guide/tours";
+import { useGuide } from "@/lib/guides";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatTin } from "@/lib/accounting-format";
 import { useAuth } from "@/lib/auth";
@@ -95,7 +96,7 @@ export default function AccountingCompaniesPage() {
           )}
         </div>
 
-        <PageGuide open={guide.open} onClose={guide.dismiss} title="How Companies works" steps={GUIDES.companies} />
+        <GuideTour open={guide.open} onClose={guide.dismiss} label="Companies" slides={COMPANIES_TOUR} />
 
         {error && (
           <div className="mb-4 rounded-lg border border-[var(--alert-error-border)] bg-[var(--alert-error-bg)] px-4 py-2 text-sm text-[var(--alert-error-text)]">

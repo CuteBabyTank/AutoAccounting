@@ -281,7 +281,7 @@ class DuplicatePairOut(BaseModel):
 
     original: DocumentOut
     duplicate: DocumentOut
-    reason: Literal["same_number", "same_details"]
+    reason: Literal["same_number", "same_details", "number_reused"]
     original_file: str
     duplicate_file: str
 

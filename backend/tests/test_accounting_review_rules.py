@@ -177,3 +177,58 @@ def test_charts_seeded_before_vat_difference_get_it():
 
     old = [a for a in standard_chart("corporation") if a.system_key != "vat_difference"]
     assert [a.code for a in missing_standard(old, "corporation")] == ["1310"]
+
+
+# --- Duplicates: Luzon Paint SI 5838 scanned twice; per-supplier invoice-number reuse ----------------
+
+def _dup(number="5838", day=date(2026, 10, 7), gross="56000.00", category="purchases", cleared=()):
+    import uuid
+
+    from app.services.accounting.duplicates import DupDoc
+    return DupDoc(id=uuid.uuid4(), role="buyer", counterparty="111222333", doc_number=number, doc_date=day,
+                  gross=Decimal(gross), not_duplicate_of=frozenset(cleared), category=category)
+
+
+def test_luzon_paint_5838_scanned_twice_is_a_duplicate():
+    from app.services.accounting.classify import mark_duplicates
+    from app.services.accounting.duplicates import SAME_NUMBER, Pair, duplicate_pairs
+
+    p6, p7 = _dup(), _dup()
+    assert duplicate_pairs([p6, p7]) == [Pair(p6.id, p7.id, SAME_NUMBER)]
+    luzon = _ext(doc_number="5838", gross_amount=Decimal("56000.00"), vatable_amount=Decimal("50000.00"),
+                 vat_amount=Decimal("6000.00"))
+    rows = [_classify(luzon), _classify(luzon)]
+    mark_duplicates(rows, set())
+    assert "possible_duplicate" not in rows[0]["review_reasons"]
+    assert "possible_duplicate" in rows[1]["review_reasons"] and rows[1]["needs_review"] is True
+
+
+def test_supplier_reusing_an_invoice_number_is_its_own_reason():
+    from app.services.accounting.duplicates import NUMBER_REUSED, Pair, duplicate_pairs
+
+    first, again = _dup(), _dup(day=date(2026, 12, 2), gross="12000.00")
+    assert duplicate_pairs([first, again]) == [Pair(first.id, again.id, NUMBER_REUSED)]
+    cleared = _dup(day=date(2026, 12, 2), cleared=(str(first.id),))
+    assert duplicate_pairs([first, cleared]) == []
+
+
+def test_number_reuse_ignores_support_papers():
+    from app.services.accounting.duplicates import duplicate_pairs
+
+    assert duplicate_pairs([_dup(category="support"), _dup(category="support", day=date(2026, 11, 7))]) == []
+
+
+def test_sync_flags_uses_the_number_reuse_reason():
+    import uuid
+    from types import SimpleNamespace
+
+    from app.services.accounting.duplicates import NUMBER_FLAG, NUMBER_REUSED, Pair, sync_flags
+
+    def doc(reasons=()):
+        return SimpleNamespace(id=uuid.uuid4(), review_reasons=list(reasons), needs_review=bool(reasons),
+                               reviewed=False)
+    first, again = doc(), doc(["possible_duplicate"])   # the upload's per-file check flagged it first
+    sync_flags([Pair(first.id, again.id, NUMBER_REUSED)], {first.id: first, again.id: again})
+    assert again.review_reasons == [NUMBER_FLAG] and again.needs_review is True
+    sync_flags([], {first.id: first, again.id: again})
+    assert again.review_reasons == [] and again.needs_review is False

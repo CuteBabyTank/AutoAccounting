@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import { X } from "@phosphor-icons/react";
 import AssetSection from "@/components/accounting/AssetSection";
+import AuditTrail, { formatWhen } from "@/components/accounting/AuditTrail";
 import DuplicateCompare from "@/components/accounting/DuplicateCompare";
 import { accountingApi } from "@/lib/accounting-api";
 import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, EWT_ATC_OPTIONS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, formatPeso, reasonDetail } from "@/lib/accounting-format";
-import type { AADocument, Account, DocumentPatch, DuplicatePair, PaymentLinks } from "@/types/accounting";
+import type { AADocument, Account, AuditEvent, DocumentPatch, DuplicatePair, PaymentLinks } from "@/types/accounting";
 
 const AMOUNTS = [
   ["gross_amount", "Total"],
@@ -83,6 +84,35 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [links, setLinks] = useState<PaymentLinks | null>(null);
   const [dupPairs, setDupPairs] = useState<DuplicatePair[] | null>(null);
+  const [tab, setTab] = useState<"details" | "history">("details");
+  const [history, setHistory] = useState<AuditEvent[] | null>(null);
+  // Accepting flags anyway or excluding asks why (optional); the answer goes to the History tab.
+  const [override, setOverride] = useState<"reviewed" | "exclude" | null>(null);
+  const [reason, setReason] = useState("");
+  useEffect(() => {
+    setOverride(null);
+    setReason("");
+  }, [doc.id]);
+
+  useEffect(() => {
+    if (tab !== "history") return;
+    let cancelled = false;
+    setHistory(null);
+    accountingApi
+      .auditEvents({ entity: "document", entity_id: doc.id, limit: 200 })
+      .then((page) => {
+        if (!cancelled) setHistory(page.events);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setHistory([]);
+          setError(apiErrorMessage(e, "Couldn't load the history"));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, doc]);
 
   useEffect(() => {
     let cancelled = false;
@@ -257,6 +287,37 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
             <X size={18} />
           </button>
         </div>
+
+        <div role="tablist" className="mb-4 flex gap-1 border-b border-[var(--border)]">
+          {(["details", "history"] as const).map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={`-mb-px border-b-2 px-3 py-1.5 text-sm font-medium ${tab === t ? "border-[var(--accent)] text-[var(--text-primary)]" : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
+            >
+              {t === "details" ? "Details" : "History"}
+            </button>
+          ))}
+        </div>
+
+        {tab === "history" ? (
+          <div>
+            {history === null ? (
+              <div className="h-24 animate-pulse rounded-lg bg-[var(--bg-primary)]" />
+            ) : (
+              <>
+                <AuditTrail events={history} />
+                <p className="mt-2 rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--text-secondary)]">
+                  Read from the upload · {formatWhen(doc.created_at)}
+                </p>
+              </>
+            )}
+            {error && <p className="mt-3 text-sm text-[var(--alert-error-text)]">{error}</p>}
+          </div>
+        ) : (
+        <>
 
         {dupPairs && (
           <DuplicateCompare pairs={dupPairs} onClose={() => setDupPairs(null)} onResolved={duplicateResolved} />
@@ -449,11 +510,15 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
             Save
           </button>
           {doc.needs_review && !doc.reviewed && (
-            <button className={BTN} disabled={busy} onClick={() => save({ reviewed: true })}>
+            <button className={BTN} disabled={busy} onClick={() => setOverride("reviewed")}>
               Mark reviewed
             </button>
           )}
-          <button className={BTN} disabled={busy} onClick={() => save({ excluded: !doc.excluded })}>
+          <button
+            className={BTN}
+            disabled={busy}
+            onClick={() => (doc.excluded ? save({ excluded: false }) : setOverride("exclude"))}
+          >
             {doc.excluded ? "Include again" : "Exclude from computation"}
           </button>
           <button
@@ -464,6 +529,41 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
             {confirmDelete ? "Click again to delete" : "Delete"}
           </button>
         </div>
+        {override && (
+          <div className="mt-3 rounded-lg border border-[var(--border)] p-3">
+            <label className={LABEL} htmlFor="override-reason">
+              {override === "reviewed" && openReasons.length > 0
+                ? "Why is it fine anyway? (optional, saved in the History tab)"
+                : "Why? (optional, saved in the History tab)"}
+            </label>
+            <input
+              id="override-reason"
+              className={INPUT}
+              maxLength={500}
+              value={reason}
+              placeholder={override === "reviewed" ? "e.g. Client confirmed this is their delivery receipt" : "e.g. Owner's personal purchase"}
+              onChange={(e) => setReason(e.target.value)}
+            />
+            <div className="mt-2 flex gap-2">
+              <button
+                className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
+                disabled={busy}
+                onClick={async () => {
+                  const extra: DocumentPatch = override === "reviewed" ? { reviewed: true } : { excluded: true };
+                  if (reason.trim()) extra.reason = reason.trim();
+                  await save(extra);
+                  setOverride(null);
+                  setReason("");
+                }}
+              >
+                {override === "reviewed" ? "Mark reviewed" : "Exclude"}
+              </button>
+              <button className={BTN} onClick={() => setOverride(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
+        </>
+        )}
       </aside>
     </div>
   );

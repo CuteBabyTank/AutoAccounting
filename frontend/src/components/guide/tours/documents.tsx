@@ -444,6 +444,7 @@ export const DOCUMENTS_TOUR: Slide[] = [
       "Books: set a Books start on the company to keep BIR loose-leaf journals, ledger and trial balance.",
       "Employees: import the payroll register for the 1604-C alphalist and each 2316, due January 31.",
       "ATC databank: set each supplier's withholding tax code once and every document from them uses it.",
+      "Audit log: every change anyone in the firm made to the company, with the values before and after.",
     ],
     Art: MoreArt,
   },

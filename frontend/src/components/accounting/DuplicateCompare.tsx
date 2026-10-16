@@ -130,6 +130,7 @@ export default function DuplicateCompare({ pairs: initial, onClose, onResolved }
   const [selected, setSelected] = useState<Side | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [keepReason, setKeepReason] = useState("");
 
   const pair = pairs[Math.min(index, pairs.length - 1)];
 
@@ -172,7 +173,8 @@ export default function DuplicateCompare({ pairs: initial, onClose, onResolved }
     setBusy(true);
     setError("");
     try {
-      await accountingApi.notDuplicate(pair.duplicate.id, pair.original.id);
+      await accountingApi.notDuplicate(pair.duplicate.id, pair.original.id, keepReason.trim());
+      setKeepReason("");
       onResolved(null);
       advance(pairs.filter((p) => p !== pair));
     } catch (e) {
@@ -226,7 +228,15 @@ export default function DuplicateCompare({ pairs: initial, onClose, onResolved }
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
           {pairs.length > 1 && <button className={BTN} disabled={busy} onClick={next}>Next pair</button>}
-          <button className={`${BTN} ml-auto`} disabled={busy} onClick={keepBoth}>Not a duplicate, keep both</button>
+          <input
+            aria-label="Why keep both (optional)"
+            className="ml-auto w-56 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2.5 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+            maxLength={500}
+            placeholder="Why keep both? (optional)"
+            value={keepReason}
+            onChange={(e) => setKeepReason(e.target.value)}
+          />
+          <button className={BTN} disabled={busy} onClick={keepBoth}>Not a duplicate, keep both</button>
           <button
             className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40"
             disabled={busy || !selected}

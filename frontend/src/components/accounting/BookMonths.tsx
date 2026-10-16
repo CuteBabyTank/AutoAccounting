@@ -23,6 +23,7 @@ export default function BookMonths({ companyId, year, canManage, onChanged }: Pr
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [confirmReopen, setConfirmReopen] = useState(false);
+  const [reopenReason, setReopenReason] = useState("");
 
   const load = useCallback(() => accountingApi.booksYear(companyId, year).then(setData), [companyId, year]);
 
@@ -40,6 +41,7 @@ export default function BookMonths({ companyId, year, canManage, onChanged }: Pr
     try {
       setData(await action());
       setConfirmReopen(false);
+      setReopenReason("");
       onChanged();
     } catch (e) {
       setError(apiErrorMessage(e, "That didn't work"));
@@ -109,8 +111,16 @@ export default function BookMonths({ companyId, year, canManage, onChanged }: Pr
                     {canManage && m === lastClosed && confirmReopen && (
                       <>
                         <span className="text-xs text-[var(--alert-error-text)]">Printed pages for this month must be discarded.</span>
+                        <input
+                          aria-label="Why reopen (optional)"
+                          className="w-44 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                          maxLength={500}
+                          placeholder="Why? (optional, audit log)"
+                          value={reopenReason}
+                          onChange={(e) => setReopenReason(e.target.value)}
+                        />
                         <button className={BTN} disabled={Boolean(busy)}
-                          onClick={() => run("reopen", () => accountingApi.reopenBooksMonth(companyId))}>Confirm reopen</button>
+                          onClick={() => run("reopen", () => accountingApi.reopenBooksMonth(companyId, reopenReason.trim()))}>Confirm reopen</button>
                         <button className={BTN} onClick={() => setConfirmReopen(false)}>Cancel</button>
                       </>
                     )}

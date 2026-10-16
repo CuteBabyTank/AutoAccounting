@@ -203,7 +203,7 @@ export interface FolderRef {
   companyId: string;
   year: number | null;
   quarter: number | null;
-  view?: "books" | "atc" | "employees";
+  view?: "books" | "atc" | "employees" | "audit";
 }
 
 export type DocumentPatch = Record<string, string | number | boolean | null>;
@@ -554,4 +554,37 @@ export interface AlphalistStatus {
   employees: number;
   issues: number;
   status: "no_payroll" | "needs_review" | "ready";
+}
+
+/** One change a person made (audit log). ``before``/``after`` hold only the fields that changed. */
+export interface AuditEvent {
+  id: string;
+  at: string;
+  company_id: string;
+  user_id: string | null;
+  user_name: string;
+  entity: string;
+  entity_id: string;
+  label: string;
+  action: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  reason: string;
+}
+
+export interface AuditPage {
+  events: AuditEvent[];
+  total: number;
+  users: { id: string; name: string }[];
+}
+
+export interface AuditFilters {
+  company_id?: string;
+  user_id?: string;
+  start?: string;
+  end?: string;
+  entity?: string;
+  entity_id?: string;
+  limit?: number;
+  offset?: number;
 }

@@ -9,6 +9,8 @@ import type {
   AssetPatch,
   OpeningAssetInput,
   AtcDatabank,
+  AuditFilters,
+  AuditPage,
   Company,
   CompanyInput,
   ConfirmAssignment,
@@ -34,6 +36,9 @@ import type {
 } from "@/types/accounting";
 
 export const accountingApi = {
+  /** Audit log: newest first, firm-scoped; filter by company, person, Manila calendar days, entity. */
+  auditEvents: (filters: AuditFilters) =>
+    api.get<AuditPage>("/accounting/audit-events", { params: filters }).then((r) => r.data),
   listCompanies: (q = "") =>
     api.get<Company[]>("/accounting/companies", { params: q ? { q } : {} }).then((r) => r.data),
   createCompany: (data: CompanyInput) =>
@@ -78,8 +83,8 @@ export const accountingApi = {
       })
       .then((r) => r.data),
   /** Keep both: the pair is never offered as a duplicate again. */
-  notDuplicate: (id: string, otherId: string) =>
-    api.post(`/accounting/documents/${id}/not-duplicate`, { other_id: otherId }).then(() => undefined),
+  notDuplicate: (id: string, otherId: string, reason = "") =>
+    api.post(`/accounting/documents/${id}/not-duplicate`, { other_id: otherId, reason }).then(() => undefined),
   deleteDocument: (id: string) => api.delete(`/accounting/documents/${id}`).then(() => undefined),
   pageImage: (fileId: string, page: number) =>
     api
@@ -190,8 +195,8 @@ export const accountingApi = {
     api.get<BooksYear>(`/accounting/companies/${companyId}/books/${year}`).then((r) => r.data),
   closeBooksMonth: (companyId: string, monthStart: string) =>
     api.post<BooksYear>(`/accounting/companies/${companyId}/books/close`, { month_start: monthStart }).then((r) => r.data),
-  reopenBooksMonth: (companyId: string) =>
-    api.post<BooksYear>(`/accounting/companies/${companyId}/books/reopen`).then((r) => r.data),
+  reopenBooksMonth: (companyId: string, reason = "") =>
+    api.post<BooksYear>(`/accounting/companies/${companyId}/books/reopen`, { reason }).then((r) => r.data),
   bindBooksYear: (companyId: string, year: number) =>
     api.post<BooksYear>(`/accounting/companies/${companyId}/books/${year}/bind`).then((r) => r.data),
   booksFile: (companyId: string, year: number, book: string, monthStart?: string) =>

@@ -46,6 +46,8 @@ class AACompany(Base):
     )
     registered_name: Mapped[str] = mapped_column(String(255), nullable=False)
     aliases: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # Owner / officers: a purchase made out to one of them personally is not the company's expense.
+    owner_names: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     tin: Mapped[str] = mapped_column(String(9), nullable=False, default="")
     branch_code: Mapped[str] = mapped_column(String(5), nullable=False, default="00000")
     rdo_code: Mapped[str] = mapped_column(String(5), nullable=False, default="")
@@ -201,6 +203,8 @@ class AADocument(Base):
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     needs_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     review_reasons: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # Per-reason details shown with the reason: {"ewt_expected": {"atc": "WC010", "amount": "1500.00"}, …}
+    review_notes: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     excluded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     raw: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

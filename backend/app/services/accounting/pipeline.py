@@ -46,8 +46,10 @@ def company_candidates(companies) -> list[CompanyCandidate]:
 
 
 def company_profile(c: AACompany) -> CompanyProfile:
+    owners = tuple(n for n in (*(c.owner_names or ()), c.books_signatory or "") if n and n.strip())
     return CompanyProfile(
-        c.tin, c.registered_name, tuple(c.aliases or ()), c.vat_status == "vat", c.fiscal_year_end_month
+        c.tin, c.registered_name, tuple(c.aliases or ()), c.vat_status == "vat", c.fiscal_year_end_month,
+        is_withholding_agent=bool(c.is_withholding_agent or c.is_top_withholding_agent), owner_names=owners,
     )
 
 

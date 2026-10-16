@@ -63,17 +63,26 @@ def _is_payment(line: DocLine) -> bool:
     return line.client_role == "buyer" and line.category in _PAYMENTS
 
 
+def expected_atc(account: str, counterparty_name: str, vat_registered: bool | None) -> str:
+    """The ATC every withholding agent applies to rent and professional fees ("" for other accounts)."""
+    corporate = is_corporate_name(counterparty_name)
+    if account == "rent":
+        return "WC100" if corporate else "WI100"
+    if account == "professional_fees":
+        if corporate:
+            return "WC010"
+        return "WI011" if vat_registered else "WI010"
+    return ""
+
+
 def suggest_atc(line: DocLine, company: CompanyFacts) -> str:
     """The usual ATC for this payment, or "" when no withholding is expected."""
     if not is_agent(company) or not _is_payment(line):
         return ""
+    expected = expected_atc(line.account, line.counterparty_name, line.counterparty_vat_registered)
+    if expected:
+        return expected
     prefix = "WC" if is_corporate_name(line.counterparty_name) else "WI"
-    if line.account == "rent":
-        return f"{prefix}100"
-    if line.account == "professional_fees":
-        if prefix == "WC":
-            return "WC010"
-        return "WI011" if line.counterparty_vat_registered else "WI010"
     goods = line.nature in _GOODS_NATURES  # e.g. parts or materials booked to repairs: not a contractor's fee
     if line.account == "repairs" and not goods:
         return f"{prefix}120"

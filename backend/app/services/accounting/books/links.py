@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.accounting import AADocument
+from app.services.accounting.classify import needs_review_for
 from app.services.accounting.books.receipts import DocRef, is_invoice, is_payment_receipt, match_receipts, party_key
 
 _PAYABLE = ("sales", "purchases", "expenses", "payroll")
@@ -66,5 +67,5 @@ async def relink_receipts(db: AsyncSession, company_id: uuid.UUID) -> None:
             reasons.append("possible_payment")
         if reasons != list(doc.review_reasons or []):
             doc.review_reasons = reasons
-            doc.needs_review = bool(reasons)
+            doc.needs_review = needs_review_for(reasons)
     await db.flush()

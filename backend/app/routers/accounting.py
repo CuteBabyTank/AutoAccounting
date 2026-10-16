@@ -35,7 +35,7 @@ from app.services.accounting import pipeline
 from app.services.accounting.books.links import relink_receipts
 from app.services.accounting.books.loader import touch_books
 from app.services.accounting import duplicates
-from app.services.accounting.classify import document_nature, rule_conflicts
+from app.services.accounting.classify import document_nature, needs_review_for, rule_conflicts
 from app.services.accounting.matching import file_detection_from_json, suggest_groups
 from app.services.accounting.jobs import is_stale_job
 from app.services.accounting.periods import period_fields, period_for, quarter_label
@@ -654,7 +654,7 @@ async def _apply_rule_to_supplier_documents(db: AsyncSession, doc: AADocument) -
         if rule_conflicts(document_nature(other.raw), other.account, doc.account):
             if "supplier_rule_mismatch" not in (other.review_reasons or []):
                 other.review_reasons = [*(other.review_reasons or []), "supplier_rule_mismatch"]
-                other.needs_review = True
+                other.needs_review = needs_review_for(other.review_reasons)
             continue
         other.category, other.account = doc.category, doc.account
         changed += 1
@@ -733,7 +733,7 @@ async def patch_document(
         doc.settles_source = "user"   # never re-linked automatically after a person decides
         if "possible_payment" in (doc.review_reasons or []):
             doc.review_reasons = [r for r in doc.review_reasons if r != "possible_payment"]
-            doc.needs_review = bool(doc.review_reasons)
+            doc.needs_review = needs_review_for(doc.review_reasons)
 
     if "period_year" in sent:
         if body.period_year is None:

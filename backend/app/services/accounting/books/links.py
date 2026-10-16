@@ -68,5 +68,8 @@ async def relink_receipts(db: AsyncSession, company_id: uuid.UUID) -> None:
         if reasons != list(doc.review_reasons or []):
             doc.review_reasons = reasons
             doc.needs_review = needs_review_for(reasons)
-    sync_payment_flags(docs)  # a receipt now linked (or unlinked) is payment evidence for its invoice
+    from app.services.accounting.books.bank import bank_paid_ids  # bank imports the loader, which imports routers
+
+    # a receipt now linked (or unlinked), or a matched bank line, is payment evidence for its invoice
+    sync_payment_flags(docs, await bank_paid_ids(db, company_id))
     await db.flush()

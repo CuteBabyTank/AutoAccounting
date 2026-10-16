@@ -20,6 +20,7 @@ from app.services.accounting.books.chart import (
 )
 from app.services.accounting.compute.book_ledgers import build_books, trial_balance_totals
 from app.services.accounting.compute.annual_inputs import annual_inputs_from_json
+from app.services.accounting.compute.bank_books import apply_bank_lines
 from app.services.accounting.compute.books import (
     AnnualTaxes, BooksInput, Entry, FiledPayment, Line, ManualEntry, Payment, QuarterTaxes, post_all,
 )
@@ -307,11 +308,15 @@ async def quarter_entries(db: AsyncSession, company: AACompany, facts: CompanyFa
 
     kept = frozenset(company.books_kept or default_books(facts.vat_registered)) | {"GJ"}
     typed = [_manual(m, company.books_start) for m in manual]
+    # Matched statement lines: a document's bank payment, a receipt moved into the bank, charges / transfers
+    from app.services.accounting.books.bank import matched_lines  # bank imports this module
+
+    payments, filed, bank_postings = apply_bank_lines(
+        payments, filed_payments([tuple(r) for r in rows], outputs), await matched_lines(db, company.id, through))
     inp = BooksInput(facts, chart, kept, company.books_start, through, lines=lines, ewt=ewt,
                      payments=tuple(payments), manual=tuple(typed),
-                     quarters=tuple(quarters),
-                     filed=filed_payments([tuple(r) for r in rows], outputs), assets=tuple(assets),
-                     annual=annual)
+                     quarters=tuple(quarters), filed=filed, assets=tuple(assets),
+                     annual=annual, bank=tuple(bank_postings))
     entries, warnings = post_all(inp)
     closing = chart.code("retained_earnings") if company.taxpayer_type == "corporation" else chart.code("capital")
     if quarter == 4:  # fiscal year end: closing entries, post-closing TB and the financial statements

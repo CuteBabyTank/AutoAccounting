@@ -22,6 +22,7 @@ from app.services.accounting import duplicates, gemini as aa_gemini
 from app.services.accounting.classify import (
     CompanyProfile, classify_document, duplicate_key, empty_document_fields, mark_duplicates,
 )
+from app.services.accounting.books import bank
 from app.services.accounting.books.links import relink_receipts
 from app.services.accounting.jobs import JobSlots
 from app.services.accounting.extraction import (
@@ -128,6 +129,15 @@ async def _claim_file(db, file_id: uuid.UUID, company_id: uuid.UUID, sha256: str
         await db.commit()
         await asyncio.get_running_loop().run_in_executor(None, lambda: Path(stored_path).unlink(missing_ok=True))
         return False
+
+
+async def _store_statement(db, doc: AADocument) -> None:
+    """Save a bank statement's lines; a bad statement never fails the file (its document is still filed)."""
+    try:
+        async with db.begin_nested():
+            await bank.store_statement(db, doc)
+    except Exception:
+        logger.exception("accounting_statement_failed document_id=%s", doc.id)
 
 
 async def run_detection(upload_id: uuid.UUID, user_id: str) -> None:
@@ -257,12 +267,14 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
                 if not rows:
                     rows = [empty_document_fields(page_count)]
                 new_seen = mark_duplicates(rows, seen[company_id])
-                for fields in rows:
-                    db.add(AADocument(
-                        enterprise_id=enterprise_scope, company_id=company_id, file_id=file_id, **fields
-                    ))
+                added = [AADocument(enterprise_id=enterprise_scope, company_id=company_id, file_id=file_id, **fields)
+                         for fields in rows]
+                db.add_all(added)
 
                 await db.flush()  # surface bad rows (e.g. out-of-range amounts) inside this file's try
+                for doc in added:
+                    if doc.doc_type == "statement":
+                        await _store_statement(db, doc)
                 f = await db.get(AAFile, file_id)
                 if not f.pages_charged and enterprise_id is not None:
                     ent = await db.get(User, enterprise_id)
@@ -288,6 +300,9 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
             try:
                 await relink_receipts(db, company_id)
                 await duplicates.refresh_flags(db, company_id)  # copies dropped in earlier uploads too
+                company = await db.get(AACompany, company_id)
+                if company is not None:
+                    await bank.rematch(db, company)  # new statement lines, or new documents they pay
                 await db.commit()
             except Exception:  # linking is a convenience; never fail the upload over it
                 logger.exception("accounting_relink_failed company_id=%s", company_id)

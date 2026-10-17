@@ -23,6 +23,11 @@ TITLES = {"ar": "ACCOUNTS RECEIVABLE AGING", "ap": "ACCOUNTS PAYABLE AGING"}
 PARTY = {"ar": "Customer", "ap": "Supplier"}
 
 
+def _cut(text: str, width: float) -> str:
+    """Shorten a table cell to ``width`` at the size rows are drawn (8 pt), so it never runs into the next column."""
+    return _fit(text, width, FONT, 8)
+
+
 def peso(value: Decimal) -> str:
     return f"{value:,.2f}" if value >= 0 else f"({-value:,.2f})"   # Helvetica has no peso sign
 
@@ -89,7 +94,7 @@ def aging_pdf(header: Header, kind: str, as_of: date, rows: list[AgingRow], tota
     heads()
     for r in rows:
         name = r.name + (f"  ({r.unverified} unverified)" if kind == "ap" and r.unverified else "")
-        w.row([(MARGIN, _fit(name, name_width), "l"), (MARGIN + name_width + 8, r.tin, "l")]
+        w.row([(MARGIN, _cut(name, name_width), "l"), (MARGIN + name_width + 8, r.tin, "l")]
               + [(x, peso(r.buckets[b]), "r") for x, b in zip(cols, BUCKETS)] + [(cols[-1], peso(r.total), "r")])
     w.row([(MARGIN, "Total", "l")] + [(x, peso(totals[b]), "r") for x, b in zip(cols, BUCKETS)]
           + [(cols[-1], peso(totals["total"]), "r")], bold=True)
@@ -102,7 +107,7 @@ def aging_pdf(header: Header, kind: str, as_of: date, rows: list[AgingRow], tota
     for i in items:
         d = i.doc
         note = "  * unverified" if kind == "ap" and d.payment_unverified else ""
-        w.row([(MARGIN, _fit(d.contact_name, 220), "l"), (x_no, _fit(d.doc_number + note, 95), "l"),
+        w.row([(MARGIN, _cut(d.contact_name, 220), "l"), (x_no, _cut(d.doc_number + note, 95), "l"),
                (x_date, d.doc_date.isoformat(), "l"), (x_due, i.due.isoformat(), "l"),
                (right - 380, str(max(i.days_past_due, 0)), "r"), (right - 285, peso(d.total), "r"),
                (right - 190, peso(d.withheld), "r"), (right - 95, peso(i.paid), "r"), (right, peso(i.open), "r")])
@@ -132,7 +137,7 @@ def statement_pdf(header: Header, contact: dict, as_of: date, items: list[OpenIt
            (right, "Balance due", "r")], bold=True)
     for i in items:
         d = i.doc
-        w.row([(MARGIN, _fit(d.doc_number, 100), "l"), (MARGIN + 110, d.doc_date.isoformat(), "l"),
+        w.row([(MARGIN, _cut(d.doc_number, 100), "l"), (MARGIN + 110, d.doc_date.isoformat(), "l"),
                (MARGIN + 180, i.due.isoformat(), "l"), (right - 270, peso(d.total), "r"),
                (right - 180, peso(d.withheld), "r"), (right - 90, peso(i.paid), "r"), (right, peso(i.open), "r")])
     total = sum((i.open for i in items), Decimal("0.00"))

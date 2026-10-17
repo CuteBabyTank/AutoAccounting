@@ -1,7 +1,7 @@
 """Match bank statement lines to what they pay or collect (pure).
 
 A candidate needs the exact amount (or, for a partial payment, a smaller line whose narration names the payee and
-the document) inside a date window. The narration decides: a candidate is *strong* when the narration names its payee
+the document) inside a date window. The narration decides: a candidate is *strong* when the narration names its payee (its first name word, or two of them)
 (or a learned payee rule does) or carries its document / check number, and *conflicting* when the narration names
 someone else. Only a single strong candidate links by itself; amount and date alone never do. Lines nothing pays
 become suggested postings (bank charges, interest, transfers) or wait for review.
@@ -119,12 +119,15 @@ def _strength(line: BankLineFact, c: Candidate, rules: Iterable[Rule]) -> tuple[
     """('strong' | 'weak' | 'conflict', number hit) for a candidate against the line's narration."""
     words = tokens(line.narration)
     names = name_tokens(line.narration)
-    payee = name_tokens(c.payee) | set(c.keywords)
-    payee_hit = bool(payee & words)
+    payee = _ordered_names(c.payee)
+    # The payee's first (most distinctive) name word, or two of its words: one shared trade word ("builders",
+    # "hardware") is not the payee being named.
+    payee_hit = bool(set(c.keywords) & words) or bool(payee) and (payee[0] in words or len(set(payee) & words) >= 2)
     if not payee_hit:
+        payee_names = name_tokens(c.payee)
         payee_hit = any(r.kind == "payee" and _rule_applies(r, line, words)
                         and ((r.payee_tin and r.payee_tin == c.payee_tin) or
-                             (r.payee_name and name_tokens(r.payee_name) == name_tokens(c.payee)))
+                             (payee_names and name_tokens(r.payee_name) == payee_names))
                         for r in rules)
     numbers = {g for n in c.numbers for g in _number_groups(n)}
     said = {g for g in _number_groups(line.narration + " " + line.check_no)}

@@ -105,3 +105,24 @@ def test_a_balance_forward_row_with_no_amount_is_not_a_line_to_match():
     ]}})
     assert [(l.line_no, l.narration) for l in data.lines] == [(1, "Service charge")]
     assert tie_out(data) == (True, [])
+
+
+def test_a_shared_generic_word_does_not_make_another_payee_a_strong_match():
+    from app.services.accounting.bank_match import BankLineFact, Candidate, match_line
+
+    mabuhay = Candidate("document", "si8", date(2026, 12, 1), D("50000.00"), "in", "Mabuhay Builders Inc.", ("0008",))
+    other = BankLineFact("x", date(2026, 12, 11), D("50000.00"), "Deposit - Golden Builders")
+    assert match_line(other, [mabuhay]).status == "ambiguous"
+    same = BankLineFact("y", date(2026, 12, 11), D("50000.00"), "Deposit - Mabuhay Builders")
+    assert match_line(same, [mabuhay]).status == "matched"
+    two_words = BankLineFact("z", date(2026, 12, 11), D("50000.00"), "Deposit Builders Mabuhay")
+    assert match_line(two_words, [mabuhay]).status == "matched"
+
+
+def test_a_learned_payee_rule_for_a_name_of_only_common_words_does_not_vouch_for_nameless_candidates():
+    from app.services.accounting.bank_match import BankLineFact, Candidate, Rule, match_line
+
+    rule = Rule("zxq", "out", "payee", payee_name="City Gas Station Inc")   # every word a stop word
+    payroll = Candidate("document", "pay1", date(2026, 12, 20), D("3500.00"), "out", "")
+    line = BankLineFact("l", date(2026, 12, 22), D("-3500.00"), "ZXQ 1234")
+    assert match_line(line, [payroll], [rule]).status != "matched"

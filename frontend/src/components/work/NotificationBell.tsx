@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { Bell, X } from "@phosphor-icons/react";
-import { OPEN_COMPANY_EVENT, workApi } from "@/lib/work-api";
+import { OPEN_COMPANY_EVENT, safeId, workApi } from "@/lib/work-api";
 import type { AppNotification, Notifications } from "@/types/work";
 
 const POLL_MS = 120_000;
@@ -57,11 +57,12 @@ export default function NotificationBell({ variant, fadeStyle }: Props) {
   async function go(n: AppNotification) {
     setOpen(false);
     if (!n.read) workApi.readNotifications([n.key]).then(setData).catch(() => undefined);
-    if (n.kind === "deadline") router.push(n.company_id ? `/accounting/work?company=${n.company_id}` : "/accounting/work");
+    const company = safeId(n.company_id);
+    if (n.kind === "deadline") router.push(company ? `/accounting/work?company=${encodeURIComponent(company)}` : "/accounting/work");
     else if (n.kind === "task_assigned" || n.kind === "task_due") router.push("/accounting/work?tab=tasks");
-    else if (n.company_id) {
-      if (pathname === "/accounting") window.dispatchEvent(new CustomEvent(OPEN_COMPANY_EVENT, { detail: n.company_id }));
-      else router.push(`/accounting?company=${n.company_id}`);
+    else if (company) {
+      if (pathname === "/accounting") window.dispatchEvent(new CustomEvent(OPEN_COMPANY_EVENT, { detail: company }));
+      else router.push(`/accounting?company=${encodeURIComponent(company)}`);
     }
   }
 

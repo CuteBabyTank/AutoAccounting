@@ -14,6 +14,15 @@ import type {
   WorkItemInput,
 } from "@/types/work";
 
+const seg = encodeURIComponent;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A company id taken from a URL or an event: only a UUID is accepted (anything else is ignored). */
+export function safeId(value: unknown): string | null {
+  return typeof value === "string" && UUID_RE.test(value) ? value.toLowerCase() : null;
+}
+
 export const workApi = {
   board: (filters: BoardFilters) => api.get<Board>("/accounting/work/board", { params: filters }).then((r) => r.data),
   /** Only the keys present are changed (null assignee unassigns, "" status goes back to automatic). */
@@ -23,12 +32,12 @@ export const workApi = {
   saveSettings: (body: { approve_before_close: boolean; deadline_days: number }) =>
     api.put<FirmSettings>("/accounting/work/settings", body).then((r) => r.data),
   health: (companyId: string) =>
-    api.get<CompanyHealth>(`/accounting/companies/${companyId}/health`).then((r) => r.data),
+    api.get<CompanyHealth>(`/accounting/companies/${seg(companyId)}/health`).then((r) => r.data),
   tasks: (filters: TaskFilters) => api.get<Task[]>("/accounting/tasks", { params: filters }).then((r) => r.data),
   createTask: (body: TaskInput) => api.post<Task>("/accounting/tasks", body).then((r) => r.data),
   updateTask: (id: string, body: Partial<TaskInput>) =>
-    api.patch<Task>(`/accounting/tasks/${id}`, body).then((r) => r.data),
-  deleteTask: (id: string) => api.delete(`/accounting/tasks/${id}`),
+    api.patch<Task>(`/accounting/tasks/${seg(id)}`, body).then((r) => r.data),
+  deleteTask: (id: string) => api.delete(`/accounting/tasks/${seg(id)}`),
   notifications: () => api.get<Notifications>("/accounting/notifications").then((r) => r.data),
   readNotifications: (keys: string[], all = false) =>
     api.post<Notifications>("/accounting/notifications/read", { keys, all }).then((r) => r.data),

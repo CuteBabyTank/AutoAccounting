@@ -10,7 +10,7 @@ import CompanyHealth from "@/components/work/CompanyHealth";
 import TaskList from "@/components/work/TaskList";
 import { BTN, Chip, INPUT, STATUS_META, STATUS_ORDER, addDays, dueText, shortDate, todayIso } from "@/components/work/ui";
 import { useGuide } from "@/lib/guides";
-import { firmSettings, workApi } from "@/lib/work-api";
+import { firmSettings, safeId, workApi } from "@/lib/work-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import type { Board, BoardFilters, CompanySummary, FirmSettings, WorkCard, WorkItemInput } from "@/types/work";
 
@@ -66,7 +66,7 @@ export default function WorkBoardPage() {
     const params = new URLSearchParams(window.location.search);
     const t = params.get("tab");
     if (t === "clients" || t === "tasks") setTab(t);
-    setCompany(params.get("company") ?? "");
+    setCompany(safeId(params.get("company")) ?? "");
     firmSettings().then(setSettings).catch(() => undefined);
   }, []);
 
@@ -276,7 +276,7 @@ export default function WorkBoardPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Link href={`/accounting?company=${c.company_id}`} aria-label={`Open ${c.company_name}`} className="inline-flex rounded p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]">
+                        <Link href={`/accounting?company=${encodeURIComponent(c.company_id)}`} aria-label={`Open ${c.company_name}`} className="inline-flex rounded p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]">
                           <ArrowSquareOut size={16} />
                         </Link>
                       </td>
@@ -311,7 +311,7 @@ export default function WorkBoardPage() {
                 <section key={s.company_id} className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
                   <div className="flex items-start gap-2">
                     <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--text-primary)]">{s.company_name}</h2>
-                    <Link href={`/accounting?company=${s.company_id}`} className="text-xs font-medium text-[var(--accent)] hover:underline">Overview</Link>
+                    <Link href={`/accounting?company=${encodeURIComponent(s.company_id)}`} className="text-xs font-medium text-[var(--accent)] hover:underline">Overview</Link>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {issues.length === 0 ? (

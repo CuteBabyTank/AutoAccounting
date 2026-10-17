@@ -45,7 +45,7 @@ export default function CompanyOverviewPanel({ companyId, companyName, companies
               the firm&apos;s tasks for them. The work board shows the same for every client.
             </Hint>
           </h2>
-          <Link href={`/accounting/work?company=${companyId}`} className={`${BTN} ml-auto`}>Open on the work board</Link>
+          <Link href={`/accounting/work?company=${encodeURIComponent(companyId)}`} className={`${BTN} ml-auto`}>Open on the work board</Link>
         </div>
         {error && <p className="text-sm text-[var(--alert-error-text)]">{error}</p>}
         {board && (open.length === 0 ? (

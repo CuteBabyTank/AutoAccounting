@@ -26,7 +26,7 @@ import Hint from "@/components/guide/Hint";
 import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
 import { DOCUMENTS_TOUR } from "@/components/guide/tours";
 import { accountingApi } from "@/lib/accounting-api";
-import { OPEN_COMPANY_EVENT } from "@/lib/work-api";
+import { OPEN_COMPANY_EVENT, safeId } from "@/lib/work-api";
 import { teamApi } from "@/lib/api";
 import { useGuide } from "@/lib/guides";
 import { apiErrorMessage } from "@/lib/accounting-format";
@@ -72,10 +72,11 @@ export default function AccountingPage() {
   // Deep link from the work board / notifications: /accounting?company=<id>&view=overview
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const company = params.get("company");
+    // Only a UUID is accepted from the URL or the event; the panel then loads it through the firm-scoped API.
+    const company = safeId(params.get("company"));
     if (company) setSelected({ companyId: company, year: null, quarter: null, view: "overview" });
     const open = (e: Event) => {
-      const id = (e as CustomEvent<string>).detail;
+      const id = safeId((e as CustomEvent<unknown>).detail);
       if (id) setSelected({ companyId: id, year: null, quarter: null, view: "overview" });
     };
     window.addEventListener(OPEN_COMPANY_EVENT, open);

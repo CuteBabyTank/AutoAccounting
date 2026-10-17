@@ -170,6 +170,12 @@ def _shown(chart: Chart, kinds: tuple[str, ...], used: set[str]) -> list:
     return [a for a in chart.accounts if a.type in kinds and (a.active or a.code in used)]
 
 
+def _nz(value) -> Decimal:
+    """Rounded to centavos, with negative zero shown as 0.00."""
+    value = c2(value)
+    return value if value else ZERO
+
+
 def _row(key: str, label: str, level: int, kind: str, codes: list[str], values: list, drill: list) -> dict:
     return {"key": key, "label": label, "level": level, "kind": kind, "codes": codes, "values": values,
             "drill": drill}
@@ -195,7 +201,7 @@ def profit_and_loss(entries: list[Entry], chart: Chart, columns: list[Column]) -
     expenses = [a for a in accounts if a.type == "expense" and a.code != tax]
 
     def amount(codes: list[str], sign: int) -> list[Decimal]:
-        return [c2(sign * total(s.get(code, ZERO) for code in codes)) for s in sums]
+        return [_nz(sign * total(s.get(code, ZERO) for code in codes)) for s in sums]
 
     def accounts_rows(group, sign: int) -> list[dict]:
         return [_row(f"acct:{a.code}", f"{a.code} {a.name}", 1, "account", [a.code], amount([a.code], sign), window)
@@ -249,7 +255,7 @@ def shape(report: dict, *, nonzero: bool, thousands: bool) -> dict:
         rows = [r for r in rows if r["kind"] != "account"
                 or any(v for v, k in zip(r["values"], kinds) if k == "amount")]
     if thousands:
-        rows = [{**r, "values": [c2(v / 1000) if v is not None and k != "pct" else v
+        rows = [{**r, "values": [_nz(v / 1000) if v is not None and k != "pct" else v
                                  for v, k in zip(r["values"], kinds)]} for r in rows]
     return {**report, "rows": rows, "thousands": thousands}
 
@@ -261,9 +267,9 @@ def balance_sheet(entries: list[Entry], chart: Chart, as_of: list[date], fye: in
     pnl = set(_pnl_codes(chart))
     starts = [fy_start(d, fye) for d in as_of]
     sums = [_sums(live, _in(None, d)) for d in as_of]
-    prior = [c2(-total(v for k, v in _sums(live, _in(None, s - timedelta(days=1))).items() if k in pnl))
+    prior = [_nz(-total(v for k, v in _sums(live, _in(None, s - timedelta(days=1))).items() if k in pnl))
              for s in starts]
-    current = [c2(-total(v for k, v in _sums(live, _in(s, d)).items() if k in pnl)) for s, d in zip(starts, as_of)]
+    current = [_nz(-total(v for k, v in _sums(live, _in(s, d)).items() if k in pnl)) for s, d in zip(starts, as_of)]
     used = {code for s in sums for code, v in s.items() if v}
     to_date = [{"start": None, "end": d} for d in as_of]
     none = [None] * len(as_of)
@@ -271,11 +277,11 @@ def balance_sheet(entries: list[Entry], chart: Chart, as_of: list[date], fye: in
     def group(kind: str, sign: int) -> tuple[list[dict], list[str]]:
         accounts = _shown(chart, (kind,), used)
         rows = [_row(f"acct:{a.code}", f"{a.code} {a.name}", 1, "account", [a.code],
-                     [c2(sign * s.get(a.code, ZERO)) for s in sums], to_date) for a in accounts]
+                     [_nz(sign * s.get(a.code, ZERO)) for s in sums], to_date) for a in accounts]
         return rows, [a.code for a in accounts]
 
     def sum_of(codes: list[str], sign: int) -> list[Decimal]:
-        return [c2(sign * total(s.get(code, ZERO) for code in codes)) for s in sums]
+        return [_nz(sign * total(s.get(code, ZERO) for code in codes)) for s in sums]
 
     assets, a_codes = group("asset", 1)
     liabilities, l_codes = group("liability", -1)

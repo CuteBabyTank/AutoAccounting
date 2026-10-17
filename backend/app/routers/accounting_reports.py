@@ -3,26 +3,37 @@ invalid journal transactions, drill-down postings and sources, KPIs, exports (XL
 
 import asyncio
 import re
+import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
-from app.models.accounting import AAAsset, AABankLine, AABankStatement, AACompany, AADocument, AAJournalEntry
+from app.config import settings
+from app.models.accounting import (
+    AAAsset, AABankLine, AABankStatement, AACompany, AADocument, AAJournalEntry, AAPeriod,
+)
 from app.models.user import User
+from app.routers.accounting_periods import _ensure_period, period_label
 from app.routers.accounting_scope import company_or_404, scope_for
 from app.schemas.accounting import manila_today
+from app.services.accounting import audit
 from app.services.accounting.books.closing import header_for
 from app.services.accounting.compute import reports as r
 from app.services.accounting.compute.due_dates import quarter_end, quarter_start
 from app.services.accounting.periods import period_for
 from app.services.accounting.report_export import jsonable, report_pdf, report_xlsx, table_for
+from app.services.accounting.report_pack import Pack, pack_docx, pack_pdf
 from app.services.accounting.reports import Books, invalid_rows, load_books, parse_uuid
+from app.services.accounting.storage import is_stored_path_safe
 
 router = APIRouter()
 
@@ -31,6 +42,7 @@ TITLES = {"pnl": "Profit and loss", "balance-sheet": "Balance sheet", "gl": "Gen
           "transactions": "Transaction list by date", "adjusted-tb": "Adjusted trial balance",
           "adjusting": "Adjusting journal entries", "invalid": "Invalid journal transactions"}
 _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 @dataclass
@@ -261,3 +273,123 @@ async def company_kpis(company_id: str, start: date | None = Query(None), end: d
                            "totals": aging_totals(aging([i for i in sub.items if i.doc.kind == kind]))}
                     for kind in ("ar", "ap")}
     return JSONResponse(jsonable(out))
+
+
+# --- management report pack (per quarter, saved in the quarter's output folder) -------------------------------------
+
+class PackNotesIn(BaseModel):
+    notes: str = Field(default="", max_length=20000)
+
+
+def _pack_dir(company: AACompany, year: int, quarter: int) -> Path:
+    return Path(settings.accounting_root) / "accounting" / "outputs" / str(company.id) / f"{year}Q{quarter}"
+
+
+def _pack_out(company: AACompany, period: AAPeriod) -> dict:
+    files = period.pack_files or {}
+    return {"year": period.year, "quarter": period.quarter, "period": period_label(period.year, period.quarter, company),
+            "notes": period.pack_notes or "", "books_on": company.books_start is not None,
+            "generated_at": files.get("generated_at"), "generated_by": files.get("by", ""),
+            "pdf": bool(files.get("pdf")), "docx": bool(files.get("docx"))}
+
+
+async def _pack_period(db: AsyncSession, user: User, company_id: str, year: int, quarter: int):
+    company = await _company(db, user, company_id)
+    fye = company.fiscal_year_end_month
+    _check(quarter_start(year, quarter, fye), quarter_end(year, quarter, fye), company)
+    return company, await _ensure_period(db, company.enterprise_id, company, year, quarter)
+
+
+@router.get("/companies/{company_id}/pack/{year}/{quarter}")
+async def get_pack(company_id: str, year: int = PathParam(ge=2000, le=2100), quarter: int = PathParam(ge=1, le=4),
+                   user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    company, period = await _pack_period(db, user, company_id, year, quarter)
+    return JSONResponse(jsonable(_pack_out(company, period)))
+
+
+@router.put("/companies/{company_id}/pack/{year}/{quarter}/notes")
+async def put_pack_notes(body: PackNotesIn, company_id: str, year: int = PathParam(ge=2000, le=2100),
+                         quarter: int = PathParam(ge=1, le=4), user: User = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)):
+    company, period = await _pack_period(db, user, company_id, year, quarter)
+    before = period.pack_notes or ""
+    period.pack_notes = body.notes.strip()
+    if before != period.pack_notes:
+        audit.record(db, label=f"{year} Q{quarter} · management pack", ent=company.enterprise_id,
+                     company_id=company.id, user=user, entity="period", entity_id=f"{year}-Q{quarter}",
+                     action="pack_notes", before={"pack_notes": before}, after={"pack_notes": period.pack_notes})
+    await db.commit()
+    return JSONResponse(jsonable(_pack_out(company, period)))
+
+
+async def build_pack(db: AsyncSession, company: AACompany, year: int, quarter: int, notes: str) -> Pack:
+    from app.services.accounting.books.subledger import load_subledger
+    from app.services.accounting.compute.subledger import aging, aging_totals
+
+    fye = company.fiscal_year_end_month
+    qs, qe = quarter_start(year, quarter, fye), quarter_end(year, quarter, fye)
+    books = await _books(db, company, qe)
+    entries, chart = books.entries or [], books.chart
+    cols = [r.Column("quarter", _quarter_label(year, quarter, fye), qs, qe),
+            r.Column("ytd", "Fiscal year to date", r.fy_start(qe, fye), qe)]
+    pnl = r.profit_and_loss(entries, chart, cols)
+    bs_now = r.balance_sheet(entries, chart, [qe], fye, books.closing)
+    bs = r.with_change(r.balance_sheet(entries, chart, [qe, qs - timedelta(days=1)], fye, books.closing), 0, 1)
+    sub = await load_subledger(db, company, qe)
+    ages = {}
+    for kind in ("ar", "ap"):
+        rows = aging([i for i in sub.items if i.doc.kind == kind])
+        ages[kind] = ([(a.name, a.tin, {**a.buckets, "total": a.total}) for a in rows], aging_totals(rows))
+    return Pack(header=header_for(company), period=period_label(year, quarter, company),
+                prepared=f"{manila_today():%B %-d, %Y}",
+                pnl=r.shape(pnl, nonzero=True, thousands=False), bs=r.shape(bs, nonzero=True, thousands=False),
+                cash_flow=r.cash_flow(entries, chart, qs, qe, fye, books.closing), aging=ages,
+                kpis=r.kpis(r.profit_and_loss(entries, chart, cols[:1]), bs_now, chart), notes=notes)
+
+
+def _quarter_label(year: int, quarter: int, fye: int) -> str:
+    return f"Q{quarter} {year}" if fye == 12 else f"Q{quarter} FY{year}"
+
+
+@router.post("/companies/{company_id}/pack/{year}/{quarter}")
+async def generate_pack(company_id: str, year: int = PathParam(ge=2000, le=2100), quarter: int = PathParam(ge=1, le=4),
+                        user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Build the pack from the books as they are now and save PDF + DOCX in the quarter's output folder."""
+    company, period = await _pack_period(db, user, company_id, year, quarter)
+    if company.books_start is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Books are off for this company: set Books start first.")
+    pack = await build_pack(db, company, year, quarter, period.pack_notes or "")
+    folder = _pack_dir(company, year, quarter)
+    stamp = uuid.uuid4().hex[:8]
+    pdf_path, docx_path = folder / f"pack-{stamp}.pdf", folder / f"pack-{stamp}.docx"
+
+    def write() -> None:
+        folder.mkdir(parents=True, exist_ok=True)
+        pdf_path.write_bytes(pack_pdf(pack))
+        docx_path.write_bytes(pack_docx(pack))
+
+    await asyncio.get_running_loop().run_in_executor(None, write)
+    now = datetime.now(timezone.utc).isoformat()
+    period.pack_files = {"pdf": str(pdf_path), "docx": str(docx_path), "generated_at": now, "by": user.email}
+    audit.record(db, label=f"{year} Q{quarter} · management pack", ent=company.enterprise_id, company_id=company.id,
+                 user=user, entity="period", entity_id=f"{year}-Q{quarter}", action="pack_generated",
+                 after={"files": [pdf_path.name, docx_path.name]})
+    await db.commit()
+    return JSONResponse(jsonable(_pack_out(company, period)))
+
+
+@router.get("/companies/{company_id}/pack/{year}/{quarter}/file")
+async def pack_file(company_id: str, year: int = PathParam(ge=2000, le=2100), quarter: int = PathParam(ge=1, le=4),
+                    format: Literal["pdf", "docx"] = Query("pdf"), user: User = Depends(get_current_user),
+                    db: AsyncSession = Depends(get_db)):
+    company, period = await _pack_period(db, user, company_id, year, quarter)
+    stored = (period.pack_files or {}).get(format)
+    folder = _pack_dir(company, year, quarter).resolve()
+    path = Path(stored).resolve() if stored else None
+    if path is None or not is_stored_path_safe(str(path)) or folder not in path.parents or not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Generate the pack first")
+    name = re.sub(r"[^A-Za-z0-9 ._-]+", "", f"{company.registered_name} {year} Q{quarter} management report").strip()
+    media = "application/pdf" if format == "pdf" else _DOCX
+    data = await asyncio.get_running_loop().run_in_executor(None, path.read_bytes)
+    return Response(content=data, media_type=media,
+                    headers={"Content-Disposition": f'attachment; filename="{name or "pack"}.{format}"'})

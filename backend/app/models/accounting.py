@@ -280,6 +280,9 @@ class AAPeriod(Base):
     )
     # {form: {"output_id", "version", "filed_at"}}; filed_at / filed_output_id are derived from it.
     filed_forms: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    # Management report pack: the preparer's notes and the latest files ({"pdf", "docx", "generated_at", "by"})
+    pack_notes: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    pack_files: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 

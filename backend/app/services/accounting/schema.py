@@ -43,4 +43,6 @@ def column_statements() -> list[str]:
         "ALTER TABLE aa_documents ADD COLUMN IF NOT EXISTS cwt_2307 JSONB NOT NULL DEFAULT '{}'::jsonb",
         "ALTER TABLE aa_audit_events ALTER COLUMN company_id DROP NOT NULL",  # firm-level events (settings, tasks)
         "ALTER TABLE aa_journal_entries ADD COLUMN IF NOT EXISTS is_adjusting BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE aa_periods ADD COLUMN IF NOT EXISTS pack_notes TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE aa_periods ADD COLUMN IF NOT EXISTS pack_files JSONB NOT NULL DEFAULT '{}'::jsonb",
     ]

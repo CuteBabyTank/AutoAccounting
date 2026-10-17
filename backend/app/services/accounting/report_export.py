@@ -139,6 +139,14 @@ def _text(value) -> str:
     return str(value)
 
 
+_PDF_SAFE = str.maketrans({"₱": "PHP ", "–": "-", "—": "-", "’": "'", "‘": "'", "“": '"', "”": '"', "·": "-"})
+
+
+def pdf_text(value) -> str:
+    """Cell text for the base-14 Helvetica font (no peso sign or typographic dashes)."""
+    return _text(value).translate(_PDF_SAFE)
+
+
 def layout(heads: list[str], rows: list[dict], width: float) -> list[tuple[float, float, str]]:
     """(x, width, align) per column: money columns fixed and right-aligned, text columns share the rest."""
     money = [any(isinstance(r["cells"][i], Decimal) for r in rows if i < len(r["cells"])) or h.endswith("change")
@@ -158,11 +166,12 @@ def layout(heads: list[str], rows: list[dict], width: float) -> list[tuple[float
 def report_pdf(header: Header, title: str, subtitle: str, heads: list[str], rows: list[dict],
                writer: _Writer | None = None) -> bytes:
     w = writer or _Writer(_PAGE)
-    _header(w, header, title.upper(), subtitle)
+    _header(w, Header(pdf_text(header.name), header.tin, pdf_text(header.address), header.rdo), pdf_text(title.upper()),
+            pdf_text(subtitle))
     cols = layout(heads, rows, _PAGE.width - 2 * MARGIN)
 
     def line(cells: list, bold: bool) -> None:
-        w.row([(x, _cut(_text(c), width) if align == "l" else _text(c), align)
+        w.row([(x, _cut(pdf_text(c), width) if align == "l" else pdf_text(c), align)
                for (x, width, align), c in zip(cols, cells)], bold=bold)
 
     line(heads, True)

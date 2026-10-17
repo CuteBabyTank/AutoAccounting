@@ -252,3 +252,10 @@ def test_check_window_caps_the_engine_work():
                        (date(2000, 1, 1), date(2026, 12, 31))):
         with pytest.raises(ValueError):
             check_window(start, end, today, 12)
+
+
+def test_no_negative_zero():
+    report = profit_and_loss(ENTRIES, CHART, columns_for(date(2026, 10, 1), date(2026, 12, 31), "total", 12))
+    assert all(str(v) != "-0.00" for r in report["rows"] for v in r["values"] if v is not None)
+    bs = balance_sheet([], CHART, [date(2026, 12, 31)], 12, "3020")
+    assert all(str(v) != "-0.00" for r in bs["rows"] for v in r["values"] if v is not None)

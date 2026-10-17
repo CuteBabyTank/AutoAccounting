@@ -104,3 +104,39 @@ transfer between own bank accounts post once; picking an invoice a linked receip
 payment); excluded lines are out of the statement balance; "Balance forward" rows (no amount) aren't stored as lines;
 one shared trade word ("builders") no longer names a payee, nor does a learned rule whose name is all stop words.
 Tests 652 → 660.
+
+## 04 Customer and supplier subledgers (2026-10-17)
+
+Plan: `2026-10-16-qbo-04-subledgers.md` (Decisions section there).
+
+Shipped:
+- `aa_contacts` (FORCE RLS, firm policy): key = TIN else normalized name, role customer / supplier / both, name
+  variants as aliases, address, VAT status, payment terms (days), fields a person set are never overwritten by sync,
+  `merged_into_id` for manual merges (cycle-safe). Default account / ATC stay in the supplier databank
+  (`aa_supplier_rules`), edited from the contact page. Column `aa_documents.cwt_2307` for a person's 2307 mark.
+- Extraction reads optional `due_date` and `terms_days`.
+- Pure `compute/subledger.py`: open items (total − customer CWT / computed EWT − the books' payments up to the date;
+  counter-paid cash receipts never open; credit memos as negative items), due dates (printed → terms → contact terms
+  → document date), buckets current / 1–30 / 31–60 / 61–90 / 90+, aging by contact, 2307-to-receive items
+  (auto-received by a same-customer 2307 in the same fiscal quarter; a person's mark wins).
+- `books/subledger.py` glue reuses `document_payments` + `apply_bank_lines` (receipts, `paid_on`, matched bank lines).
+- Routes (`routers/accounting_contacts.py`): contact lists with open balance / overdue / 2307 pending / unverified,
+  contact detail (documents, payments, open items, 2307s to receive, outgoing 2307 links to the quarter's ZIP), edit and
+  merge (audited), 2307 marks (audited), live aging JSON / XLSX (csv_safe) / PDF, customer statement PDF. Quarter
+  generation stores `ARAging` / `APAging` tabs (workbook + `/outputs/{id}/aging` PDF). `payment_unverified` shows on
+  the A/P aging (column, PDF marker, chip).
+- UI: Company → Customers / Suppliers (as-of date, tiles, aging columns, chips, XLSX / PDF), contact page (open items,
+  2307s to receive with mark / link, 2307s to issue, payments, documents opening the document panel, details form,
+  merge, statement), A/R / A/P aging buttons on a version, Hints, tour line, audit labels.
+- Acceptance: pure test from the Q4 pack (CSV-derived detail) — A/R ₱467,623.82 across 3 invoices (current 81,476.80,
+  31–60 386,147.02), A/P ₱757,042.80 across 8 bills (current 263,872.00, 1–30 38,640.00, 31–60 294,303.60, 61–90
+  160,227.20); Kalayaan 0006 ₱2,415.70 2307 pending. Live smoke on the dev stack (lists, contact page, edit, merge,
+  version aging PDF, XLSX, statement).
+
+Tests: 660 → 699 passing. Gates: pytest, ruff, lint, tsc, build all green.
+
+Not done / left to the owner: the books still keep cash-terms documents without `paid_on` in A/P (the aging treats them
+as paid at the counter), and keep customer CWT in A/R until the 2307 document arrives, so books A/R / A/P control can
+differ from the aging (see Decisions); credit memos are not auto-applied to invoices; no unmerge; contacts are not
+synced inside the extraction pipeline (synced on read and at generation); one import document is not split into
+foreign supplier / broker payables (landed-cost CPA question).

@@ -172,3 +172,11 @@ Progress entry, CLAUDE.md layout / gotchas, Decisions below kept current.
 - **Acceptance fixture**: the plan has totals only, so per-document detail comes from the QBO import CSVs. QBO split
   the BOC import entry into three bills (Guangzhou FOB, BOC duty + VAT, R. Villanueva freight / brokerage); the fixture
   uses that split. How AutoAccounting splits one import document is the open landed-cost CPA question.
+- **Contacts sync lazily**: the master is brought up to date from the documents whenever a contacts / aging / contact
+  page is read and when a quarter is generated, not inside the extraction pipeline (no extra work or failure mode in
+  the background job).
+- **Merge is manager-only** (owner / manager), edits and 2307 marks are open to every firm member; all are audited
+  (entity `contact`; 2307 marks as a `document` event `cwt_2307`).
+- **Quarter versions** store the aging as of the quarter end in ledger tabs `ARAging` / `APAging` (one row per open
+  item), so the version's aging PDF never changes after generation; the live aging (any date) is on the Customers /
+  Suppliers pages.

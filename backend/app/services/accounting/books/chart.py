@@ -18,6 +18,7 @@ class ChartAccount:
     system_key: str | None = None
     parent_code: str | None = None
     active: bool = True
+    locked: bool = False          # a person locked it: no new postings by people or extraction
 
     @property
     def debit_normal(self) -> bool:
@@ -117,6 +118,10 @@ class Chart:
     def code_or(self, system_key: str, fallback_key: str) -> str:
         """The account for a key added after a chart was seeded (its code may have been taken), else the fallback."""
         return self._by_key.get(system_key) or self.code(fallback_key)
+
+    def locked(self, code: str) -> bool:
+        account = self._by_code.get(code)
+        return bool(account and account.locked)
 
     def name(self, code: str) -> str:
         account = self._by_code.get(code)

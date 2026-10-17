@@ -74,3 +74,18 @@ def test_pack_columns():
     sql = "\n".join(column_statements())
     assert "ALTER TABLE aa_periods ADD COLUMN IF NOT EXISTS pack_notes TEXT NOT NULL DEFAULT ''" in sql
     assert "ALTER TABLE aa_periods ADD COLUMN IF NOT EXISTS pack_files JSONB NOT NULL DEFAULT '{}'::jsonb" in sql
+
+
+def test_pack_docx_is_well_formed_with_odd_text_and_tables_have_grids():
+    from xml.dom import minidom
+
+    pack = _pack("note ￾￿ end")
+    pack.header = Header("Ñoño & Sons <Trading> ￿", "123-456-789-00000", "")
+    xml = zipfile.ZipFile(io.BytesIO(pack_docx(pack))).read("word/document.xml").decode()
+    doc = minidom.parseString(xml.encode())  # raises on characters XML 1.0 forbids
+    assert "Ñoño &amp; Sons &lt;Trading&gt;" in xml and "note  end" in xml
+    for tbl in doc.getElementsByTagName("w:tbl"):  # CT_Tbl requires tblGrid after tblPr
+        grid = tbl.getElementsByTagName("w:tblGrid")
+        assert grid, "table without w:tblGrid"
+        first_row = tbl.getElementsByTagName("w:tr")[0]
+        assert len(grid[0].getElementsByTagName("w:gridCol")) == len(first_row.getElementsByTagName("w:tc"))

@@ -15,7 +15,7 @@ from app.services.accounting.subledger_report import _PORTRAIT, _cut, _header, _
 
 SECTION_TITLES = ("Profit and loss", "Balance sheet", "Cash flow", "Accounts receivable aging",
                   "Accounts payable aging", "Key ratios", "Notes")
-_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_CONTROL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")  # not allowed in XML 1.0
 
 
 @dataclass
@@ -171,7 +171,9 @@ def _cell_text(value) -> tuple[str, bool]:
 def _table(heads: list[str], rows: list[dict]) -> str:
     border = "".join(f'<w:{s} w:val="single" w:sz="4" w:space="0" w:color="BBBBBB"/>'
                      for s in ("top", "left", "bottom", "right", "insideH", "insideV"))
-    out = [f'<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders>{border}</w:tblBorders></w:tblPr>']
+    grid = "".join('<w:gridCol w:w="{}"/>'.format(9360 // max(len(heads), 1)) for _ in heads)  # required by CT_Tbl
+    out = [f'<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders>{border}</w:tblBorders></w:tblPr>'
+           f'<w:tblGrid>{grid}</w:tblGrid>']
     for cells, bold in [(heads, True)] + [(r["cells"], r["bold"]) for r in rows]:
         out.append("<w:tr>")
         for value in cells:

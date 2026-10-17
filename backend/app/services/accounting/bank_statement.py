@@ -50,7 +50,7 @@ def check_number(ref, narration: str) -> str:
 
 
 def parse_statement(raw: dict | None) -> StatementData | None:
-    """The ``statement`` object of one extracted document; None when it has no lines. Never raises."""
+    """The ``statement`` object of one extracted document; None when it has no lines that move money. Never raises."""
     obj = raw.get("statement") if isinstance(raw, dict) else None
     if not isinstance(obj, dict) or not isinstance(obj.get("lines"), list):
         return None
@@ -63,6 +63,8 @@ def parse_statement(raw: dict | None) -> StatementData | None:
             continue
         narration = clean_text(str(item.get("description") or ""))[:500]
         amount = abs(parse_money(item.get("credit"))) - abs(parse_money(item.get("debit")))
+        if amount == 0:  # "Balance forward" and other rows that move no money: nothing to match or post
+            continue
         lines.append(StatementLine(len(lines) + 1, on, narration, amount.quantize(_CENT),
                                    _opt_money(item.get("balance")), check_number(item.get("ref"), narration)))
     if not lines:

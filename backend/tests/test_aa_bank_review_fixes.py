@@ -94,3 +94,14 @@ def test_an_excluded_misread_or_duplicated_line_is_not_in_the_statement_balance(
 
     lines = [(D("-100.00"), "matched"), (D("-100.00"), "excluded"), (D("50.00"), "unmatched")]
     assert statement_balance(D("1000.00"), lines) == D("950.00")
+
+
+def test_a_balance_forward_row_with_no_amount_is_not_a_line_to_match():
+    from app.services.accounting.bank_statement import parse_statement, tie_out
+
+    data = parse_statement({"statement": {"opening_balance": 1000, "closing_balance": 900, "lines": [
+        {"date": "2026-12-01", "description": "BALANCE FORWARD", "debit": 0, "credit": 0, "balance": 1000},
+        {"date": "2026-12-02", "description": "Service charge", "debit": 100, "credit": 0, "balance": 900},
+    ]}})
+    assert [(l.line_no, l.narration) for l in data.lines] == [(1, "Service charge")]
+    assert tie_out(data) == (True, [])

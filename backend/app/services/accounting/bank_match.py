@@ -1,9 +1,9 @@
 """Match bank statement lines to what they pay or collect (pure).
 
 A candidate needs the exact amount (or, for a partial payment, a smaller line whose narration names the payee and
-the document) inside a date window. The narration decides: a candidate is *strong* when the narration names its payee (its first name word, or two of them)
-(or a learned payee rule does) or carries its document / check number, and *conflicting* when the narration names
-someone else. Only a single strong candidate links by itself; amount and date alone never do. Lines nothing pays
+the document) inside a date window. The narration decides: a candidate is *strong* when the narration names its payee
+(its first name word or two of its words, or a learned payee rule does) or carries its document / check number, and
+*conflicting* when the narration names someone else. Only a single strong candidate links by itself; amount and date alone never do. Lines nothing pays
 become suggested postings (bank charges, interest, transfers) or wait for review.
 """
 

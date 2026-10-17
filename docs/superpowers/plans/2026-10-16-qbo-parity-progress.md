@@ -97,3 +97,10 @@ Not done: statements are not auto-assigned to a sole bank account with no number
 is then remembered); a cheque written before the first statement and cleared on it shows as a difference (no
 brought-forward outstanding list yet); one line paying several bills is not split automatically (link one, post the
 rest by JE); A/P/A/R open-item views of bank payments belong to workstream 04.
+
+Review fixes (2026-10-17): lines of a deleted / excluded statement document stop posting, matching, reconciling and
+blocking the close (`bank.live_line()`; a delete / exclude voids its reconciliations and re-matches); both sides of a
+transfer between own bank accounts post once; picking an invoice a linked receipt pays links the receipt (no second
+payment); excluded lines are out of the statement balance; "Balance forward" rows (no amount) aren't stored as lines;
+one shared trade word ("builders") no longer names a payee, nor does a learned rule whose name is all stop words.
+Tests 652 → 660.

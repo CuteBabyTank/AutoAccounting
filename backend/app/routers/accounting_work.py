@@ -2,9 +2,10 @@
 
 import uuid
 from datetime import date, timedelta
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +17,8 @@ from app.routers.accounting_scope import (
 )
 from app.schemas.accounting import manila_today
 from app.schemas.accounting_work import (
-    BoardOut, CompanySummaryOut, FirmSettingsIn, FirmSettingsOut, PersonOut, WorkCardOut, WorkItemIn,
+    BoardOut, CompanySummaryOut, FirmSettingsIn, FirmSettingsOut, HealthBalanceOut, HealthBankAccountOut, HealthOut,
+    PersonOut, WorkCardOut, WorkItemIn,
 )
 from app.services.accounting import audit
 from app.services.accounting.compute.specs import PDF_FORMS
@@ -175,3 +177,94 @@ async def put_work_item(body: WorkItemIn, user: User = Depends(get_current_user)
     _, _, cards = await board_data(db, ent, date(body.year - 1, 1, 1), date(body.year + 2, 12, 31), today)
     key = f"{company.id}:{body.year}:{body.quarter}:{body.form}"
     return WorkCardOut(**next(c for c in cards if c["key"] == key))
+
+
+# --- client health (QBO Client overview → Common issues) -----------------------------------------------------------
+
+@router.get("/companies/{company_id}/health", response_model=HealthOut)
+async def company_health(company_id: uuid.UUID, user: User = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)):
+    from app.models.accounting import AABankLine, AABankReconciliation, AABankStatement, AABookClose, AADocument
+    from app.routers.accounting_bank import _reconciled_through
+    from app.services.accounting.books import bank
+    from app.services.accounting.books.loader import ensure_chart
+    from app.services.accounting.books.subledger import load_subledger
+    from app.services.accounting.compute.book_ledgers import balances
+    from app.services.accounting.compute.health import (
+        months_not_closed, negative_balances, over_90, review_balances, unreconciled_months,
+    )
+
+    ent = scope_for(user)
+    company = await company_or_404(db, ent, company_id)
+    today = manila_today()
+    notes: list[str] = []
+
+    reasons: dict[str, int] = {}
+    flagged = (await db.execute(select(AADocument.review_reasons).where(
+        AADocument.enterprise_id == ent, AADocument.company_id == company.id, AADocument.deleted_at.is_(None),
+        AADocument.excluded.is_(False), AADocument.needs_review.is_(True), AADocument.reviewed.is_(False)))).scalars().all()
+    for reasons_list in flagged:
+        for r in reasons_list or ["other"]:
+            reasons[r] = reasons.get(r, 0) + 1
+
+    await ensure_chart(db, company)
+    accounts = []
+    month = func.date_trunc("month", AABankLine.line_date)
+    lines = (await db.execute(select(AABankLine.account_code, month, AABankLine.match_status).where(
+        AABankLine.enterprise_id == ent, AABankLine.company_id == company.id, bank.live_line()))).all()
+    recs = {(c, m) for c, m in (await db.execute(select(AABankReconciliation.account_code,
+                                                        AABankReconciliation.month_start).where(
+        AABankReconciliation.enterprise_id == ent, AABankReconciliation.company_id == company.id,
+        AABankReconciliation.voided_at.is_(None)))).all()}
+    line_months = {(c, m.date() if hasattr(m, "date") else m) for c, m, _ in lines if c}
+    unrec = unreconciled_months(line_months, recs, today)
+    for a in await bank.bank_accounts(db, company.id):
+        accounts.append(HealthBankAccountOut(
+            code=a.code, name=a.name, reconciled_through=await _reconciled_through(db, company.id, a.code),
+            unreconciled_months=[m for c, m in unrec if c == a.code],
+            unmatched_lines=sum(1 for c, _, s in lines if c == a.code and s in bank.OPEN_STATUSES)))
+    unassigned = (await db.execute(select(func.count(AABankStatement.id)).where(
+        AABankStatement.enterprise_id == ent, AABankStatement.company_id == company.id,
+        AABankStatement.account_code == "", bank.live_statement()))).scalar() or 0
+    unmatched = sum(1 for _, _, s in lines if s in bank.OPEN_STATUSES)
+
+    closed = set((await db.execute(select(AABookClose.month_start).where(
+        AABookClose.enterprise_id == ent, AABookClose.company_id == company.id, AABookClose.kind == "month",
+        AABookClose.voided_at.is_(None)))).scalars().all())
+    not_closed = months_not_closed(company.books_start, closed, today)
+
+    sub = await load_subledger(db, company, today)
+    ar90 = over_90([i for i in sub.items if i.doc.kind == "ar"])
+    ap90 = over_90([i for i in sub.items if i.doc.kind == "ap"])
+    pending = [i for i in sub.cwt if i.status == "pending"]
+
+    negative: list[dict] = []
+    parked: list[dict] = []
+    if company.books_start is not None and company.books_start <= today:
+        try:
+            entries = await bank.book_entries(db, company, today)
+        except (ValueError, KeyError) as exc:
+            entries = None
+            notes.append(f"The books couldn't be built to check balances: {exc}")
+        if entries is not None:
+            chart = await ensure_chart(db, company)
+            bal = balances(entries, today)
+            negative, parked = negative_balances(bal, chart), review_balances(bal, chart)
+    elif company.books_start is None:
+        notes.append("Books are off for this company, so balances and months not closed aren't checked.")
+    else:
+        notes.append(f"The books start on {company.books_start:%d %B %Y}, so balances aren't checked yet.")
+    await db.commit()  # load_subledger may have synced contacts
+
+    issues = sum(1 for n in (sum(reasons.values()), unmatched, len(unrec), unassigned, len(pending), len(not_closed),
+                             ar90[0], ap90[0], len(negative), len(parked)) if n)
+    return HealthOut(
+        company_id=company.id, company_name=company.registered_name, as_of=today, reviews_by_reason=reasons,
+        open_reviews=len(flagged), bank_accounts=accounts, unassigned_statements=unassigned,
+        unmatched_bank_lines=unmatched, cwt_pending_count=len(pending),
+        cwt_pending_amount=sum((i.amount for i in pending), Decimal("0.00")), months_not_closed=not_closed,
+        books_on=company.books_start is not None, ar_over_90_count=ar90[0], ar_over_90_amount=ar90[1],
+        ap_over_90_count=ap90[0], ap_over_90_amount=ap90[1],
+        negative_balances=[HealthBalanceOut(**r) for r in negative],
+        review_balances=[HealthBalanceOut(**r) for r in parked], issues=issues, notes=notes,
+    )

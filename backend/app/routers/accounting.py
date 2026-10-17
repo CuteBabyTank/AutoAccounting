@@ -26,7 +26,7 @@ from app.models.user import User, UserRole
 from app.routers import (
     accounting_annual, accounting_atc, accounting_audit, accounting_bank, accounting_books, accounting_contacts,
     accounting_employees,
-    accounting_periods, accounting_work,
+    accounting_periods, accounting_tasks, accounting_work,
 )
 from app.routers.accounting_scope import (
     MANAGER_ROLES as _MANAGER_ROLES, company_or_404 as _company_or_404, scope_for as _scope,
@@ -939,6 +939,7 @@ async def file_page(
 
 
 router.include_router(accounting_work.router)
+router.include_router(accounting_tasks.router)
 router.include_router(accounting_books.router)
 router.include_router(accounting_bank.router)
 router.include_router(accounting_contacts.router)

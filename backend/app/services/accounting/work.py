@@ -138,3 +138,49 @@ async def company_summaries(db: AsyncSession, ent: uuid.UUID, companies: list[AA
             "books_on": c.books_start is not None,
         }
     return out
+
+
+async def cwt_pending(db: AsyncSession, ent: uuid.UUID, companies: list[AACompany],
+                      today: date) -> dict[str, tuple[int, int]]:
+    """Per company: (2307s to receive still pending, of which overdue — the sale's quarter ended over 20 days ago, the
+    customer's deadline to issue it). Uses the contacts as last synced (merges followed); no sync on this path."""
+    from app.models.accounting import AAContact
+    from app.services.accounting.books.receipts import party_key
+    from app.services.accounting.books.subledger import counterparty, key_map_for, open_doc_from
+    from app.services.accounting.compute.due_dates import quarter_end
+    from app.services.accounting.compute.money import c2
+    from app.services.accounting.compute.subledger import Received2307, cwt_items
+    from app.services.accounting.periods import period_for
+
+    by_id = {c.id: c for c in companies}
+    docs = (await db.execute(select(AADocument).where(
+        *_live_docs(ent), AADocument.doc_date.is_not(None), AADocument.client_role == "seller",
+        ((AADocument.category == "2307") | ((AADocument.category == "sales") & (AADocument.withholding_amount > 0))),
+    ))).scalars().all()
+    contacts: dict[uuid.UUID, list] = defaultdict(list)
+    for row in (await db.execute(select(AAContact).where(AAContact.enterprise_id == ent))).scalars().all():
+        contacts[row.company_id].append(row)
+    grouped: dict[uuid.UUID, list[AADocument]] = defaultdict(list)
+    for d in docs:
+        grouped[d.company_id].append(d)
+    out: dict[str, tuple[int, int]] = {}
+    for cid, rows in grouped.items():
+        company = by_id.get(cid)
+        if company is None:
+            continue
+        fye = company.fiscal_year_end_month
+        key_map = key_map_for(contacts[cid])
+        open_docs = [o for o in (open_doc_from(d, {}, key_map, {}, fye) for d in rows) if o is not None]
+        received = []
+        for d in rows:
+            if d.category == "2307":
+                tin, name, _ = counterparty(d)
+                p = period_for(d.doc_date, fye)
+                received.append(Received2307(str(d.id), key_map.get(party_key(tin, name), party_key(tin, name)),
+                                             (p.fiscal_year, p.quarter), c2(d.withholding_amount or 0)))
+        pending = [i for i in cwt_items(open_docs, {str(d.id): d.cwt_2307 or {} for d in rows}, received)
+                   if i.status == "pending"]
+        late = [i for i in pending if i.period and quarter_end(i.period[0], i.period[1], fye).toordinal() + 20
+                < today.toordinal()]
+        out[str(cid)] = (len(pending), len(late))
+    return out

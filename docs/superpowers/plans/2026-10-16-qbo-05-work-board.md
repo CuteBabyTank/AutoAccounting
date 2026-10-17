@@ -133,8 +133,9 @@ Progress entry, CLAUDE.md layout/gotchas, `npm run build`.
    workbook as a version).
 6. **Health on the board** shows cheap counts for every client at once (reviews, unmatched bank lines, unreconciled
    months, months not closed); the full check (aging > 90, 2307s, negative / suspense balances, reasons) loads per tile.
-7. **2307s pending in health / notifications** use the subledger's pure `cwt_items` without contact merges (no contact
-   sync on every poll); the Customers page stays the authoritative list.
+7. **2307s pending:** the company health check uses the full subledger (same list as the Customers page). The
+   notification bell uses a lighter count (pure `cwt_items` over contacts as last synced, no sync on every poll) and
+   only flags 2307s whose quarter ended more than 20 days ago (the customer's deadline to issue them).
 8. **Notifications:** deadlines go to the card's assignee, or to everyone in the firm when unassigned; review / bank /
    2307 items go to everyone; task items go to the assignee. The key carries the count (or due date), so a changed
    situation comes back after a dismiss. Window = firm setting "deadline days", default 7. Bell polls every 2 minutes.

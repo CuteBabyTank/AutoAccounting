@@ -179,3 +179,10 @@ Tests: 702 → 728 passing. Gates: pytest, ruff, lint, tsc, build all green.
 Not done: no email (by design); 1604-E isn't on the board (no 1604-E support yet); the 1604-C card is completed only
 by a board filing (its workbook isn't a stored version); 2307 notifications don't follow contact merges made after the
 last contacts sync; no reusable task templates / recurring close checklists (workstream 10).
+
+Review fixes (2026-10-17): editing a task re-checks only the links it changes (completing a task whose document was
+deleted or whose assignee left the firm used to fail with 404 / 400); `PUT /work/items` for a filing the board doesn't
+owe (e.g. 1601-C with no payroll) is rejected with 400 before anything is stored (it was committed, then 500); every
+interpolated path segment in `lib/api.ts`, `lib/accounting-api.ts` and `lib/work-api.ts` goes through the shared
+`seg()` (encodeURIComponent). Flagged, not fixed: the bell's 2307 count loads every seller document of the firm on each
+2-minute poll, and the board loads every period / work item of the firm regardless of the window.

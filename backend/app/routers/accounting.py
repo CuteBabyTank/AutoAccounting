@@ -46,6 +46,7 @@ from app.services.accounting.periods import period_fields, period_for, quarter_l
 from app.services.accounting.storage import (
     UploadRejected, filed_hashes, is_stored_path_safe, read_page_bytes, stream_upload, upload_dir,
 )
+from app.services.accounting.books import bank as bank_service
 from app.services.accounting.tree import TreeCompanyInput, bank_nodes, build_tree, folder_counts, stale_periods
 from app.services.usage_service import get_effective_rate_config, get_enterprise_for_user
 
@@ -588,7 +589,7 @@ async def _bank_tree(db: AsyncSession, ent: uuid.UUID, fye: dict[str, int]) -> d
     open_line = case((AABankLine.match_status.in_(("unmatched", "ambiguous", "suggested")), 1), else_=0)
     rows = (await db.execute(
         select(AABankLine.company_id, AABankLine.account_code, month, func.count(), func.sum(open_line))
-        .where(AABankLine.enterprise_id == ent).group_by(AABankLine.company_id, AABankLine.account_code, month)
+        .where(AABankLine.enterprise_id == ent, bank_service.live_line()).group_by(AABankLine.company_id, AABankLine.account_code, month)
     )).all()
     if not rows:
         return {}
@@ -808,6 +809,7 @@ async def patch_document(
                "buyer_name", "category", "excluded", "settles_document_id", "paid_on"}:
         await db.flush()
         await relink_receipts(db, doc.company_id)
+        await _bank_after_document_change(db, doc, company)
     if sent & {"doc_number", "doc_date", "gross_amount", "seller_tin", "buyer_tin", "seller_name", "buyer_name"}:
         await db.flush()
         await duplicates.refresh_flags(db, doc.company_id)
@@ -816,6 +818,15 @@ async def patch_document(
     out = await _document_out(db, doc, company)
     out.rule_applied_to = applied
     return out
+
+
+async def _bank_after_document_change(db: AsyncSession, doc: AADocument, company: AACompany | None) -> None:
+    """A deleted / excluded statement's lines stop counting; any other document a bank line pays (or could pay)
+    changed, so the lines are matched again."""
+    if doc.doc_type == "statement":
+        await bank_service.statement_document_changed(db, doc)
+    elif company is not None:
+        await bank_service.rematch(db, company)
 
 
 @router.delete("/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -831,6 +842,7 @@ async def delete_document(
                                                               "gross_amount", "category")), after=None)
     await db.flush()
     await relink_receipts(db, doc.company_id)
+    await _bank_after_document_change(db, doc, await db.get(AACompany, doc.company_id))
     await duplicates.refresh_flags(db, doc.company_id)  # the copy left behind is no longer a duplicate
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

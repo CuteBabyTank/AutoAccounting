@@ -39,6 +39,20 @@ _TAX_WORDS = ("bir", "bureau", "revenue", "tax", "taxes", "ebir", "efps")
 
 # --- accounts and statements ---------------------------------------------------------------------------------------
 
+def live_statement_ids():
+    """Statements whose document is still in the databank (not deleted, not excluded): only their lines count."""
+    return select(AABankStatement.id).join(AADocument, AADocument.id == AABankStatement.document_id).where(
+        AADocument.deleted_at.is_(None), AADocument.excluded.is_(False))
+
+
+def live_line():
+    return AABankLine.statement_id.in_(live_statement_ids())
+
+
+def live_statement():
+    return AABankStatement.id.in_(live_statement_ids())
+
+
 async def bank_accounts(db: AsyncSession, company_id: uuid.UUID) -> list[AAAccount]:
     """The company's bank accounts: Cash in bank and every active asset account with an account number."""
     rows = (await db.execute(select(AAAccount).where(AAAccount.company_id == company_id, AAAccount.active.is_(True),
@@ -73,6 +87,24 @@ async def store_statement(db: AsyncSession, doc: AADocument) -> AABankStatement 
                           narration=l.narration, check_no=l.check_no, match_status="unmatched"))
     await db.flush()
     return statement
+
+
+async def statement_document_changed(db: AsyncSession, doc: AADocument) -> None:
+    """A statement's document was deleted, excluded or put back: its lines stop (or start) counting, so the
+    reconciliations from its period on no longer hold and the other lines may match differently. Flushes."""
+    from app.services.accounting.books.loader import touch_books
+
+    statement = (await db.execute(select(AABankStatement).where(AABankStatement.document_id == doc.id))
+                 ).scalar_one_or_none()
+    if statement is None:
+        return
+    if statement.account_code:
+        await void_reconciliations(db, doc.company_id, statement.account_code, statement.period_start or date.min)
+    await db.flush()
+    company = await db.get(AACompany, doc.company_id)
+    if company is not None:
+        await rematch(db, company)
+        touch_books(company)
 
 
 async def assign_account(db: AsyncSession, statement: AABankStatement, account: AAAccount) -> None:
@@ -194,7 +226,7 @@ async def _documents(db: AsyncSession, company_id: uuid.UUID) -> list[AADocument
 async def bank_paid_ids(db: AsyncSession, company_id: uuid.UUID) -> set[str]:
     """Documents a matched or confirmed bank line pays (a receipt's match pays its invoice)."""
     refs = (await db.execute(select(AABankLine.matched_ref).where(
-        AABankLine.company_id == company_id, AABankLine.match_kind == "document",
+        AABankLine.company_id == company_id, AABankLine.match_kind == "document", live_line(),
         AABankLine.match_status.in_(POSTING_STATUSES)))).scalars().all()
     if not refs:
         return set()
@@ -209,7 +241,7 @@ async def rematch(db: AsyncSession, company: AACompany) -> int:
     from app.services.accounting.books.loader import ensure_chart
 
     lines = (await db.execute(select(AABankLine).where(
-        AABankLine.company_id == company.id, AABankLine.account_code != "").order_by(AABankLine.line_date))
+        AABankLine.company_id == company.id, AABankLine.account_code != "", live_line()).order_by(AABankLine.line_date))
              ).scalars().all()
     if not lines:
         return 0
@@ -284,7 +316,7 @@ async def learn_from(db: AsyncSession, company: AACompany, line: AABankLine, can
 
 async def matched_lines(db: AsyncSession, company_id: uuid.UUID, through: date) -> list[MatchedLine]:
     rows = (await db.execute(select(AABankLine).where(
-        AABankLine.company_id == company_id, AABankLine.account_code != "", AABankLine.line_date <= through,
+        AABankLine.company_id == company_id, AABankLine.account_code != "", AABankLine.line_date <= through, live_line(),
         AABankLine.match_status.in_(POSTING_STATUSES)))).scalars().all()
     return [MatchedLine(str(r.id), r.line_date, r.amount, r.account_code, r.match_kind, r.matched_ref,
                         r.match_amount, (r.posting or {}).get("account", ""), r.narration, r.check_no) for r in rows]
@@ -310,7 +342,7 @@ async def book_entries(db: AsyncSession, company: AACompany, through: date) -> l
 
 async def _statements(db: AsyncSession, company_id: uuid.UUID, account: str) -> list[AABankStatement]:
     return list((await db.execute(select(AABankStatement).where(
-        AABankStatement.company_id == company_id, AABankStatement.account_code == account)
+        AABankStatement.company_id == company_id, AABankStatement.account_code == account, live_statement())
         .order_by(AABankStatement.period_start))).scalars().all())
 
 
@@ -328,7 +360,8 @@ async def reconcile_month(db: AsyncSession, company: AACompany, account: str,
         return None, "There's no bank statement for this account yet."
     first = statements[0]
     lines = (await db.execute(select(AABankLine).where(
-        AABankLine.company_id == company.id, AABankLine.account_code == account, AABankLine.line_date <= end))
+        AABankLine.company_id == company.id, AABankLine.account_code == account, AABankLine.line_date <= end,
+        live_line()))
              ).scalars().all()
     if not any(start <= l.line_date <= end for l in lines) and not any(
             s.period_start and s.period_end and s.period_start <= end and s.period_end >= start for s in statements):
@@ -371,7 +404,7 @@ async def refresh_opening_flag(db: AsyncSession, company: AACompany) -> None:
 async def unreconciled_accounts(db: AsyncSession, company_id: uuid.UUID, start: date, end: date) -> list[str]:
     """Bank accounts with statement lines in the month and no reconciliation for it (the close soft-block)."""
     codes = set((await db.execute(select(AABankLine.account_code).where(
-        AABankLine.company_id == company_id, AABankLine.account_code != "", AABankLine.line_date >= start,
+        AABankLine.company_id == company_id, AABankLine.account_code != "", AABankLine.line_date >= start, live_line(),
         AABankLine.line_date <= end))).scalars().all())
     done = set((await db.execute(select(AABankReconciliation.account_code).where(
         AABankReconciliation.company_id == company_id, AABankReconciliation.month_start == start,

@@ -74,7 +74,7 @@ async def bank_overview(company_id: uuid.UUID, user: User = Depends(get_current_
     accounts = [await _account_out(db, company, a) for a in await bank.bank_accounts(db, company.id)]
     unassigned = (await db.execute(select(AABankStatement).where(
         AABankStatement.enterprise_id == ent, AABankStatement.company_id == company.id,
-        AABankStatement.account_code == ""))).scalars().all()
+        AABankStatement.account_code == "", bank.live_statement()))).scalars().all()
     rules = (await db.execute(select(func.count(AABankRule.id)).where(
         AABankRule.enterprise_id == ent, AABankRule.company_id == company.id))).scalar() or 0
     await db.commit()
@@ -110,7 +110,7 @@ async def bank_month(company_id: uuid.UUID, account: str = Query("", max_length=
     start, end = bank.month_bounds(date(int(month[:4]), int(month[5:]), 1))
     rows = (await db.execute(select(AABankLine).where(
         AABankLine.enterprise_id == ent, AABankLine.company_id == company.id, AABankLine.account_code == account,
-        AABankLine.line_date >= start, AABankLine.line_date <= end,
+        AABankLine.line_date >= start, AABankLine.line_date <= end, bank.live_line(),
     ).order_by(AABankLine.line_date, AABankLine.line_no))).scalars().all()
     statement_ids = {l.statement_id for l in rows}
     statements = (await db.execute(select(AABankStatement).where(
@@ -125,13 +125,13 @@ async def bank_month(company_id: uuid.UUID, account: str = Query("", max_length=
             .order_by(AABankReconciliation.reconciled_at.desc()).limit(1))).scalars().first()
     # Statement balance at the month's start and end: the first statement's opening + every line before.
     first = (await db.execute(select(AABankStatement).where(
-        AABankStatement.company_id == company.id, AABankStatement.account_code == account)
+        AABankStatement.company_id == company.id, AABankStatement.account_code == account, bank.live_statement())
         .order_by(AABankStatement.period_start).limit(1))).scalars().first() if account else None
     opening = closing = None
     if first is not None and first.opening_balance is not None:
         before = (await db.execute(select(func.coalesce(func.sum(AABankLine.amount), 0)).where(
             AABankLine.company_id == company.id, AABankLine.account_code == account,
-            AABankLine.line_date < start))).scalar()
+            AABankLine.line_date < start, bank.live_line()))).scalar()
         opening = c2(first.opening_balance + c2(before or ZERO))
         closing = c2(opening + sum((l.amount for l in rows), ZERO))
     labels = await _labels(db, company.id, list(rows))

@@ -59,3 +59,31 @@ def test_statements_of_a_deleted_document_are_not_the_first_statement():
     db = _CaptureDb()
     _run(bank._statements(db, uuid.uuid4(), "1020"))
     assert _only_live_statements(db.sql[0])
+
+
+def test_a_transfer_between_own_bank_accounts_posts_once_when_both_statements_confirm_it():
+    from app.services.accounting.compute.bank_books import MatchedLine, apply_bank_lines
+
+    out = MatchedLine("a", date(2026, 12, 10), D("-5000.00"), "1020", "posting", "", D("5000.00"), "1021",
+                      "Online transfer to 1021 acct 5566")
+    into = MatchedLine("b", date(2026, 12, 11), D("5000.00"), "1021", "posting", "", D("5000.00"), "1020",
+                       "Transfer from 0041-2288-7710")
+    _, _, postings = apply_bank_lines([], (), [out, into])
+    assert len(postings) == 1
+    assert (postings[0].bank_account, postings[0].counter_account, postings[0].amount) == ("1020", "1021", D("-5000.00"))
+    # two separate transfers of the same amount each keep their pair
+    out2 = MatchedLine("c", date(2026, 12, 20), D("-5000.00"), "1020", "posting", "", D("5000.00"), "1021", "Transfer")
+    _, _, postings = apply_bank_lines([], (), [out, into, out2])
+    assert [p.id for p in postings] == ["a", "c"]
+
+
+def test_confirming_an_invoice_its_linked_receipt_already_pays_moves_the_receipt_instead_of_paying_twice():
+    from app.services.accounting.compute.bank_books import MatchedLine, apply_bank_lines
+    from app.services.accounting.compute.books import Payment
+
+    receipt = Payment("rcpt:r1", "inv1", date(2026, 12, 3), D("6720.00"), "cash", "OR-0659")
+    line = MatchedLine("l1", date(2026, 12, 18), D("-6720.00"), "1020", "document", "inv1", D("6720.00"))
+    payments, _, _ = apply_bank_lines([receipt], (), [line])
+    assert len(payments) == 1
+    assert (payments[0].id, payments[0].on, payments[0].via, payments[0].account) == (
+        "rcpt:r1", date(2026, 12, 18), "bank", "1020")

@@ -196,6 +196,12 @@ async def confirm_line(line_id: uuid.UUID, body: ConfirmLineIn | None = None, us
                 AADocument.deleted_at.is_(None)))).scalar_one_or_none()
             if doc is None:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, "That document isn't in this company")
+            receipt = (await db.execute(select(AADocument.id).where(
+                AADocument.settles_document_id == doc.id, AADocument.company_id == company.id,
+                AADocument.deleted_at.is_(None), AADocument.excluded.is_(False))
+                .order_by(AADocument.doc_date, AADocument.id).limit(1))).scalar_one_or_none()
+            if receipt is not None:  # a linked receipt is this invoice's payment: the line is that receipt
+                body = body.model_copy(update={"ref": str(receipt)})
         elif not listed:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pick one of the candidates shown for this line")
         if body.amount is not None and body.amount > full:

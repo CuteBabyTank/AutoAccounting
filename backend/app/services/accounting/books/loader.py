@@ -112,7 +112,8 @@ def books_warnings(tabs: dict, inputs: PeriodInputs, has_employees: bool, chart:
 
 
 def _chart_account(row: AAAccount) -> ChartAccount:
-    return ChartAccount(row.code, row.name, row.type, row.contra, row.system_key, row.parent_code, row.active)
+    return ChartAccount(row.code, row.name, row.type, row.contra, row.system_key, row.parent_code, row.active,
+                        bool(row.locked))
 
 
 async def ensure_chart(db: AsyncSession, company: AACompany) -> Chart:

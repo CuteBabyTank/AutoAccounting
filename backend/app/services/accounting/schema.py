@@ -45,4 +45,5 @@ def column_statements() -> list[str]:
         "ALTER TABLE aa_journal_entries ADD COLUMN IF NOT EXISTS is_adjusting BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE aa_periods ADD COLUMN IF NOT EXISTS pack_notes TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE aa_periods ADD COLUMN IF NOT EXISTS pack_files JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE aa_accounts ADD COLUMN IF NOT EXISTS locked BOOLEAN NOT NULL DEFAULT false",
     ]

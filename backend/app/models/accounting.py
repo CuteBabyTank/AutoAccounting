@@ -367,6 +367,8 @@ class AAAccount(Base):
     parent_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
     system_key: Mapped[str | None] = mapped_column(String(40), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Locked: people and extraction can't post new entries to it (existing postings stay).
+    locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # A bank account's number as printed on its statements (statements are matched on the last 4 digits).
     bank_account_no: Mapped[str] = mapped_column(String(40), nullable=False, default="", server_default="")
     created_at: Mapped[datetime] = _created()
@@ -722,3 +724,24 @@ class AANotificationState(Base):
     key: Mapped[str] = mapped_column(String(200), nullable=False)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AACoaTemplate(Base):
+    """A firm's chart-of-accounts template, saved from a company's chart, applied when creating a company."""
+
+    __tablename__ = "aa_coa_templates"
+    __table_args__ = (UniqueConstraint("enterprise_id", "name", name="uq_aa_coa_template_name"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    # [{"code", "name", "type", "contra", "system_key", "parent_code", "active"}]
+    accounts: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()

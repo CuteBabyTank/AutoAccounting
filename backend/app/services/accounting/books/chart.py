@@ -97,6 +97,15 @@ def default_books(vat_registered: bool) -> list[str]:
     return ["SJ", "PJ", "CRJ", "CDJ", "GJ", "GL"] if vat_registered else ["CRJ", "CDJ", "GJ", "GL"]
 
 
+def locked_message(chart: "Chart", codes) -> str:
+    """The refusal for a person posting to a locked account ("" when none of the codes is locked)."""
+    for code in dict.fromkeys(codes):
+        if chart.locked(code):
+            return (f"Account {code} {chart.name(code)} is locked: choose another account (unlock it in the chart of "
+                    "accounts first if this posting is right).")
+    return ""
+
+
 class Chart:
     def __init__(self, accounts: Iterable[ChartAccount]):
         self._by_code = {a.code: a for a in accounts}

@@ -113,3 +113,8 @@ def annual_due_date(form: str, fiscal_year: int, fye: int = 12) -> date:
         due = _add_months(date(end.year, end.month, 1), 4)
         return _next_business_day(date(due.year, due.month, 15))
     return _next_business_day(date(fiscal_year + 1, 4, 15))
+
+
+def alphalist_due_date(year: int) -> date:
+    """1604-C (annual information return of income taxes withheld on compensation): January 31 of the next year."""
+    return _next_business_day(date(year + 1, 1, 31))

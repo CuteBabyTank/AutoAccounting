@@ -1,11 +1,14 @@
 """Customers and suppliers: contacts master, open items, aging, 2307s to receive / issue, customer statements."""
 
+import asyncio
+import re
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +22,7 @@ from app.schemas.accounting_contacts import (
     ContactPaymentOut, ContactRowOut, Cwt2307In, Cwt2307Out, MergeIn, OpenItemOut, Outgoing2307Out,
 )
 from app.services.accounting import audit
+from app.services.accounting.books.closing import header_for
 from app.services.accounting.books.receipts import party_key
 from app.services.accounting.books.subledger import (
     Subledger, counterparty, doc_kind, key_map_for, load_subledger, outgoing_2307_outputs, payment_rows,
@@ -26,9 +30,11 @@ from app.services.accounting.books.subledger import (
 from app.services.accounting.compute.money import ZERO, c2
 from app.services.accounting.compute.subledger import OpenItem, aging, aging_totals
 from app.services.accounting.contacts import EDITABLE, merge_check, role_union
+from app.services.accounting.subledger_report import aging_pdf, aging_xlsx, statement_pdf
 
 router = APIRouter()
 _MANILA = ZoneInfo("Asia/Manila")
+_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 _CONTACT_FIELDS = EDITABLE + ("aliases", "merged_into_id")
 
 
@@ -329,11 +335,51 @@ def aging_out(sub: Subledger, kind: str) -> AgingOut:
                                       total=r.total, count=r.count, unverified=r.unverified) for r in rows])
 
 
+def _safe_name(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9 ._-]+", "", text).strip() or "company"
+
+
 @router.get("/companies/{company_id}/aging", response_model=AgingOut)
 async def get_aging(company_id: uuid.UUID, kind: str = Query("ar", pattern="^(ar|ap)$"), as_of: date | None = None,
+                    format: str = Query("json", pattern="^(json|xlsx|pdf)$"),
                     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
     sub = await load_subledger(db, company, as_of or today())
     await db.commit()
-    return aging_out(sub, kind)
+    if format == "json":
+        return aging_out(sub, kind)
+    items = [i for i in sub.items if i.doc.kind == kind]
+    rows = aging(items)
+    header = header_for(company)
+    what = "AR aging" if kind == "ar" else "AP aging"
+    name = f"{_safe_name(company.registered_name)} {what} {sub.as_of.isoformat()}.{format}"
+    if format == "xlsx":
+        data = await asyncio.get_running_loop().run_in_executor(
+            None, lambda: aging_xlsx(header, kind, sub.as_of, rows, aging_totals(rows), items))
+        media = _XLSX
+    else:
+        data = await asyncio.get_running_loop().run_in_executor(
+            None, lambda: aging_pdf(header, kind, sub.as_of, rows, aging_totals(rows), items))
+        media = "application/pdf"
+    return Response(content=data, media_type=media, headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.get("/contacts/{contact_id}/statement")
+async def customer_statement(contact_id: uuid.UUID, as_of: date | None = None, user: User = Depends(get_current_user),
+                             db: AsyncSession = Depends(get_db)):
+    """Open-item statement of account for a customer, with an aging footer and the 2307s still owed."""
+    ent = scope_for(user)
+    row = await _contact_or_404(db, ent, contact_id)
+    company = await company_or_404(db, ent, row.company_id)
+    sub = await load_subledger(db, company, as_of or today())
+    await db.commit()
+    target = key_map_for(sub.contacts).get(row.key, row.key)
+    items = [i for i in sub.items if i.doc.kind == "ar" and i.doc.contact_key == target]
+    pending = c2(sum((x.amount for x in sub.cwt if x.contact_key == target and x.status == "pending"), ZERO))
+    data = await asyncio.get_running_loop().run_in_executor(None, lambda: statement_pdf(
+        header_for(company), {"name": row.registered_name, "tin": row.tin, "address": row.address}, sub.as_of, items,
+        pending))
+    name = f"{_safe_name(row.registered_name)} statement {sub.as_of.isoformat()}.pdf"
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})

@@ -15,7 +15,7 @@ from app.services.accounting.compute.books import Payment
 from app.services.accounting.compute.money import ZERO, c2
 
 BUCKETS = ("current", "1-30", "31-60", "61-90", "90+")
-BUCKET_LABELS = {"current": "Current", "1-30": "1–30 days", "31-60": "31–60 days", "61-90": "61–90 days",
+BUCKET_LABELS = {"current": "Current", "1-30": "1-30 days", "31-60": "31-60 days", "61-90": "61-90 days",
                  "90+": "Over 90 days"}
 
 

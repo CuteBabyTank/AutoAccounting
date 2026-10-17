@@ -414,6 +414,7 @@ async def generate_output(
     book_tabs, book_warnings = await quarter_books(db, company, facts, year, quarter, result, assets, periods)
     result.ledgers.update(book_tabs)
     result.warnings.extend(book_warnings)
+    result.ledgers.update(await aging_tabs(db, company, quarter_end(year, quarter, company.fiscal_year_end_month)))
     snap = snapshot(result, facts)
     missing = missing_fields(snap["company"], [f for f in snap["forms"] if f in PDF_FORMS], snap["forms"])
     if missing:
@@ -615,6 +616,43 @@ async def download_pdfs(output_id: uuid.UUID, body: PdfsIn, user: User = Depends
     data = await asyncio.get_running_loop().run_in_executor(None, lambda: zip_pdfs(files))
     name = _file_name(company, period, output, "returns", body.clean, "zip")
     return Response(content=data, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+async def aging_tabs(db: AsyncSession, company: AACompany, as_of: date) -> dict[str, list[dict]]:
+    """A/R and A/P aging as of the quarter's end, as version ledger tabs (only the ones with open items)."""
+    from app.services.accounting.books.subledger import load_subledger
+    from app.services.accounting.subledger_report import aging_ledger_rows
+
+    sub = await load_subledger(db, company, as_of)
+    tabs = {}
+    for kind, name in (("ar", "ARAging"), ("ap", "APAging")):
+        rows = aging_ledger_rows([i for i in sub.items if i.doc.kind == kind])
+        if rows:
+            tabs[name] = rows
+    return tabs
+
+
+@router.get("/outputs/{output_id}/aging")
+async def download_aging(output_id: uuid.UUID, kind: Literal["ar", "ap"] = Query(...),
+                         user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """The version's A/R or A/P aging as of its quarter end, as a PDF (from the stored tab, so it never changes)."""
+    from app.services.accounting.books.closing import header_for
+    from app.services.accounting.compute.subledger import aging, aging_totals
+    from app.services.accounting.subledger_report import aging_pdf, items_from_ledger
+
+    output, period, company = await _output_context(db, user, output_id)
+    rows = output.snapshot["ledgers"].get("ARAging" if kind == "ar" else "APAging")
+    if not rows:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "This version has no open items to age")
+    items = items_from_ledger(kind, rows)
+    summary = aging(items)
+    fye = company.fiscal_year_end_month
+    as_of = quarter_end(period.year, period.quarter, fye)
+    data = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: aging_pdf(header_for(company), kind, as_of, summary, aging_totals(summary), items))
+    name = _file_name(company, period, output, "AR aging" if kind == "ar" else "AP aging", False, "pdf")
+    return Response(content=data, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 

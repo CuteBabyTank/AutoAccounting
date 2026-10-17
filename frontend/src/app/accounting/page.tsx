@@ -16,6 +16,7 @@ import AtcDatabankPanel from "@/components/accounting/AtcDatabankPanel";
 import AuditLogPanel from "@/components/accounting/AuditLogPanel";
 import BankPanel from "@/components/accounting/BankPanel";
 import ContactsPanel from "@/components/accounting/ContactsPanel";
+import CompanyOverviewPanel from "@/components/accounting/CompanyOverviewPanel";
 import PeriodPanel from "@/components/accounting/PeriodPanel";
 import AppendPrompt from "@/components/accounting/AppendPrompt";
 import UploadReviewDialog from "@/components/accounting/UploadReviewDialog";
@@ -25,6 +26,7 @@ import Hint from "@/components/guide/Hint";
 import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
 import { DOCUMENTS_TOUR } from "@/components/guide/tours";
 import { accountingApi } from "@/lib/accounting-api";
+import { OPEN_COMPANY_EVENT } from "@/lib/work-api";
 import { teamApi } from "@/lib/api";
 import { useGuide } from "@/lib/guides";
 import { apiErrorMessage } from "@/lib/accounting-format";
@@ -66,6 +68,19 @@ export default function AccountingPage() {
   const [periodRefresh, setPeriodRefresh] = useState(0);
   const [memberCount, setMemberCount] = useState<number | null>(null);
   const guide = useGuide("documents");
+
+  // Deep link from the work board / notifications: /accounting?company=<id>&view=overview
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const company = params.get("company");
+    if (company) setSelected({ companyId: company, year: null, quarter: null, view: "overview" });
+    const open = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (id) setSelected({ companyId: id, year: null, quarter: null, view: "overview" });
+    };
+    window.addEventListener(OPEN_COMPANY_EVENT, open);
+    return () => window.removeEventListener(OPEN_COMPANY_EVENT, open);
+  }, []);
 
   useEffect(() => {
     try {
@@ -384,6 +399,14 @@ export default function AccountingPage() {
                     .then(setOpenDoc)
                     .catch((e) => setError(apiErrorMessage(e, "Couldn't open the document")))
                 }
+              />
+            )}
+            {selected?.view === "overview" && (
+              <CompanyOverviewPanel
+                key={selected.companyId}
+                companyId={selected.companyId}
+                companyName={tree.find((c) => c.id === selected.companyId)?.registered_name ?? ""}
+                companies={companies}
               />
             )}
             {selected?.view === "audit" && (

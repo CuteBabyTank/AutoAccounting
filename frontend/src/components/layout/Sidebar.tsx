@@ -17,6 +17,7 @@ import {
   X,
   List,
   Question,
+  Kanban,
 } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "next-themes";
@@ -24,6 +25,7 @@ import type { UserRole } from "@/types";
 import { HOMEPAGE, roleLabel } from "@/lib/roles";
 import { resetGuides } from "@/lib/guides";
 import LogoMark from "@/components/layout/LogoMark";
+import NotificationBell from "@/components/work/NotificationBell";
 
 interface NavItem {
   id: string;
@@ -49,6 +51,7 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
     label: "Workspace",
     items: [
       { id: "documents", label: "Documents", icon: Files, href: "/accounting", roles: FIRM, exact: true },
+      { id: "work", label: "Work", icon: Kanban, href: "/accounting/work", roles: FIRM },
       { id: "companies", label: "Companies", icon: Buildings, href: "/accounting/companies", roles: FIRM },
     ],
   },
@@ -80,6 +83,7 @@ export default function Sidebar() {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
   }, []);
   const expanded = hovered || focused || editingNickname;
+  const firmMember = !!user && FIRM.includes(user.role);
 
   // Close the drawer whenever the route changes (tapping a nav item navigates).
   useEffect(() => {
@@ -136,6 +140,7 @@ export default function Sidebar() {
         <LogoMark width={34} height={24} />
         <span className="lp-logo-text text-[18px] tracking-tight text-[var(--text-sidebar)]">AutoAccounting</span>
       </a>
+      {firmMember && <NotificationBell variant="bar" />}
     </header>
 
     {/* Mobile drawer scrim */}
@@ -304,6 +309,7 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="px-[14px] pb-4">
         <div className="h-px mb-2 bg-[var(--border-sidebar)]" />
+        {firmMember && <div className="hidden md:block"><NotificationBell variant="rail" fadeStyle={fade(lastRow)} /></div>}
         <button
           onClick={() => {
             resetGuides();

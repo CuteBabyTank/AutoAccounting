@@ -5,6 +5,7 @@ import { CaretDown, CaretRight, FileXls, Plus, Spinner, Trash } from "@phosphor-
 import OutputViewer from "@/components/accounting/OutputViewer";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
+import { FILING_LOCKED_TITLE, useCanFile } from "@/lib/use-can-file";
 import { apiErrorMessage, formatAmount } from "@/lib/accounting-format";
 import type { AnnualInputs, AnnualPeriod, Asset, OpeningRow } from "@/types/accounting";
 
@@ -119,6 +120,7 @@ interface Props {
 }
 
 export default function AnnualPanel({ companyId, companyName, year, refreshKey, onChanged }: Props) {
+  const canFile = useCanFile();
   const [period, setPeriod] = useState<AnnualPeriod | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -285,7 +287,7 @@ export default function AnnualPanel({ companyId, companyName, year, refreshKey, 
             {showInputs ? <CaretDown size={14} /> : <CaretRight size={14} />} Annual inputs
           </button>
           {period.latest_version && (
-            <button className={BTN} disabled={busy} onClick={toggleFiled}>
+            <button className={BTN} disabled={busy || !canFile} title={canFile ? undefined : FILING_LOCKED_TITLE} onClick={toggleFiled}>
               {period.filed_at ? "Unmark filed" : "Mark as filed"}
             </button>
           )}

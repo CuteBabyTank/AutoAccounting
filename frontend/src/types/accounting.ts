@@ -218,7 +218,7 @@ export interface FolderRef {
   companyId: string;
   year: number | null;
   quarter: number | null;
-  view?: "books" | "atc" | "employees" | "audit" | "bank" | "customers" | "suppliers";
+  view?: "books" | "atc" | "employees" | "audit" | "bank" | "customers" | "suppliers" | "overview";
   /** view "bank": the bank account code ("" = unassigned statements) and month (YYYY-MM). */
   bankAccount?: string;
   month?: string;
@@ -579,7 +579,7 @@ export interface AlphalistStatus {
 export interface AuditEvent {
   id: string;
   at: string;
-  company_id: string;
+  company_id: string | null;
   user_id: string | null;
   user_name: string;
   entity: string;

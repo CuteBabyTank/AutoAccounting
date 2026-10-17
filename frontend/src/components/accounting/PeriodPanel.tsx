@@ -8,6 +8,7 @@ import Hint from "@/components/guide/Hint";
 import GuideTour from "@/components/guide/GuideTour";
 import { QUARTER_TOUR } from "@/components/guide/tours";
 import { useGuide } from "@/lib/guides";
+import { FILING_LOCKED_TITLE, useCanFile } from "@/lib/use-can-file";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import type { PayrollMonth, Period, PeriodInputs } from "@/types/accounting";
@@ -84,6 +85,7 @@ interface Props {
 }
 
 export default function PeriodPanel({ companyId, year, quarter, refreshKey, onChanged, onEditCompany }: Props) {
+  const canFile = useCanFile();
   const [period, setPeriod] = useState<Period | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [citRate, setCitRate] = useState<20 | 25>(25);
@@ -199,7 +201,7 @@ export default function PeriodPanel({ companyId, year, quarter, refreshKey, onCh
             {showInputs ? <CaretDown size={14} /> : <CaretRight size={14} />} Quarter inputs
           </button>
           {period.latest_version && (
-            <button className={BTN} disabled={busy} onClick={toggleFiled}>
+            <button className={BTN} disabled={busy || !canFile} title={canFile ? undefined : FILING_LOCKED_TITLE} onClick={toggleFiled}>
               {period.filed_at ? "Unmark filed" : "Mark as filed"}
             </button>
           )}

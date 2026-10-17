@@ -125,6 +125,7 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
       </button>
       {open.has(c.id) && (
         <ul className="ml-4 border-l border-[var(--border)] pl-2">
+          <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "overview" }, "Overview", null, 0)}</li>
           {c.years.length === 0 && c.undated_count === 0 && (
             <li className="px-2 py-1 text-xs text-[var(--text-secondary)]">No documents yet</li>
           )}
@@ -190,6 +191,7 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
             <span className="block"><b className="text-[var(--badge-yellow-text)]">Stale</b> changed since the last version; generate again</span>
             <span className="block"><b className="text-[var(--badge-green-text)]">Filed</b> marked as filed with the BIR</span>
             <span className="mt-1 block">Books, Employees and the ATC databank show up once a company has books or payroll set up.</span>
+            <span className="mt-1 block">Overview shows the client&apos;s filings coming due, a health check and its tasks.</span>
             <span className="mt-1 block">Customers and Suppliers show who owes the company and whom it owes, with aging and 2307s.</span>
             <span className="mt-1 block">Audit log lists every change people made to the company, with who, when and why.</span>
             <span className="mt-1 block">Bank lists each bank account&apos;s statement months: <b className="text-[var(--badge-yellow-text)]">2</b> lines still to match, <b className="text-[var(--badge-green-text)]">Reconciled</b> once the books agree with the statement.</span>

@@ -1,5 +1,6 @@
 "use client";
 
+import { FILING_LOCKED_TITLE, useCanFile } from "@/lib/use-can-file";
 import { useEffect, useState } from "react";
 import { CheckCircle, FilePdf, Warning } from "@phosphor-icons/react";
 import { accountingApi } from "@/lib/accounting-api";
@@ -38,6 +39,7 @@ export default function PrepareReturns({ outputId, companyId, year, quarter, onP
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [filedOn, setFiledOn] = useState<Record<string, string>>({});
+  const canFile = useCanFile();
 
   // Scope labels ("Month 1 — Jan 2026") come from the server so fiscal years are right.
   useEffect(() => {
@@ -170,7 +172,7 @@ export default function PrepareReturns({ outputId, companyId, year, quarter, onP
                         onChange={(e) => setFiledOn((d) => ({ ...d, [f.form]: e.target.value }))}
                       />
                     )}
-                    <button className={BTN} disabled={busy} onClick={() => toggleFiled(f.form, f.filed !== null)}>
+                    <button className={BTN} disabled={busy || !canFile} title={canFile ? undefined : FILING_LOCKED_TITLE} onClick={() => toggleFiled(f.form, f.filed !== null)}>
                       {f.filed ? "Unmark" : "Mark filed"}
                     </button>
                   </div>

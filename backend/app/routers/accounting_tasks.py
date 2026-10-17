@@ -149,8 +149,8 @@ async def update_task(task_id: uuid.UUID, body: TaskPatch, user: User = Depends(
     elif row.status != "done":
         row.completed_at = None
     after = audit.snapshot(row, _FIELDS)
-    action = "complete" if before["status"] != "done" and row.status == "done" else (
-        "reopen" if before["status"] == "done" and row.status != "done" else "update")
+    action = "task_done" if before["status"] != "done" and row.status == "done" else (
+        "task_reopened" if before["status"] == "done" and row.status != "done" else "update")
     audit.record(db, ent=ent, company_id=row.company_id, user=user, entity="task", entity_id=row.id, action=action,
                  label=_label(row), before=before, after=after)
     await db.commit()

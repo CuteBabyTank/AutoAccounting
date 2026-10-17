@@ -20,6 +20,9 @@ export const ENTITY_LABELS: Record<string, string> = {
   bank_rule: "Bank rule",
   bank_reconciliation: "Bank reconciliation",
   contact: "Customer / supplier",
+  work_item: "Work board",
+  task: "Task",
+  firm_settings: "Firm settings",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -53,9 +56,21 @@ const ACTION_LABELS: Record<string, string> = {
   supplier: "Supplier ATC set",
   use_suggestions: "Suggested ATCs adopted",
   account: "Default ATC set",
+  board_filed: "Marked filed on the work board",
+  board_unfiled: "Work board filing cleared",
+  task_done: "Task done",
+  task_reopened: "Task reopened",
 };
 
 const FIELD_LABELS: Record<string, string> = {
+  assignee_id: "Assigned to",
+  status_override: "Board status",
+  filed_on: "Filed on",
+  approve_before_close: "Managers approve filing",
+  deadline_days: "Deadline reminder (days)",
+  title: "Title",
+  due_date: "Due date",
+  priority: "Priority",
   doc_date: "Document date",
   doc_number: "Document no.",
   category: "Folder",

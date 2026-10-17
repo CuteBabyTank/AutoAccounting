@@ -26,7 +26,7 @@ from app.models.user import User, UserRole
 from app.routers import (
     accounting_annual, accounting_atc, accounting_audit, accounting_bank, accounting_books, accounting_contacts,
     accounting_employees,
-    accounting_periods, accounting_reports, accounting_tasks, accounting_work,
+    accounting_periods, accounting_reclassify, accounting_reports, accounting_tasks, accounting_work,
 )
 from app.routers.accounting_scope import (
     MANAGER_ROLES as _MANAGER_ROLES, company_or_404 as _company_or_404, scope_for as _scope,
@@ -964,6 +964,7 @@ router.include_router(accounting_contacts.router)
 router.include_router(accounting_audit.router)
 router.include_router(accounting_employees.router)
 router.include_router(accounting_reports.router)
+router.include_router(accounting_reclassify.router)
 router.include_router(accounting_atc.router)
 # Annual routes first: "/periods/{company}/{year}/annual" would otherwise match the quarter route's {quarter}.
 router.include_router(accounting_annual.router)

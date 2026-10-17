@@ -223,6 +223,8 @@ Tests: 729 → 755 passing. Gates: pytest, ruff, lint, tsc, build all green.
 Security review fix: report windows (incl. drill-down postings) are capped — 2000-01-01 to the end of the next fiscal
 year, ten years at most — so a far-future date can't make the books engine run unbounded.
 
+Code review fixes (191464b, 45381f0, de10b70, af79e14): a negative % change exports as "(12.50%)" instead of "'-12.50%" in Excel; the pack DOCX strips XML-forbidden characters and gives tables a `w:tblGrid`; closed-month corrections of adjusting JEs / depreciation / inventory counts are adjustments in the Adjusted TB and AJE report; drill-down postings never silently drop accounts past 200 (up to 1000, else 400). Tests 755 → 759.
+
 Not done: cash basis (engine is accrual-only; see Decisions); bank lines have no page number, so a bank posting opens
 its statement at the statement's first page; tax / depreciation / engine entries have no source document (the drawer
 says what posted them); report customisation is not saved per user; the pack is not emailed (no mail infra).

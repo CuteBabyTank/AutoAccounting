@@ -24,6 +24,7 @@ backend/app/
                         # books/bank.py (store/rematch/reconcile glue), compute/bank_books + bank_reconcile;
                         # contacts (customer/supplier master), books/subledger.py + compute/subledger
                         # (A/R, A/P open items, aging, 2307s), subledger_report (aging XLSX/PDF, statement);
+                        # work.py (work board loader) + compute/work, health, notifications, tasks;
                         # pipeline, extraction, matching, classify, periods, tree, storage, pdf_*,
                         # render_xlsx, filing, rls, schema; compute/ (tax engine); books/
     gemini_service.py   # rate limiters + prompt cache + _call_gemini + PDF page rendering
@@ -34,9 +35,10 @@ backend/app/
 backend/tests/          # pure-logic + router-isolation tests (no DB, no Gemini)
 
 frontend/src/
-  app/{login,pending,accounting,accounting/companies,team,admin}/page.tsx
+  app/{login,pending,accounting,accounting/companies,accounting/work,team,admin}/page.tsx
   app/providers.tsx     # Theme + Auth + AuthGate (role routing from lib/roles.ts)
   components/accounting/  # all accounting UI panels
+  components/work/      # work board pieces: CompanyHealth, TaskList/TaskForm, NotificationBell, FirmSettingsCard
   components/layout/    # Sidebar, AppFlow (shared page background)
   lib/{api,auth,roles,accounting-api,accounting-format}.ts(x)
   types/{index,accounting}.ts
@@ -87,6 +89,14 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
 - **Bank statements:** `kind == "statement"` docs stay category `support`; their lines live in `aa_bank_statements` / `aa_bank_lines` (stored by `books/bank.store_statement` in the pipeline, then `bank.rematch`). A line only posts when `match_status` is `matched` (auto: one strong candidate, partial with payee + number, or a cash-deposit transfer) or `confirmed`, and its statement has an `account_code` (resolved by the last 4 digits of `aa_accounts.bank_account_no`). A document match **replaces** the doc's `paid_on` payment (`compute/bank_books.apply_bank_lines`); never add another payment path for bank-matched docs. Amount alone never auto-links. Anything that changes a line must `void_reconciliations` + `rematch` + `touch_books`. Closing a month with unreconciled statement lines needs `override_reason` (409 `bank_unreconciled:` otherwise). `aa_companies.review_flags.opening_balance_missing` is refreshed by `bank.refresh_opening_flag`.
 - **Audit log:** every router that changes firm data calls `services/accounting/audit.record(db, ent=, company_id=, user=, entity=, entity_id=, action=, before=, after=, reason=, label=)` before its commit (snapshot the row with `audit.snapshot(row, fields)` before mutating; only changed fields are stored, a no-op writes nothing; pass `before=None` for creates, `after=None` for deletes). New entities go in `audit.ENTITIES` and `ENTITY_LABELS`/`ACTION_LABELS` in `components/accounting/AuditTrail.tsx`. `aa_audit_events` is append-only (RLS has SELECT + INSERT policies only). Read via `GET /api/accounting/audit-events`. The dev DB role is a superuser, so RLS is not enforced locally; test policies with a NOBYPASSRLS role.
 - **Review reasons:** set `needs_review` with `review_rules.needs_review_for(reasons)`, never `bool(reasons)`: soft reasons (`payment_unverified`) show but don't queue or block close. Per-reason details go in `aa_documents.review_notes`. Payment flags (`payment_source_unknown`, `payment_unverified`) are cleared by `review_rules.sync_payment_flags(docs, paid_ids)` (called from `relink_receipts`); bank matching passes its matched document ids as `paid_ids`. A VAT mismatch claims 12% and posts the excess to `vat_difference` (1310).
+- **Work board (`routers/accounting_work.py`, `accounting_tasks.py`):** filings owed, their due dates and status are
+  derived on read (`compute/work.obligations` reuses `engine.expected_forms`, `annual_form`, `due_dates`); only the
+  assignee, a status override and a board "filed" date live in `aa_work_items`. A board filing does **not** post a
+  payment or credit the annual return (only "Mark filed" on a version does). Notifications are derived on read
+  (`compute/notifications.build`); `aa_notification_states` only keeps read / dismissed per person and key, and keys
+  carry the count or date so a changed situation reappears. `aa_firm_settings.approve_before_close` gates every
+  "filed" route through `accounting_scope.require_filing_rights` — add it to any new route that marks a return
+  filed. Firm-level audit events (settings, tasks without a company) have `company_id` NULL.
 - **Subledgers (A/R, A/P):** `aa_contacts` is synced from documents on read (`books/subledger.load_subledger`), keyed
   by TIN else normalized name; merges follow `merged_into_id` (`contacts.resolve`). Open items use the books' own
   payments (`document_payments` + `apply_bank_lines`), so add new payment sources there, not in the subledger.

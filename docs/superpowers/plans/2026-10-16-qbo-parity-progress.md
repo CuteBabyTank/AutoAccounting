@@ -145,3 +145,37 @@ as paid at the counter), and keep customer CWT in A/R until the 2307 document ar
 differ from the aging (see Decisions); credit memos are not auto-applied to invoices; no unmerge; contacts are not
 synced inside the extraction pipeline (synced on read and at generation); one import document is not split into
 foreign supplier / broker payables (landed-cost CPA question).
+
+## 05 Firm work board, client health, tasks, approve-before-close, notifications (2026-10-17)
+
+Plan: `2026-10-16-qbo-05-work-board.md` (Decisions section there).
+
+Shipped:
+- Pure `compute/work.py`: the filings a company owes in a date window (quarterly forms from `expected_forms` incl.
+  payroll-driven 1601-C, the annual return, the 1604-C for employers due Jan 31 → `due_dates.alphalist_due_date`),
+  derived status no documents → documents in → needs review → generated → filed (a real filing always wins over an
+  override), labels ("0619-E Oct 2026", "FY Jun 2026"), filters; filings whose deadline had already passed when the
+  client was added and have nothing on file are skipped.
+- Pure `compute/health.py`: wrong-way asset/liability balances (negative Cash on hand), non-zero VAT-difference /
+  Suspense balances, months not closed, unreconciled bank months, reconciled-through (now shared with the bank
+  router), aging over 90. `compute/notifications.py`, `compute/tasks.py`.
+- Tables `aa_work_items`, `aa_tasks`, `aa_firm_settings`, `aa_notification_states` (FORCE RLS, firm policy);
+  `aa_audit_events.company_id` nullable for firm-level events; audit entities `work_item`, `task`, `firm_settings`.
+- Routes: `/work/board` (cards + cheap per-client counts), `/work/items` (assignee / status override / board filing,
+  audited), `/work/people`, `/work/settings` (owner edits), `/companies/{id}/health`, `/tasks` CRUD (audited),
+  `/notifications` + read / dismiss.
+- Approve-before-close: firm setting "Managers approve filing" gates the quarter, per-form, annual and board filing
+  routes (403 for employees); closing a month was already manager-only. Filing buttons are disabled with a tooltip.
+- UI: sidebar "Work" (Filings / Clients / Tasks tabs, client / due-window / status / assignee filters, overdue rows in
+  red, assignee and status selects, Mark filed with date / Undo), client health tiles with a full check, company
+  "Overview" node in the folder tree (filings due, health check, tasks; deep link `/accounting?company=<id>`),
+  notification bell with unread count in the rail and mobile bar (polls every 2 min), Work settings card on Team,
+  Work tour + hints, audit labels.
+- Live smoke on the dev stack: board, item assign / board filing / audit events, settings, health, tasks,
+  notifications read / dismiss, Work page and bell in the browser.
+
+Tests: 702 → 728 passing. Gates: pytest, ruff, lint, tsc, build all green.
+
+Not done: no email (by design); 1604-E isn't on the board (no 1604-E support yet); the 1604-C card is completed only
+by a board filing (its workbook isn't a stored version); 2307 notifications don't follow contact merges made after the
+last contacts sync; no reusable task templates / recurring close checklists (workstream 10).

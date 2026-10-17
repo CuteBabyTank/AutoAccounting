@@ -135,6 +135,11 @@ Shipped:
 
 Tests: 660 → 699 passing. Gates: pytest, ruff, lint, tsc, build all green.
 
+Review fixes (2026-10-17): contacts sync tolerates concurrent page loads (insert ON CONFLICT DO NOTHING; the list and
+aging requests used to race into a 500 on `uq_aa_contact_key`); a placeholder TIN (000-000-000, one repeated digit) keys
+by name so walk-in customers don't merge into one contact (old `000000000` contacts stay with no documents); aging /
+statement PDFs cut long names and document numbers at the drawn 8 pt so they don't run into the next column. 702 tests.
+
 Not done / left to the owner: the books still keep cash-terms documents without `paid_on` in A/P (the aging treats them
 as paid at the counter), and keep customer CWT in A/R until the 2307 document arrives, so books A/R / A/P control can
 differ from the aging (see Decisions); credit memos are not auto-applied to invoices; no unmerge; contacts are not

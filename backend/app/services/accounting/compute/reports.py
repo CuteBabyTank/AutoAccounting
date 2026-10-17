@@ -512,6 +512,18 @@ def check_manual(rows: list[dict], chart: Chart) -> list[dict]:
 
 # --- drill-down ------------------------------------------------------------------------------------------------------
 
+MAX_DRILL_CODES = 1000
+
+
+def drill_codes(text: str) -> list[str]:
+    """The comma-separated account codes of a drill-down; refused (never cut) beyond ``MAX_DRILL_CODES``, since a
+    shortened list would no longer add up to the cell."""
+    codes = list(dict.fromkeys(c.strip() for c in text.split(",") if c.strip()))
+    if len(codes) > MAX_DRILL_CODES:
+        raise ValueError(f"At most {MAX_DRILL_CODES} accounts per drill-down")
+    return codes
+
+
 def postings(entries: list[Entry], chart: Chart, codes: list[str], start: date | None, end: date,
              limit: int = 500) -> dict:
     """The posting lines of ``codes`` in a window (newest last); ``total`` is debit − credit of all of them."""

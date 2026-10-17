@@ -185,13 +185,17 @@ async def _company(db: AsyncSession, user: User, company_id: str) -> AACompany:
 
 
 @router.get("/companies/{company_id}/report-postings")
-async def report_postings(company_id: str, codes: str = Query(..., max_length=2000), start: date | None = Query(None),
+async def report_postings(company_id: str, codes: str = Query(..., max_length=11 * r.MAX_DRILL_CODES),
+                          start: date | None = Query(None),
                           end: date = Query(...), user: User = Depends(get_current_user),
                           db: AsyncSession = Depends(get_db)):
     """The posting lines behind a report cell: ``codes`` (comma-separated) in [start, end]."""
     company = await _company(db, user, company_id)
     _check(start, end, company)
-    wanted = [c for c in codes.split(",") if c][:200]
+    try:
+        wanted = r.drill_codes(codes)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from None
     books = await _books(db, company, end)
     return JSONResponse(jsonable(r.postings(books.entries or [], books.chart, wanted, start, end)))
 

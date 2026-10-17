@@ -279,3 +279,15 @@ def test_corrections_of_adjusting_entries_are_adjustments():
     aje = adjusting_entries(entries, CHART, date(2026, 10, 1), date(2026, 12, 31), {"je:adj1"})
     kinds = {a["entry_id"]: a["kind"] for a in aje}
     assert kinds["fix:je:adj1:new"] == "Adjusting journal entry" and kinds["fix:dep:a1:2026-11:rev"] == "Depreciation"
+
+
+def test_drill_codes_are_never_silently_cut():
+    import pytest
+
+    from app.services.accounting.compute.reports import MAX_DRILL_CODES, drill_codes
+
+    many = [str(5000 + n) for n in range(250)]  # a chart with 250 P&L accounts: Net income drills into all of them
+    assert drill_codes(",".join(many)) == many
+    assert drill_codes("4010,,4020") == ["4010", "4020"]
+    with pytest.raises(ValueError):
+        drill_codes(",".join(str(10000 + n) for n in range(MAX_DRILL_CODES + 1)))

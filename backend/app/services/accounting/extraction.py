@@ -55,6 +55,8 @@ Reply with ONLY valid JSON, no markdown fences, no explanation:
   "cash_tendered": <cash tendered / amount received printed on a cash receipt, 0 when not shown>,
   "change": <change printed on the receipt exactly as shown, negative if it shows a negative change, 0 when not shown>,
   "payment_terms": "<credit if the document shows credit terms, a due date, PDC, charge or a balance still due; cash if paid in full on the spot; empty if unclear>",
+  "due_date": "<YYYY-MM-DD when a due date is printed, else empty>",
+  "terms_days": <number of days of credit when terms are printed (e.g. Net 30 or 30 days PDC = 30), else null>,
   "marked_paid": <true when the document says PAID, RELEASED or RECEIVED (e.g. a payroll sheet marked released), else false>,
   "nature": "<goods_for_resale|raw_materials|capital_goods|services|import|payroll|other>",
   "expense_account": "<purchases|raw_materials|importation|capital_goods|salaries|rent|utilities|professional_fees|office_supplies|representation|transportation|repairs|taxes_licenses|other>",
@@ -143,6 +145,8 @@ class ExtractedDoc:
     change_amount: Decimal = Decimal("0.00")   # negative when the receipt shows negative change
     payment_terms: str = ""                    # cash | credit | "" (unclear / not read)
     marked_paid: bool = False
+    due_date: date | None = None
+    terms_days: int | None = None              # printed credit terms in days ("Net 30")
     raw: dict = field(default_factory=dict)
 
 
@@ -205,6 +209,24 @@ def _terms(value) -> str:
     return text if text in ("cash", "credit") else ""
 
 
+def _terms_days(value) -> int | None:
+    if isinstance(value, bool) or value in (None, ""):
+        return None
+    try:
+        days = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return days if 0 <= days <= 3650 else None
+
+
+def due_fields(raw: dict | None) -> tuple[date | None, int | None]:
+    """(printed due date, printed terms in days) from a document's stored reply; old replies give (None, None)."""
+    if not isinstance(raw, dict):
+        return None, None
+    due = parse_doc_date(raw.get("due_date")) if raw.get("due_date") else None
+    return due, _terms_days(raw.get("terms_days"))
+
+
 def parse_detection(raw: str) -> Detection:
     """Parse the first-page detection reply. Never raises."""
     data = _load_json(raw)
@@ -263,6 +285,8 @@ def parse_extraction(raw: str, page_offset: int = 0, chunk_pages: int | None = N
             change_amount=_signed_money(item.get("change")),
             payment_terms=_terms(item.get("payment_terms")),
             marked_paid=_bool_or_none(item.get("marked_paid")) is True,
+            due_date=due_fields(item)[0],
+            terms_days=due_fields(item)[1],
             raw=item,
         ))
     return docs

@@ -1,5 +1,5 @@
 // Work board, client health, tasks, firm settings and notifications.
-import api from "@/lib/api";
+import api, { seg } from "@/lib/api";
 import type {
   Board,
   BoardFilters,
@@ -13,8 +13,6 @@ import type {
   WorkCard,
   WorkItemInput,
 } from "@/types/work";
-
-const seg = encodeURIComponent;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

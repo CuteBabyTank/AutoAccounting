@@ -3,6 +3,9 @@ import type { Account, BudgetOperation, FirmUsage, Member, UserRole } from "@/ty
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+/** Encode one interpolated URL path segment, so an id can never add path parts ("../", "?", "#"). */
+export const seg = (value: string | number): string => encodeURIComponent(value);
+
 export const TOKEN_KEY = "autoaccounting_token";
 
 const api = axios.create({
@@ -51,24 +54,24 @@ export const teamApi = {
   members: () => api.get<Member[]>("/team/members").then((r) => r.data),
   add: (email: string) => api.post<Member>("/team/members", { email }).then((r) => r.data),
   setActive: (id: string, is_active: boolean) =>
-    api.put<Member>(`/team/members/${id}`, { is_active }).then((r) => r.data),
-  remove: (id: string) => api.delete(`/team/members/${id}`).then(() => undefined),
-  promote: (id: string) => api.post<Member>(`/team/members/${id}/promote-manager`).then((r) => r.data),
-  demote: (id: string) => api.post<Member>(`/team/members/${id}/demote`).then((r) => r.data),
+    api.put<Member>(`/team/members/${seg(id)}`, { is_active }).then((r) => r.data),
+  remove: (id: string) => api.delete(`/team/members/${seg(id)}`).then(() => undefined),
+  promote: (id: string) => api.post<Member>(`/team/members/${seg(id)}/promote-manager`).then((r) => r.data),
+  demote: (id: string) => api.post<Member>(`/team/members/${seg(id)}/demote`).then((r) => r.data),
 };
 
 /** Platform admin. */
 export const adminApi = {
   accounts: () => api.get<Account[]>("/admin/accounts").then((r) => r.data),
   promoteFirm: (id: string, organization_name: string) =>
-    api.post(`/admin/users/${id}/promote-firm`, { organization_name }).then((r) => r.data),
+    api.post(`/admin/users/${seg(id)}/promote-firm`, { organization_name }).then((r) => r.data),
   setRole: (id: string, role: Exclude<UserRole, "admin">, enterprise_id?: string) =>
-    api.put(`/admin/users/${id}/role`, { role, enterprise_id }).then((r) => r.data),
-  toggleActive: (id: string) => api.put(`/admin/users/${id}/toggle-active`).then((r) => r.data),
+    api.put(`/admin/users/${seg(id)}/role`, { role, enterprise_id }).then((r) => r.data),
+  toggleActive: (id: string) => api.put(`/admin/users/${seg(id)}/toggle-active`).then((r) => r.data),
   pageRate: () => api.get<{ page_rate: number | null }>("/admin/page-rate").then((r) => r.data),
   setPageRate: (page_rate: number | null) =>
     api.put<{ page_rate: number | null }>("/admin/page-rate", { page_rate }).then((r) => r.data),
   adjustBudget: (firmId: string, operation: BudgetOperation, amount: number) =>
-    api.post<{ budget: number }>(`/admin/firms/${firmId}/budget`, { operation, amount }).then((r) => r.data),
+    api.post<{ budget: number }>(`/admin/firms/${seg(firmId)}/budget`, { operation, amount }).then((r) => r.data),
 };
 

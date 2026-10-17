@@ -131,9 +131,9 @@ async def bank_month(company_id: uuid.UUID, account: str = Query("", max_length=
     if first is not None and first.opening_balance is not None:
         before = (await db.execute(select(func.coalesce(func.sum(AABankLine.amount), 0)).where(
             AABankLine.company_id == company.id, AABankLine.account_code == account,
-            AABankLine.line_date < start, bank.live_line()))).scalar()
+            AABankLine.line_date < start, AABankLine.match_status != "excluded", bank.live_line()))).scalar()
         opening = c2(first.opening_balance + c2(before or ZERO))
-        closing = c2(opening + sum((l.amount for l in rows), ZERO))
+        closing = c2(opening + sum((l.amount for l in rows if l.match_status != "excluded"), ZERO))
     labels = await _labels(db, company.id, list(rows))
     return BankMonthOut(
         account=await _account_out(db, company, acct) if acct else None, month_start=start,

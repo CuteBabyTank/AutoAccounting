@@ -87,3 +87,10 @@ def test_confirming_an_invoice_its_linked_receipt_already_pays_moves_the_receipt
     assert len(payments) == 1
     assert (payments[0].id, payments[0].on, payments[0].via, payments[0].account) == (
         "rcpt:r1", date(2026, 12, 18), "bank", "1020")
+
+
+def test_an_excluded_misread_or_duplicated_line_is_not_in_the_statement_balance():
+    from app.services.accounting.compute.bank_reconcile import statement_balance
+
+    lines = [(D("-100.00"), "matched"), (D("-100.00"), "excluded"), (D("50.00"), "unmatched")]
+    assert statement_balance(D("1000.00"), lines) == D("950.00")

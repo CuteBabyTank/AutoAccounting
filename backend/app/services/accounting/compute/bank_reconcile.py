@@ -89,6 +89,12 @@ def reconcile(account: str, month_start: date, month_end: date, statement_closin
     return Reconciliation(account, month_start, month_end, c2(statement_closing), book, uncleared, tuple(open_lines))
 
 
+def statement_balance(opening: Decimal, lines: list[tuple[Decimal, str]]) -> Decimal:
+    """The statement's balance: its opening plus every (amount, match status) line, less the lines a person
+    excluded as misread or duplicated."""
+    return c2(opening + sum((amount for amount, status in lines if status != "excluded"), ZERO))
+
+
 def opening_gap(entries: list[Entry], account: str, first_statement_start: date, opening: Decimal | None) -> dict | None:
     """The ``opening_balance_missing`` details when the first statement opens at a balance the books don't have."""
     if opening is None:

@@ -25,7 +25,9 @@ from app.services.accounting.bank_match import (
 from app.services.accounting.bank_report_pdf import reconciliation_pdf
 from app.services.accounting.bank_statement import parse_statement, resolve_account, tie_out
 from app.services.accounting.compute.bank_books import POSTING_STATUSES, MatchedLine, tax_key
-from app.services.accounting.compute.bank_reconcile import Reconciliation, cleared_entry_ids, opening_gap, reconcile
+from app.services.accounting.compute.bank_reconcile import (
+    Reconciliation, cleared_entry_ids, opening_gap, reconcile, statement_balance,
+)
 from app.services.accounting.compute.books import BooksInput, Entry, QuarterTaxes, employee_contributions
 from app.services.accounting.compute.ewt import compute_ewt
 from app.services.accounting.compute.inputs import PeriodData, inputs_from_json
@@ -371,10 +373,10 @@ async def reconcile_month(db: AsyncSession, company: AACompany, account: str,
     entries = await book_entries(db, company, end)
     if entries is None:
         return None, "This company has no books for that month (set Books start on the company)."
-    statement_balance = c2(first.opening_balance + sum((l.amount for l in lines), ZERO))
+    balance = statement_balance(first.opening_balance, [(l.amount, l.match_status) for l in lines])
     open_ids = [str(l.id) for l in lines if l.match_status in OPEN_STATUSES]
     cleared = cleared_entry_ids(await matched_lines(db, company.id, end))
-    return reconcile(account, start, end, statement_balance, entries, cleared, first.period_start or start,
+    return reconcile(account, start, end, balance, entries, cleared, first.period_start or start,
                      open_ids), ""
 
 

@@ -157,3 +157,16 @@ def test_sync_contacts_insert_tolerates_a_concurrent_sync():
     sql = str(inserts[0].compile(dialect=postgresql.dialect()))
     assert "ON CONFLICT ON CONSTRAINT uq_aa_contact_key DO NOTHING" in sql
 
+
+
+def test_placeholder_tin_does_not_merge_unrelated_customers():
+    """Walk-in invoices print TIN 000-000-000-000: two different buyers must not become one contact."""
+    from app.services.accounting.contacts import plan_contacts
+
+    a = document(buyer_tin="000000000", buyer_name="Juan Dela Cruz")
+    b = document(buyer_tin="000000000", buyer_name="Maria Santos Trading")
+    seen = [seen_party(a), seen_party(b)]
+    assert seen[0].key != seen[1].key and seen[0].tin == ""
+    creates, _ = plan_contacts(seen, [])
+    assert sorted(c["registered_name"] for c in creates) == ["Juan Dela Cruz", "Maria Santos Trading"]
+    assert open_doc_from(a, {}, {}, {}, 12).contact_key == seen[0].key

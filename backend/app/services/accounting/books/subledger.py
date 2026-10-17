@@ -35,11 +35,17 @@ def _live(doc) -> bool:
     return doc.deleted_at is None and not doc.excluded
 
 
+def real_tin(tin: str) -> str:
+    """The TIN, or "" for a placeholder printed for a walk-in buyer (000-000-000, any one digit repeated)."""
+    tin = tin or ""
+    return "" if len(set(tin)) <= 1 else tin
+
+
 def counterparty(doc) -> tuple[str, str, str]:
-    """(TIN, name, address) of the other party."""
+    """(TIN, name, address) of the other party; a placeholder TIN counts as none, so walk-ins key by name."""
     if doc.client_role == "seller":
-        return doc.buyer_tin or "", doc.buyer_name or "", doc.buyer_address or ""
-    return doc.seller_tin or "", doc.seller_name or "", doc.seller_address or ""
+        return real_tin(doc.buyer_tin), doc.buyer_name or "", doc.buyer_address or ""
+    return real_tin(doc.seller_tin), doc.seller_name or "", doc.seller_address or ""
 
 
 def doc_kind(doc) -> str | None:

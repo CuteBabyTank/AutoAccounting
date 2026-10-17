@@ -22,6 +22,7 @@ from app.services.accounting import audit
 from app.services.accounting.books import bank
 from app.services.accounting.books.closing import stored_file
 from app.services.accounting.books.loader import ensure_chart, touch_books
+from app.services.accounting.compute.health import reconciled_through
 from app.services.accounting.compute.money import ZERO, c2
 
 router = APIRouter()
@@ -48,15 +49,10 @@ async def _line_or_404(db: AsyncSession, ent: uuid.UUID, line_id: uuid.UUID) -> 
 
 async def _reconciled_through(db: AsyncSession, company_id: uuid.UUID, code: str) -> date | None:
     """The end of the last month in an unbroken run of reconciled months from the first statement."""
-    months = sorted((await db.execute(select(AABankReconciliation.month_start, AABankReconciliation.month_end).where(
+    months = (await db.execute(select(AABankReconciliation.month_start, AABankReconciliation.month_end).where(
         AABankReconciliation.company_id == company_id, AABankReconciliation.account_code == code,
-        AABankReconciliation.voided_at.is_(None)))).all())
-    through = None
-    for start, end in months:
-        if through is not None and start > date.fromordinal(through.toordinal() + 1):
-            break
-        through = end
-    return through
+        AABankReconciliation.voided_at.is_(None)))).all()
+    return reconciled_through([tuple(m) for m in months])
 
 
 async def _account_out(db: AsyncSession, company: AACompany, account: AAAccount) -> BankAccountOut:

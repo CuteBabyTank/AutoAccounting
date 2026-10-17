@@ -31,3 +31,26 @@ async def company_or_404(db: AsyncSession, ent: uuid.UUID, company_id: uuid.UUID
     if company is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Company not found")
     return company
+
+
+FILING_GUARD_MESSAGE = ("Your firm has managers approve filings: ask a manager or the firm owner to mark this "
+                        "return filed.")
+
+
+def may_file(role: UserRole, approve_before_close: bool) -> bool:
+    """Whether this person may mark returns filed (with the firm setting on, only owners and managers)."""
+    return not approve_before_close or role in MANAGER_ROLES
+
+
+async def firm_settings(db: AsyncSession, ent: uuid.UUID):
+    """The firm's settings row, or an unsaved one with the defaults."""
+    from app.models.accounting import AAFirmSettings
+
+    row = (await db.execute(select(AAFirmSettings).where(AAFirmSettings.enterprise_id == ent))).scalar_one_or_none()
+    return row or AAFirmSettings(enterprise_id=ent, approve_before_close=False, deadline_days=7)
+
+
+async def require_filing_rights(db: AsyncSession, user: User, ent: uuid.UUID) -> None:
+    settings = await firm_settings(db, ent)
+    if not may_file(user.role, settings.approve_before_close):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, FILING_GUARD_MESSAGE)

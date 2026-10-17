@@ -140,3 +140,34 @@ def filter_cards(cards: list[dict], *, company_id: str | None = None, status: st
             continue
         out.append(c)
     return out
+
+
+@dataclass(frozen=True)
+class PeriodFacts:
+    """What the databank holds for one period (a quarter, or a whole fiscal year for the annual return)."""
+
+    documents: int = 0
+    open_reviews: int = 0
+    generated: bool = False
+    filed: tuple[tuple[str, str], ...] = ()     # (form, filed date ISO)
+
+
+def card(ob: Obligation, fye: int, facts: PeriodFacts, item: dict | None, today: date) -> dict:
+    """One board card. ``item`` is the stored work item ({assignee_id, status_override, filed_on}) if any."""
+    item = item or {}
+    filed = dict(facts.filed)
+    real = ob.form in filed
+    manual = item.get("filed_on")
+    generated = facts.generated and ob.form != ALPHALIST
+    auto = derive_status(filed=real, generated=generated, documents=facts.documents, open_reviews=facts.open_reviews)
+    status = derive_status(filed=real or manual is not None, generated=generated, documents=facts.documents,
+                           open_reviews=facts.open_reviews, override=item.get("status_override") or "")
+    return {
+        "form": ob.form, "form_label": form_label(ob.form), "year": ob.year, "quarter": ob.quarter,
+        "period_label": period_text(ob, fye), "due_date": ob.due, "status": status, "auto_status": auto,
+        "status_override": item.get("status_override") or "", "overdue": is_overdue(status, ob.due, today),
+        "days_left": days_left(ob.due, today),
+        "filed_on": filed[ob.form][:10] if real else (manual.isoformat() if manual else None),
+        "filed_source": "return" if real else ("board" if manual else None),
+        "assignee_id": item.get("assignee_id"), "documents": facts.documents, "open_reviews": facts.open_reviews,
+    }

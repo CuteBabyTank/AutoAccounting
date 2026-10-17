@@ -13,7 +13,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.accounting import AAAsset, AACompany, AADocument, AAOutput, AAPeriod
 from app.models.user import User
 from app.routers import accounting_periods as quarters
-from app.routers.accounting_scope import company_or_404, scope_for
+from app.routers.accounting_scope import company_or_404, require_filing_rights, scope_for
 from app.schemas.accounting import (
     AnnualInputsModel, AnnualPeriodOut, AssetOut, AssetPatch, CompanyBrief, FiledIn, OpeningAssetIn, OutputBrief,
     OutputOut,
@@ -167,6 +167,7 @@ async def save_annual_inputs(body: AnnualInputsModel, company_id: uuid.UUID,
 async def set_annual_filed(body: FiledIn, company_id: uuid.UUID, year: int = PathParam(ge=2000, le=2100),
                            user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     ent = scope_for(user)
+    await require_filing_rights(db, user, ent)
     company = await company_or_404(db, ent, company_id)
     period = await quarters._ensure_period(db, ent, company, year, ANNUAL)
     before = dict(period.filed_forms or {})

@@ -17,6 +17,7 @@ from app.models.accounting import AAAuditEvent
 ENTITIES = frozenset({
     "company", "document", "account", "journal_entry", "books_month", "period", "output", "asset", "employee",
     "atc", "upload", "bank_statement", "bank_line", "bank_rule", "bank_reconciliation", "contact",
+    "work_item", "task", "firm_settings",
 })
 REASON_MAX = 500
 _CENTS = Decimal("0.01")
@@ -54,7 +55,7 @@ def diff(before: dict, after: dict) -> tuple[dict, dict]:
     return {k: old.get(k) for k in changed}, {k: new.get(k) for k in changed}
 
 
-def record(db, *, ent: uuid.UUID, company_id: uuid.UUID, user, entity: str, entity_id: Any, action: str,
+def record(db, *, ent: uuid.UUID, company_id: uuid.UUID | None, user, entity: str, entity_id: Any, action: str,
            before: dict | None = None, after: dict | None = None, reason: str | None = "", label: str = "",
            always: bool = False) -> AAAuditEvent | None:
     """Add an event to the session (never commits). Nothing is written when nothing changed, unless ``always``."""

@@ -41,4 +41,5 @@ def column_statements() -> list[str]:
         "ALTER TABLE aa_accounts ADD COLUMN IF NOT EXISTS bank_account_no VARCHAR(40) NOT NULL DEFAULT ''",
         "ALTER TABLE aa_companies ADD COLUMN IF NOT EXISTS review_flags JSONB NOT NULL DEFAULT '{}'::jsonb",
         "ALTER TABLE aa_documents ADD COLUMN IF NOT EXISTS cwt_2307 JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE aa_audit_events ALTER COLUMN company_id DROP NOT NULL",  # firm-level events (settings, tasks)
     ]

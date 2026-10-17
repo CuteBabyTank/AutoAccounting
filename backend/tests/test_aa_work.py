@@ -127,3 +127,28 @@ def test_filter_cards():
     assert filter_cards(cards, assignee="unassigned") == [cards[0]]
     assert filter_cards(cards, assignee="u1", status="docs_in") == [cards[1]]
     assert filter_cards(cards, status="open") == cards[1:]   # "open" = anything not filed
+
+
+def test_filing_guard():
+    from app.models.user import UserRole
+    from app.routers.accounting_scope import may_file
+
+    assert may_file(UserRole.EMPLOYEE, False)
+    assert not may_file(UserRole.EMPLOYEE, True)
+    assert all(may_file(r, True) for r in (UserRole.MANAGER, UserRole.ENTERPRISE, UserRole.ADMIN))
+
+
+def test_card_real_filing_and_board_filing():
+    from app.services.accounting.compute.work import PeriodFacts, card
+
+    ob = Obligation("2550Q", 2026, 3, date(2026, 10, 26))
+    today = date(2026, 10, 27)
+    c = card(ob, 12, PeriodFacts(documents=4, open_reviews=1), None, today)
+    assert (c["status"], c["overdue"], c["filed_source"], c["days_left"]) == ("needs_review", True, None, -1)
+    c = card(ob, 12, PeriodFacts(4, 0, True, (("2550Q", "2026-10-25"),)), {"status_override": "docs_in"}, today)
+    assert (c["status"], c["filed_on"], c["filed_source"], c["overdue"]) == ("filed", "2026-10-25", "return", False)
+    c = card(ob, 12, PeriodFacts(), {"filed_on": date(2026, 10, 20), "assignee_id": "u1"}, today)
+    assert (c["status"], c["auto_status"], c["filed_source"], c["assignee_id"]) == ("filed", "no_docs", "board", "u1")
+    alpha = card(Obligation("1604C", 2026, 0, date(2027, 2, 1)), 12, PeriodFacts(documents=3, generated=True), None,
+                 today)
+    assert alpha["status"] == "docs_in"   # the 1604-C has no versions: only a board mark files it

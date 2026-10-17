@@ -20,7 +20,7 @@ from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.models.accounting import AAAsset, AAAtcDefault, AACompany, AADocument, AAOutput, AAPeriod, AASupplierRule
 from app.models.user import User
-from app.routers.accounting_scope import company_or_404, scope_for
+from app.routers.accounting_scope import company_or_404, require_filing_rights, scope_for
 from app.schemas.accounting import (
     CompanyBrief, FiledFormOut, FiledIn, FormFiledIn, FormOut, ItemOut, OutputBrief, OutputOut, PdfsIn,
     PeriodInputsModel, PeriodOut, PrepareFormOut, PrepareOut, manila_today,
@@ -347,6 +347,7 @@ async def set_period_filed(
     quarter: int = PathParam(ge=1, le=4), user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
     ent = scope_for(user)
+    await require_filing_rights(db, user, ent)
     company = await company_or_404(db, ent, company_id)
     period = await _ensure_period(db, ent, company, year, quarter)
     before = dict(period.filed_forms or {})
@@ -364,6 +365,7 @@ async def set_form_filed(
     quarter: int = PathParam(ge=1, le=4), user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
     ent = scope_for(user)
+    await require_filing_rights(db, user, ent)
     company = await company_or_404(db, ent, company_id)
     period = await _ensure_period(db, ent, company, year, quarter)
     expected = await _expected(db, company, year, quarter)

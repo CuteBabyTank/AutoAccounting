@@ -458,8 +458,9 @@ class AAAuditEvent(Base):
     enterprise_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    company_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=False
+    # None = a firm-level event (firm settings, a task not linked to a company)
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=True
     )
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -621,3 +622,98 @@ class AAContact(Base):
     )
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
+
+
+class AAWorkItem(Base):
+    """What the work board can't derive for one filing (company × period × form): who does it, a manual status, and
+    a filed date marked on the board (a return filed outside AutoAccounting)."""
+
+    __tablename__ = "aa_work_items"
+    __table_args__ = (UniqueConstraint("company_id", "year", "quarter", "form", name="uq_aa_work_item"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    quarter: Mapped[int] = mapped_column(Integer, nullable=False)          # 0 = annual return / 1604-C
+    form: Mapped[str] = mapped_column(String(12), nullable=False)
+    assignee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status_override: Mapped[str] = mapped_column(String(15), nullable=False, default="")
+    filed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    filed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class AATask(Base):
+    """A free-form to-do, optionally about a company, one of its documents or a period."""
+
+    __tablename__ = "aa_tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_documents.id", ondelete="SET NULL"), nullable=True
+    )
+    period_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    period_quarter: Mapped[int | None] = mapped_column(Integer, nullable=True)   # 0 = the year
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    assignee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="open")       # open | in_progress | done
+    priority: Mapped[str] = mapped_column(String(8), nullable=False, default="normal")    # low | normal | high
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class AAFirmSettings(Base):
+    """Firm-wide settings the firm owner sets (one row per firm; defaults when missing)."""
+
+    __tablename__ = "aa_firm_settings"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    # Only owners and managers may mark returns filed (closing a month is already theirs).
+    approve_before_close: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    deadline_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)   # notify this many days ahead
+    updated_at: Mapped[datetime] = _updated()
+
+
+class AANotificationState(Base):
+    """A person read or dismissed a notification (notifications themselves are derived on read)."""
+
+    __tablename__ = "aa_notification_states"
+    __table_args__ = (UniqueConstraint("user_id", "key", name="uq_aa_notification_state"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    key: Mapped[str] = mapped_column(String(200), nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

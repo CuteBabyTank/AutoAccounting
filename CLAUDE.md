@@ -25,6 +25,8 @@ backend/app/
                         # contacts (customer/supplier master), books/subledger.py + compute/subledger
                         # (A/R, A/P open items, aging, 2307s), subledger_report (aging XLSX/PDF, statement);
                         # work.py (work board loader) + compute/work, health, notifications, tasks;
+                        # reports.py (live report loader) + compute/reports, report_export (XLSX/PDF),
+                        # report_pack (management pack PDF + DOCX via zipfile);
                         # pipeline, extraction, matching, classify, periods, tree, storage, pdf_*,
                         # render_xlsx, filing, rls, schema; compute/ (tax engine); books/
     gemini_service.py   # rate limiters + prompt cache + _call_gemini + PDF page rendering
@@ -101,6 +103,14 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   by TIN else normalized name; merges follow `merged_into_id` (`contacts.resolve`). Open items use the books' own
   payments (`document_payments` + `apply_bank_lines`), so add new payment sources there, not in the subledger.
   Default account / ATC per supplier live only in `aa_supplier_rules`. Contact edits / merges must call `audit.record`.
+- **Live reports (`routers/accounting_reports.py`):** every report is reshaped from `books.bank.book_entries` by pure
+  `compute/reports.py` (accrual only). Closing entries (`close:*`, `fix:close:*`) are left out; earlier fiscal years'
+  P&L shows as "Prior years' earnings not yet closed". Report windows go through `reports.check_window` (2000-01-01 to
+  the end of next fiscal year, ≤ 10 years) — keep any new report route behind it, since the engine's work grows with
+  the date. An engine `ValueError` becomes an Invalid Journal Transactions row and a 409 elsewhere. Drill-down maps
+  entry ids to sources in `compute/reports.entry_ref` — add a branch there when the engine gets a new id prefix.
+  Adjusting entries = JEs with `is_adjusting` + `depreciation` / `inventory` sources. The management pack is saved
+  in the quarter's output folder; latest paths on `aa_periods.pack_files`, notes in `pack_notes`.
 - **Spreadsheet output:** run every untrusted cell through `spreadsheet_safe.csv_safe` (formula injection).
 - **PDF templates** are calibrated comb-cell layouts (`forms/overlay.py`); re-calibrate when BIR revises a form.
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.

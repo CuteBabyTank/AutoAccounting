@@ -186,3 +186,43 @@ owe (e.g. 1601-C with no payroll) is rejected with 400 before anything is stored
 interpolated path segment in `lib/api.ts`, `lib/accounting-api.ts` and `lib/work-api.ts` goes through the shared
 `seg()` (encodeURIComponent). Flagged, not fixed: the bell's 2307 count loads every seller document of the firm on each
 2-minute poll, and the board loads every period / work item of the firm regardless of the window.
+
+## 06 Reporting depth, drill-down, KPIs, management pack (2026-10-17)
+
+Plan: `2026-10-16-qbo-06-reporting.md` (Decisions section there).
+
+Shipped:
+- Pure `compute/reports.py` over the books' entries: P&L with total / month / fiscal-quarter columns, comparison to
+  the previous period or the same period last year (₱ and % change, blank % on a zero base), Balance Sheet at one or
+  more dates with "Prior years' earnings not yet closed" + "Current year earnings" (balances with or without closing
+  entries, any fiscal year end), GL detail (opening from the fiscal year start for P&L accounts, account / party
+  filters), transaction list by date, Adjusted TB (unadjusted → adjustments → adjusted), Adjusting Journal Entries,
+  invalid-transaction checks (unbalanced, < 2 lines, one-sided lines, bad amounts, missing / inactive accounts),
+  drill-down postings, entry → source mapping, KPIs (gross / net margin, opex ratio, current and quick ratio), window
+  cash flow (indirect); non-zero rows and ÷1000 shaping; window cap.
+- `aa_journal_entries.is_adjusting` (model + schema.py), API, audit field label, "Adjusting entry" checkbox in
+  `JournalEntryForm.tsx`, chip in Books.
+- Routes (`routers/accounting_reports.py`): `/companies/{id}/reports/{kind}` + `/export?format=xlsx|pdf`
+  (`csv_safe` cells), `/report-postings`, `/report-source` (document + page, bank line + its statement, JE, asset,
+  tax / system), `/kpis` (with A/R / A/P aging buckets), `/pack/{year}/{quarter}` (notes PUT audited, POST generates
+  PDF + DOCX into `accounting/outputs/<company>/<year>Q<q>/`, audited, file download path-checked). An engine
+  failure is an Invalid Journal Transactions row and a 409 on the other reports, never a 500.
+- Management pack: cover, contents with page numbers, P&L (quarter + fiscal YTD), Balance Sheet vs previous quarter
+  end, cash flow, A/R and A/P aging, key ratios, notes; DOCX hand-written with zipfile (no python-docx, no rebuild).
+- UI: company → Reports (when books are on): report chips, period presets (month / quarter / fiscal year, this and
+  last, custom), columns, compare to, non-zero rows, thousands, Excel / PDF, "Accrual basis" label; every amount opens
+  a drawer with the postings → source (Open the document at its page / the statement for a bank line / JE lines);
+  GL and transaction rows open the source directly; management pack section (notes, Generate, PDF / Word). KPI and
+  aging tiles on the company Overview. Hints, tour line, tree badge help, audit labels.
+- Live smoke on the dev stack (Bayanihan bank smoke company): every report and export, BS balances (Cash in bank
+  ₱330,854.85), drill to the Sta. Elena rent document and to the statement for a bank payment, a bad typed JE listed
+  as invalid while the P&L answers 409, pack PDF / DOCX generated and downloaded, UI checked in the browser.
+
+Tests: 729 → 755 passing. Gates: pytest, ruff, lint, tsc, build all green.
+
+Security review fix: report windows (incl. drill-down postings) are capped — 2000-01-01 to the end of the next fiscal
+year, ten years at most — so a far-future date can't make the books engine run unbounded.
+
+Not done: cash basis (engine is accrual-only; see Decisions); bank lines have no page number, so a bank posting opens
+its statement at the statement's first page; tax / depreciation / engine entries have no source document (the drawer
+says what posted them); report customisation is not saved per user; the pack is not emailed (no mail infra).

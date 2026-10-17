@@ -170,3 +170,14 @@ Progress entry, CLAUDE.md layout lines, full gates incl. `npm run build`.
   year-end SCF in the annual version remains the authoritative statement.
 - **KPI quick ratio** = (cash + A/R + CWT) / current liabilities (inventory and prepaid excluded); ratios show "—"
   when the denominator is zero.
+- **Compare works with a single total column.** "Compare to" (previous period / same period last year) adds ₱ and %
+  change columns; with Months / Quarters columns the API answers 400 and the UI disables the Columns select.
+- **Balance Sheet uses the same From / As of** as the P&L: columns by month / quarter show the balance at each column
+  end; compare shows the balance at the end of the previous period / a year earlier.
+- **Report window cap (security review):** every report route, including drill-down postings, refuses dates before
+  2000-01-01, after the end of the next fiscal year, or spans over ten years, because the books engine's work grows
+  with the date (`compute/reports.check_window`).
+- **The pack's KPIs and P&L** use the quarter; a fiscal-year-to-date column sits next to the quarter in the P&L. The
+  balance sheet compares the quarter end with the previous quarter end.
+- **Invalid report duplicates:** a bad typed entry can show both its own problem and the engine's refusal to post it;
+  both are kept so the person sees why every other report answers 409.

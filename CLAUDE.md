@@ -20,7 +20,9 @@ backend/app/
   models/               # user, api_usage, accounting (all aa_* tables)
   routers/              # auth, team (firm staff), admin (platform owner), accounting*.py
   services/
-    accounting/         # pipeline, extraction, matching, classify, periods, tree, storage, pdf_*,
+    accounting/         # bank_statement (parse + tie-out), bank_match (matcher, rules), bank_report_pdf,
+                        # books/bank.py (store/rematch/reconcile glue), compute/bank_books + bank_reconcile;
+                        # pipeline, extraction, matching, classify, periods, tree, storage, pdf_*,
                         # render_xlsx, filing, rls, schema; compute/ (tax engine); books/
     gemini_service.py   # rate limiters + prompt cache + _call_gemini + PDF page rendering
     usage_service.py    # monthly page counts + budget debits (charge_for_pages)
@@ -80,6 +82,7 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
 - **CORS middleware must be added LAST** in `main.py` so it wraps everything and answers preflight.
 - **Abuse middleware** blocks empty User-Agent always and bot UAs (`curl`, `python-requests`…) in prod; skips `/api/health` + `OPTIONS`.
 - **In-memory rate limiters** are per instance; N instances ≈ N× the limit.
+- **Bank statements:** `kind == "statement"` docs stay category `support`; their lines live in `aa_bank_statements` / `aa_bank_lines` (stored by `books/bank.store_statement` in the pipeline, then `bank.rematch`). A line only posts when `match_status` is `matched` (auto: one strong candidate, partial with payee + number, or a cash-deposit transfer) or `confirmed`, and its statement has an `account_code` (resolved by the last 4 digits of `aa_accounts.bank_account_no`). A document match **replaces** the doc's `paid_on` payment (`compute/bank_books.apply_bank_lines`); never add another payment path for bank-matched docs. Amount alone never auto-links. Anything that changes a line must `void_reconciliations` + `rematch` + `touch_books`. Closing a month with unreconciled statement lines needs `override_reason` (409 `bank_unreconciled:` otherwise). `aa_companies.review_flags.opening_balance_missing` is refreshed by `bank.refresh_opening_flag`.
 - **Audit log:** every router that changes firm data calls `services/accounting/audit.record(db, ent=, company_id=, user=, entity=, entity_id=, action=, before=, after=, reason=, label=)` before its commit (snapshot the row with `audit.snapshot(row, fields)` before mutating; only changed fields are stored, a no-op writes nothing; pass `before=None` for creates, `after=None` for deletes). New entities go in `audit.ENTITIES` and `ENTITY_LABELS`/`ACTION_LABELS` in `components/accounting/AuditTrail.tsx`. `aa_audit_events` is append-only (RLS has SELECT + INSERT policies only). Read via `GET /api/accounting/audit-events`. The dev DB role is a superuser, so RLS is not enforced locally; test policies with a NOBYPASSRLS role.
 - **Review reasons:** set `needs_review` with `review_rules.needs_review_for(reasons)`, never `bool(reasons)`: soft reasons (`payment_unverified`) show but don't queue or block close. Per-reason details go in `aa_documents.review_notes`. Payment flags (`payment_source_unknown`, `payment_unverified`) are cleared by `review_rules.sync_payment_flags(docs, paid_ids)` (called from `relink_receipts`); bank matching passes its matched document ids as `paid_ids`. A VAT mismatch claims 12% and posts the excess to `vat_difference` (1310).
 - **Spreadsheet output:** run every untrusted cell through `spreadsheet_safe.csv_safe` (formula injection).

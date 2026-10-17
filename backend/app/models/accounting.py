@@ -212,6 +212,8 @@ class AADocument(Base):
     raw: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # Documents a person said this one is not a duplicate of (ids as strings); the double-check skips those pairs.
     not_duplicate_of: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    # On a sale the customer withheld tax on: a person's "2307 to receive" mark {"status", "document_id"}.
+    cwt_2307: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
@@ -590,3 +592,32 @@ class AABankReconciliation(Base):
     )
     reconciled_at: Mapped[datetime] = _created()
     voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AAContact(Base):
+    """A company's customer or supplier, keyed by TIN (else by normalized name), built from its documents."""
+
+    __tablename__ = "aa_contacts"
+    __table_args__ = (UniqueConstraint("company_id", "key", name="uq_aa_contact_key"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    key: Mapped[str] = mapped_column(String(300), nullable=False)          # TIN, or "NAME:<normalized name>"
+    role: Mapped[str] = mapped_column(String(10), nullable=False, default="supplier")   # customer | supplier | both
+    tin: Mapped[str] = mapped_column(String(9), nullable=False, default="")
+    registered_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    aliases: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    address: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    vat_status: Mapped[str] = mapped_column(String(10), nullable=False, default="")   # vat | non_vat | ""
+    payment_terms_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    manual: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")  # fields a person set
+    merged_into_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_contacts.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()

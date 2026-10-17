@@ -172,11 +172,16 @@ async def put_work_item(body: WorkItemIn, user: User = Depends(get_current_user)
                  entity_id=f"{body.year}:{body.quarter}:{body.form}", action=action,
                  label=f"{form_label(body.form)} {period_text(ob, company.fiscal_year_end_month)}",
                  before=before, after=after)
-    await db.commit()
+    await db.flush()
     today = manila_today()
     _, _, cards = await board_data(db, ent, date(body.year - 1, 1, 1), date(body.year + 2, 12, 31), today)
     key = f"{company.id}:{body.year}:{body.quarter}:{body.form}"
-    return WorkCardOut(**next(c for c in cards if c["key"] == key))
+    found = next((c for c in cards if c["key"] == key), None)
+    if found is None:  # e.g. a 1601-C for a quarter without payroll: not owed, so nothing is stored
+        await db.rollback()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{form_label(body.form)} isn't filed for this period")
+    await db.commit()
+    return WorkCardOut(**found)
 
 
 # --- client health (QBO Client overview → Common issues) -----------------------------------------------------------

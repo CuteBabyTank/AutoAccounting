@@ -61,6 +61,12 @@ def _blank_zero(value: Decimal) -> Decimal | str:
     return value if value else ""
 
 
+def _pct(value: Decimal) -> str:
+    """A % change as text; a decrease in parentheses like the money columns (a leading "-" would make csv_safe
+    quote the cell in Excel)."""
+    return f"{value:,.2f}%" if value >= 0 else f"({-value:,.2f}%)"
+
+
 def table_for(kind: str, data: dict) -> tuple[list[str], list[dict]]:
     if kind in GRID_REPORTS:
         heads = ["Account"] + [c["label"] for c in data["columns"]]
@@ -69,7 +75,7 @@ def table_for(kind: str, data: dict) -> tuple[list[str], list[dict]]:
         for r in data["rows"]:
             cells: list = [("  " * r["level"]) + r["label"]]
             for v, k in zip(r["values"], kinds):
-                cells.append("" if v is None else (f"{v:.2f}%" if k == "pct" else v))
+                cells.append("" if v is None else (_pct(v) if k == "pct" else v))
             rows.append(_row(cells, r["kind"] != "account"))
         return heads, rows
     if kind == "gl":

@@ -64,3 +64,17 @@ def test_engine_error_rows():
     assert rows[0]["entry_id"] == "je:abc" and rows[0]["problem"] == "engine_error"
     assert rows[0]["ref"] == {"kind": "journal_entry", "id": "abc"}
     assert engine_error_rows("The chart of accounts has no account for 'bank'")[0]["entry_id"] == ""
+
+
+def test_negative_pct_change_is_not_quoted_in_xlsx():
+    # A decrease must not reach Excel as "'-50.00%" (csv_safe quotes a leading "-").
+    cols = columns_for(date(2026, 10, 1), date(2026, 12, 31), "total", 12)
+    prior = columns_for(date(2026, 7, 1), date(2026, 9, 30), "total", 12)
+    report = with_change(profit_and_loss([Entry("doc:b:sale", date(2026, 8, 1), "SJ", "1", "", "", "", "document",
+                                                (Line("1100", D("20000")), Line("4010", credit=D("20000"))))]
+                                         + ENTRIES, CHART, cols + prior), 0, 1)
+    heads, rows = table_for("pnl", report)
+    data = report_xlsx(HEADER, "Profit and loss", "Q4", heads, rows)
+    ws = load_workbook(io.BytesIO(data)).active
+    net = next(r for r in ws.iter_rows(min_row=6, values_only=True) if r[0] == "Net sales")
+    assert net[-1] == "(50.00%)"

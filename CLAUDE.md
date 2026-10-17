@@ -22,6 +22,8 @@ backend/app/
   services/
     accounting/         # bank_statement (parse + tie-out), bank_match (matcher, rules), bank_report_pdf,
                         # books/bank.py (store/rematch/reconcile glue), compute/bank_books + bank_reconcile;
+                        # contacts (customer/supplier master), books/subledger.py + compute/subledger
+                        # (A/R, A/P open items, aging, 2307s), subledger_report (aging XLSX/PDF, statement);
                         # pipeline, extraction, matching, classify, periods, tree, storage, pdf_*,
                         # render_xlsx, filing, rls, schema; compute/ (tax engine); books/
     gemini_service.py   # rate limiters + prompt cache + _call_gemini + PDF page rendering

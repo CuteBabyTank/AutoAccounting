@@ -235,3 +235,20 @@ def test_cash_flow_reconciles():
     assert by["cash_open"] == D("105000.00") and by["cash_end"] == D("114200.00")
     assert by["net"] == D("9200.00")
     assert by["op_total"] + by["inv_total"] + by["fin_total"] == by["net"]
+
+
+def test_check_window_caps_the_engine_work():
+    import pytest
+
+    from app.services.accounting.compute.reports import check_window, latest_allowed
+
+    today = date(2026, 10, 17)
+    assert latest_allowed(today, 12) == date(2027, 12, 31)
+    assert latest_allowed(today, 6) == date(2028, 6, 30)
+    check_window(date(2026, 10, 1), date(2027, 12, 31), today, 12)
+    check_window(None, date(2026, 12, 31), today, 12)                    # drill to date from the beginning
+    for start, end in ((None, date(9999, 12, 31)), (date(2026, 1, 1), date(2028, 1, 1)), (date(1900, 1, 1), date(2026, 1, 1)),
+                       (None, date(1999, 12, 31)), (date(2026, 12, 1), date(2026, 11, 1)),
+                       (date(2000, 1, 1), date(2026, 12, 31))):
+        with pytest.raises(ValueError):
+            check_window(start, end, today, 12)

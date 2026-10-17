@@ -97,6 +97,27 @@ def prior_window(start: date, end: date, mode: str) -> tuple[date, date]:
     return start - timedelta(days=days), start - timedelta(days=1)
 
 
+EARLIEST = date(2000, 1, 1)
+MAX_SPAN_DAYS = 366 * 10
+
+
+def latest_allowed(today: date, fye: int) -> date:
+    """The last date a report may reach: the end of the fiscal year after the current one."""
+    return quarter_end(period_for(today, fye).fiscal_year + 1, 4, fye)
+
+
+def check_window(start: date | None, end: date, today: date, fye: int) -> None:
+    """Refuse windows that would make the books engine run without bound (raises ValueError)."""
+    if start is not None and start > end:
+        raise ValueError("The start date is after the end date")
+    if (start or end) < EARLIEST:
+        raise ValueError(f"Reports start on {EARLIEST:%B %-d, %Y} at the earliest")
+    if end > latest_allowed(today, fye):
+        raise ValueError(f"Reports run to {latest_allowed(today, fye):%B %-d, %Y} at the latest")
+    if start is not None and (end - start).days > MAX_SPAN_DAYS:
+        raise ValueError("Choose a range of ten years or less")
+
+
 # --- entries ---------------------------------------------------------------------------------------------------------
 
 def is_closing(e: Entry) -> bool:

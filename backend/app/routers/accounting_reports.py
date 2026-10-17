@@ -62,11 +62,15 @@ def _window(p: Params, company: AACompany) -> tuple[date, date]:
     where = period_for(today, fye)
     start = p.start or quarter_start(where.fiscal_year, where.quarter, fye)
     end = p.end or quarter_end(where.fiscal_year, where.quarter, fye)
-    if start > end:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The start date is after the end date")
-    if (end - start).days > 366 * 10:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Choose a range of ten years or less")
+    _check(start, end, company)
     return start, end
+
+
+def _check(start: date | None, end: date, company: AACompany) -> None:
+    try:
+        r.check_window(start, end, manila_today(), company.fiscal_year_end_month)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from None
 
 
 async def _books(db: AsyncSession, company: AACompany, through: date, *, strict: bool = True) -> Books:
@@ -100,7 +104,7 @@ async def build(db: AsyncSession, company: AACompany, kind: str, p: Params) -> t
     start, end = _window(p, company)
     span = f"{start:%B %-d, %Y} – {end:%B %-d, %Y}"
     if kind == "invalid":
-        books = await _books(db, company, max(manila_today(), end), strict=False)
+        books = await _books(db, company, max(manila_today(), end), strict=False)  # end is already capped
         return {"rows": await invalid_rows(db, books), "engine_error": books.error}, "Self-check of the books"
     books = await _books(db, company, end)
     entries, chart = books.entries or [], books.chart
@@ -174,6 +178,7 @@ async def report_postings(company_id: str, codes: str = Query(..., max_length=20
                           db: AsyncSession = Depends(get_db)):
     """The posting lines behind a report cell: ``codes`` (comma-separated) in [start, end]."""
     company = await _company(db, user, company_id)
+    _check(start, end, company)
     wanted = [c for c in codes.split(",") if c][:200]
     books = await _books(db, company, end)
     return JSONResponse(jsonable(r.postings(books.entries or [], books.chart, wanted, start, end)))

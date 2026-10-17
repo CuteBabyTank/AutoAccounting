@@ -390,6 +390,8 @@ class AAJournalEntry(Base):
     particulars: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     # [{"account_code", "debit", "credit", "party_name", "party_tin"}], amounts as strings
     lines: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # an adjusting entry (accruals, corrections at period end): shown in the Adjusted TB and the AJE report
+    is_adjusting: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

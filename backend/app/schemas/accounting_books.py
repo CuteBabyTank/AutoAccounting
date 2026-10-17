@@ -59,6 +59,7 @@ class JournalEntryIn(BaseModel):
     reference: str = Field(default="", max_length=60)
     particulars: str = Field(default="", max_length=255)
     lines: list[JournalLineIn] = Field(min_length=2, max_length=200)
+    is_adjusting: bool = False
 
     @field_validator("reference", "particulars")
     @classmethod
@@ -73,6 +74,8 @@ class JournalEntryIn(BaseModel):
             raise ValueError(f"Debits ({debit:,.2f}) and credits ({credit:,.2f}) must balance")
         if self.kind == "opening" and self.book != "GJ":
             raise ValueError("The opening balances go in the General Journal")
+        if self.kind == "opening" and self.is_adjusting:
+            raise ValueError("Opening balances can't be an adjusting entry")
         return self
 
 
@@ -84,6 +87,7 @@ class JournalEntryOut(BaseModel):
     reference: str
     particulars: str
     lines: list[JournalLineIn]
+    is_adjusting: bool = False
     created_at: datetime
 
 

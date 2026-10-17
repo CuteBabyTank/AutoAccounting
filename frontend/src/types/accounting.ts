@@ -477,6 +477,8 @@ export interface JournalEntryInput {
   reference: string;
   particulars: string;
   lines: JournalLine[];
+  /** An adjusting entry: listed in the Adjusted TB and the Adjusting Journal Entries report. */
+  is_adjusting?: boolean;
 }
 
 export interface BookMonth {

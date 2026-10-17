@@ -30,7 +30,7 @@ from app.services.accounting.compute.depreciation import fiscal_year_window
 router = APIRouter()
 
 _ACCOUNT_FIELDS = ("code", "name", "type", "parent_code", "active", "bank_account_no")
-_ENTRY_FIELDS = ("kind", "book", "entry_date", "reference", "particulars", "lines")
+_ENTRY_FIELDS = ("kind", "book", "entry_date", "reference", "particulars", "lines", "is_adjusting")
 
 
 def _require_manager(user: User) -> None:
@@ -129,7 +129,7 @@ def _entry_label(row: AAJournalEntry) -> str:
 def _entry_out(row: AAJournalEntry) -> JournalEntryOut:
     return JournalEntryOut(id=row.id, kind=row.kind, book=row.book, entry_date=row.entry_date,
                            reference=row.reference, particulars=row.particulars, lines=row.lines,
-                           created_at=row.created_at)
+                           is_adjusting=bool(row.is_adjusting), created_at=row.created_at)
 
 
 async def _check_entry(db: AsyncSession, company: AACompany, body: JournalEntryIn,
@@ -180,7 +180,7 @@ async def create_journal_entry(company_id: uuid.UUID, body: JournalEntryIn, user
                          entry_date=company.books_start if body.kind == "opening" else body.entry_date,
                          reference=body.reference, particulars=body.particulars or (
                              "Opening balances" if body.kind == "opening" else ""),
-                         lines=_lines_json(body), created_by=user.id)
+                         lines=_lines_json(body), is_adjusting=body.is_adjusting, created_by=user.id)
     db.add(row)
     audit.record(db, label=_entry_label(row),
                  ent=ent, company_id=company.id, user=user, entity="journal_entry", entity_id=row.id,
@@ -210,6 +210,7 @@ async def update_journal_entry(entry_id: uuid.UUID, body: JournalEntryIn, user: 
     row.kind, row.book, row.reference, row.particulars = body.kind, body.book, body.reference, body.particulars
     row.entry_date = company.books_start if body.kind == "opening" else body.entry_date
     row.lines = _lines_json(body)
+    row.is_adjusting = body.is_adjusting
     audit.record(db, label=_entry_label(row),
                  ent=ent, company_id=company.id, user=user, entity="journal_entry", entity_id=row.id,
                  action="update", before=before, after=audit.snapshot(row, _ENTRY_FIELDS))

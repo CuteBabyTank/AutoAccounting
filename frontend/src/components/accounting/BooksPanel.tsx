@@ -163,6 +163,9 @@ export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndM
             <li key={e.id} className="flex flex-wrap items-baseline gap-3 py-2 text-sm">
               <span className="w-24 text-[var(--text-secondary)]">{e.entry_date}</span>
               <span className="w-10 text-xs text-[var(--text-secondary)]">{e.book}</span>
+              {e.is_adjusting && (
+                <span className="rounded-full bg-[var(--badge-blue-bg)] px-1.5 text-[11px] font-medium text-[var(--badge-blue-text)]">Adjusting</span>
+              )}
               <span className="flex-1 text-[var(--text-primary)]">
                 {e.particulars || e.reference || "(no particulars)"} ·{" "}
                 {e.lines.map((l) => `${title(l.account_code)} ${Number(l.debit) ? "Dr" : "Cr"} ${formatPeso(Number(l.debit) || Number(l.credit))}`).join(" / ")}

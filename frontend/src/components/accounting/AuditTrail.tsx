@@ -60,9 +60,12 @@ const ACTION_LABELS: Record<string, string> = {
   board_unfiled: "Work board filing cleared",
   task_done: "Task done",
   task_reopened: "Task reopened",
+  pack_notes: "Management pack notes saved",
+  pack_generated: "Management pack generated",
 };
 
 const FIELD_LABELS: Record<string, string> = {
+  is_adjusting: "Adjusting entry",
   assignee_id: "Assigned to",
   status_override: "Board status",
   filed_on: "Filed on",

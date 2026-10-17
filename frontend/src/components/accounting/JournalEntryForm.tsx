@@ -53,6 +53,17 @@ export default function JournalEntryForm({ accounts, initial, busy, onCancel, on
         )}
         <input className={INPUT} placeholder="Reference" maxLength={60} value={entry.reference} onChange={(e) => setEntry({ ...entry, reference: e.target.value })} />
         <input className={INPUT} placeholder="Particulars" maxLength={255} value={entry.particulars} onChange={(e) => setEntry({ ...entry, particulars: e.target.value })} />
+        {!opening && (
+          <label className="col-span-2 flex items-center gap-2 text-sm text-[var(--text-primary)] md:col-span-4">
+            <input
+              type="checkbox"
+              checked={!!entry.is_adjusting}
+              onChange={(e) => setEntry({ ...entry, is_adjusting: e.target.checked })}
+            />
+            Adjusting entry
+            <span className="text-xs text-[var(--text-secondary)]">(period-end accrual or correction; shows in the Adjusted TB)</span>
+          </label>
+        )}
       </div>
       <table className="w-full text-sm">
         <thead>
@@ -101,6 +112,7 @@ export default function JournalEntryForm({ accounts, initial, busy, onCancel, on
             onClick={() =>
               onSave({
                 ...entry,
+                is_adjusting: !opening && !!entry.is_adjusting,
                 lines: used
                   .map((l) => ({ ...l, debit: l.debit || "0", credit: l.credit || "0" })),
               })

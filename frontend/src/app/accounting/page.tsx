@@ -15,6 +15,7 @@ import EmployeesPanel from "@/components/accounting/EmployeesPanel";
 import AtcDatabankPanel from "@/components/accounting/AtcDatabankPanel";
 import AuditLogPanel from "@/components/accounting/AuditLogPanel";
 import BankPanel from "@/components/accounting/BankPanel";
+import ContactsPanel from "@/components/accounting/ContactsPanel";
 import PeriodPanel from "@/components/accounting/PeriodPanel";
 import AppendPrompt from "@/components/accounting/AppendPrompt";
 import UploadReviewDialog from "@/components/accounting/UploadReviewDialog";
@@ -368,6 +369,21 @@ export default function AccountingPage() {
                   loadTree().catch(() => undefined);
                   setPeriodRefresh((n) => n + 1);
                 }}
+              />
+            )}
+            {(selected?.view === "customers" || selected?.view === "suppliers") && (
+              <ContactsPanel
+                key={`${selected.companyId}-${selected.view}`}
+                companyId={selected.companyId}
+                companyName={tree.find((c) => c.id === selected.companyId)?.registered_name ?? ""}
+                role={selected.view === "customers" ? "customer" : "supplier"}
+                canManage={canManage}
+                onOpenDocument={(id) =>
+                  accountingApi
+                    .getDocument(id)
+                    .then(setOpenDoc)
+                    .catch((e) => setError(apiErrorMessage(e, "Couldn't open the document")))
+                }
               />
             )}
             {selected?.view === "audit" && (

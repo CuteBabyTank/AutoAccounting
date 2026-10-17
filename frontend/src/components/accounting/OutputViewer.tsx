@@ -50,6 +50,19 @@ export default function OutputViewer({ outputId }: { outputId: string }) {
     }
   }
 
+  async function downloadAging(kind: "ar" | "ap") {
+    if (!output) return;
+    setBusy(`aging-${kind}`);
+    setError("");
+    try {
+      saveBlob(await accountingApi.outputAging(output.id, kind), `${output.label} ${kind === "ar" ? "AR" : "AP"} aging v${output.version}.pdf`);
+    } catch (e) {
+      setError(apiErrorMessage(e, "Download failed"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function download2307s() {
     if (!output) return;
     setBusy("2307s");
@@ -89,6 +102,16 @@ export default function OutputViewer({ outputId }: { outputId: string }) {
           <button className={BTN} disabled={busy !== null} onClick={() => download("xlsx", true)}>
             Clean copy
           </button>
+          {(output.ledgers.ARAging ?? 0) > 0 && (
+            <button className={BTN} disabled={busy !== null} onClick={() => downloadAging("ar")}>
+              <FilePdf size={16} /> A/R aging
+            </button>
+          )}
+          {(output.ledgers.APAging ?? 0) > 0 && (
+            <button className={BTN} disabled={busy !== null} onClick={() => downloadAging("ap")}>
+              <FilePdf size={16} /> A/P aging
+            </button>
+          )}
           {(output.ledgers.QAP ?? 0) > 0 && (
             <button className={BTN} disabled={busy !== null} onClick={download2307s}>
               <FileZip size={16} /> Outgoing 2307s

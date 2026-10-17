@@ -19,6 +19,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   bank_line: "Bank line",
   bank_rule: "Bank rule",
   bank_reconciliation: "Bank reconciliation",
+  contact: "Customer / supplier",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -38,6 +39,9 @@ const ACTION_LABELS: Record<string, string> = {
   match_rejected: "Bank match rejected",
   reconcile: "Reconciled",
   reopen: "Month reopened",
+  merge: "Merged into another contact",
+  merge_in: "Another contact merged in",
+  cwt_2307: "2307 to receive marked",
   bind: "Year bound",
   inputs: "Inputs saved",
   filed: "Marked filed",

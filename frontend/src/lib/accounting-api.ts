@@ -9,6 +9,11 @@ import type {
   AssetPatch,
   OpeningAssetInput,
   AtcDatabank,
+  Aging,
+  ContactDetail,
+  ContactList,
+  ContactPatch,
+  Cwt2307,
   AuditFilters,
   AuditPage,
   BankConfirm,
@@ -261,4 +266,27 @@ export const accountingApi = {
     api.get<PaymentLinks>(`/accounting/documents/${docId}/payments`).then((r) => r.data),
   outgoing2307s: (id: string) =>
     api.get<Blob>(`/accounting/outputs/${id}/2307s`, { responseType: "blob" }).then((r) => r.data),
+  // Customers / suppliers
+  contacts: (companyId: string, role: "customer" | "supplier", asOf: string) =>
+    api.get<ContactList>(`/accounting/companies/${companyId}/contacts`, { params: { role, as_of: asOf } }).then((r) => r.data),
+  contact: (contactId: string, asOf: string) =>
+    api.get<ContactDetail>(`/accounting/contacts/${contactId}`, { params: { as_of: asOf } }).then((r) => r.data),
+  updateContact: (contactId: string, patch: ContactPatch, asOf: string) =>
+    api.patch<ContactDetail>(`/accounting/contacts/${contactId}`, patch, { params: { as_of: asOf } }).then((r) => r.data),
+  mergeContact: (contactId: string, into: string, reason: string, asOf: string) =>
+    api.post<ContactDetail>(`/accounting/contacts/${contactId}/merge`, { into, reason }, { params: { as_of: asOf } }).then((r) => r.data),
+  markCwt2307: (documentId: string, status: "pending" | "received" | "auto", certificateId: string | null = null, reason = "") =>
+    api
+      .put<Cwt2307>(`/accounting/documents/${documentId}/cwt-2307`, { status, certificate_id: certificateId, reason })
+      .then((r) => r.data),
+  aging: (companyId: string, kind: "ar" | "ap", asOf: string) =>
+    api.get<Aging>(`/accounting/companies/${companyId}/aging`, { params: { kind, as_of: asOf } }).then((r) => r.data),
+  agingFile: (companyId: string, kind: "ar" | "ap", asOf: string, format: "xlsx" | "pdf") =>
+    api
+      .get<Blob>(`/accounting/companies/${companyId}/aging`, { params: { kind, as_of: asOf, format }, responseType: "blob" })
+      .then((r) => r.data),
+  customerStatement: (contactId: string, asOf: string) =>
+    api.get<Blob>(`/accounting/contacts/${contactId}/statement`, { params: { as_of: asOf }, responseType: "blob" }).then((r) => r.data),
+  outputAging: (outputId: string, kind: "ar" | "ap") =>
+    api.get<Blob>(`/accounting/outputs/${outputId}/aging`, { params: { kind }, responseType: "blob" }).then((r) => r.data),
 };

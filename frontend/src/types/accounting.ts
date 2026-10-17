@@ -218,7 +218,7 @@ export interface FolderRef {
   companyId: string;
   year: number | null;
   quarter: number | null;
-  view?: "books" | "atc" | "employees" | "audit" | "bank";
+  view?: "books" | "atc" | "employees" | "audit" | "bank" | "customers" | "suppliers";
   /** view "bank": the bank account code ("" = unassigned statements) and month (YYYY-MM). */
   bankAccount?: string;
   month?: string;
@@ -718,4 +718,151 @@ export interface BankRule {
   account_code: string;
   payee_name: string;
   hits: number;
+}
+
+// Customers / suppliers: contacts master, open items, aging, 2307s
+export type AgingBucket = "current" | "1-30" | "31-60" | "61-90" | "90+";
+
+export interface ContactRow {
+  id: string;
+  key: string;
+  role: "customer" | "supplier" | "both";
+  tin: string;
+  registered_name: string;
+  aliases: string[];
+  open_balance: string;
+  overdue: string;
+  open_count: number;
+  cwt_pending: string;
+  unverified: number;
+  last_date: string | null;
+}
+
+export interface ContactList {
+  role: "customer" | "supplier";
+  as_of: string;
+  contacts: ContactRow[];
+  total_open: string;
+  total_overdue: string;
+  total_cwt_pending: string;
+}
+
+export interface OpenItemRow {
+  document_id: string;
+  kind: "ar" | "ap";
+  doc_number: string;
+  doc_date: string;
+  due: string;
+  total: string;
+  withheld: string;
+  paid: string;
+  open: string;
+  days_past_due: number;
+  bucket: AgingBucket;
+  payment_unverified: boolean;
+  contact_name: string;
+  contact_tin: string;
+}
+
+export interface ContactDocument {
+  id: string;
+  doc_number: string;
+  doc_date: string | null;
+  title: string;
+  category: string;
+  kind: "ar" | "ap" | "2307" | "receipt" | "other";
+  total: string;
+  withheld: string;
+  period_year: number | null;
+  period_quarter: number | null;
+  open: string | null;
+}
+
+export interface ContactPayment {
+  document_id: string;
+  doc_number: string;
+  on: string;
+  amount: string;
+  via: string;
+  source: "receipt" | "paid_on" | "bank";
+  ref: string;
+}
+
+export interface Cwt2307 {
+  document_id: string;
+  doc_number: string;
+  doc_date: string;
+  amount: string;
+  year: number | null;
+  quarter: number | null;
+  status: "pending" | "received";
+  certificate_id: string | null;
+  certificate_label: string;
+  source: "auto" | "user" | "";
+}
+
+export interface Outgoing2307 {
+  document_id: string;
+  doc_number: string;
+  doc_date: string;
+  atc: string;
+  amount: string;
+  year: number;
+  quarter: number;
+  output_id: string | null;
+}
+
+export interface ContactDetail {
+  id: string;
+  key: string;
+  role: "customer" | "supplier" | "both";
+  tin: string;
+  registered_name: string;
+  aliases: string[];
+  address: string;
+  vat_status: "vat" | "non_vat" | "";
+  payment_terms_days: number | null;
+  default_account: string;
+  default_atc: string;
+  manual: string[];
+  merged_into_id: string | null;
+  merged_from: string[];
+  as_of: string;
+  receivable: string;
+  payable: string;
+  documents: ContactDocument[];
+  payments: ContactPayment[];
+  open_items: OpenItemRow[];
+  cwt_2307s: Cwt2307[];
+  certificates: { id: string; label: string }[];
+  outgoing_2307s: Outgoing2307[];
+}
+
+export interface ContactPatch {
+  registered_name?: string;
+  role?: "customer" | "supplier" | "both";
+  address?: string;
+  vat_status?: "vat" | "non_vat" | "";
+  payment_terms_days?: number | null;
+  default_account?: string;
+  default_atc?: string;
+  reason?: string;
+}
+
+export interface AgingRow {
+  contact_id: string | null;
+  name: string;
+  tin: string;
+  buckets: Record<AgingBucket, string>;
+  total: string;
+  count: number;
+  unverified: number;
+}
+
+export interface Aging {
+  kind: "ar" | "ap";
+  as_of: string;
+  rows: AgingRow[];
+  totals: Record<AgingBucket | "total", string>;
+  items: OpenItemRow[];
 }

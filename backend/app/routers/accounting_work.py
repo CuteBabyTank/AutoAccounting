@@ -18,7 +18,7 @@ from app.routers.accounting_scope import (
 from app.schemas.accounting import manila_today
 from app.schemas.accounting_work import (
     BoardOut, CompanySummaryOut, FirmSettingsIn, FirmSettingsOut, HealthBalanceOut, HealthBankAccountOut, HealthOut,
-    PersonOut, WorkCardOut, WorkItemIn,
+    NotificationKeysIn, NotificationOut, NotificationsOut, PersonOut, WorkCardOut, WorkItemIn,
 )
 from app.services.accounting import audit
 from app.services.accounting.compute.specs import PDF_FORMS
@@ -268,3 +268,76 @@ async def company_health(company_id: uuid.UUID, user: User = Depends(get_current
         negative_balances=[HealthBalanceOut(**r) for r in negative],
         review_balances=[HealthBalanceOut(**r) for r in parked], issues=issues, notes=notes,
     )
+
+
+# --- notifications (derived on read; read / dismissed persisted per person) -----------------------------------------
+
+async def _notifications(db: AsyncSession, user: User, ent: uuid.UUID):
+    from app.models.accounting import AANotificationState
+    from app.services.accounting.compute.notifications import build
+    from app.services.accounting.work import cwt_pending
+
+    today = manila_today()
+    settings_row = await firm_settings(db, ent)
+    days = settings_row.deadline_days
+    companies, _, cards = await board_data(db, ent, today - timedelta(days=60), today + timedelta(days=days), today)
+    summaries = await company_summaries(db, ent, companies, today)
+    cwt = await cwt_pending(db, ent, companies, today)
+    names = {str(c.id): c.registered_name for c in companies}
+    tasks = [{"id": str(t.id), "title": t.title, "assignee_id": str(t.assignee_id) if t.assignee_id else None,
+              "due_date": t.due_date, "status": t.status, "company_id": str(t.company_id) if t.company_id else None,
+              "company_name": names.get(str(t.company_id), "")}
+             for t in (await db.execute(select(AATask).where(
+                 AATask.enterprise_id == ent, AATask.assignee_id == user.id, AATask.status != "done"))).scalars()]
+    items = build(user_id=str(user.id), cards=cards, summaries=summaries, cwt=cwt, tasks=tasks, today=today, days=days)
+    states = {s.key: s for s in (await db.execute(select(AANotificationState).where(
+        AANotificationState.enterprise_id == ent, AANotificationState.user_id == user.id)
+        .execution_options(populate_existing=True))).scalars()}
+    return items, states
+
+
+@router.get("/notifications", response_model=NotificationsOut)
+async def list_notifications(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    ent = scope_for(user)
+    items, states = await _notifications(db, user, ent)
+    out = []
+    for n in items:
+        state = states.get(n.key)
+        if state is not None and state.dismissed_at is not None:
+            continue
+        out.append(NotificationOut(key=n.key, kind=n.kind, title=n.title, detail=n.detail,
+                                   company_id=uuid.UUID(n.company_id) if n.company_id else None, due_date=n.due_date,
+                                   severity=n.severity, read=state is not None and state.read_at is not None))
+    return NotificationsOut(items=out, unread=sum(1 for n in out if not n.read))
+
+
+async def _mark(db: AsyncSession, user: User, body: NotificationKeysIn, dismiss: bool) -> NotificationsOut:
+    from datetime import datetime, timezone
+
+    from app.models.accounting import AANotificationState
+
+    ent = scope_for(user)
+    keys = set(body.keys)
+    if body.all:
+        items, _ = await _notifications(db, user, ent)
+        keys |= {n.key for n in items}
+    now = datetime.now(timezone.utc)
+    for key in sorted(k[:200] for k in keys if k):
+        values = {"read_at": now, **({"dismissed_at": now} if dismiss else {})}
+        await db.execute(pg_insert(AANotificationState).values(
+            id=uuid.uuid4(), enterprise_id=ent, user_id=user.id, key=key, **values,
+        ).on_conflict_do_update(index_elements=["user_id", "key"], set_=values))
+    await db.commit()
+    return await list_notifications(user, db)
+
+
+@router.post("/notifications/read", response_model=NotificationsOut)
+async def read_notifications(body: NotificationKeysIn, user: User = Depends(get_current_user),
+                             db: AsyncSession = Depends(get_db)):
+    return await _mark(db, user, body, dismiss=False)
+
+
+@router.post("/notifications/dismiss", response_model=NotificationsOut)
+async def dismiss_notifications(body: NotificationKeysIn, user: User = Depends(get_current_user),
+                                db: AsyncSession = Depends(get_db)):
+    return await _mark(db, user, body, dismiss=True)

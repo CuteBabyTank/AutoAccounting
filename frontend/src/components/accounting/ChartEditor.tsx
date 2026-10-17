@@ -17,6 +17,9 @@ export default function ChartEditor({ companyId, canManage }: { companyId: strin
     accountingApi.accounts(companyId).then(setAccounts).catch((e) => setError(apiErrorMessage(e, "Couldn't load the chart")));
   }, [companyId]);
 
+  const bankCode = accounts.find((a) => a.system_key === "bank")?.code;
+  // Cash in bank and its sub-accounts carry the number printed on their statements (matched on the last 4 digits).
+  const isBank = (a: Account) => a.system_key === "bank" || (bankCode !== undefined && a.parent_code === bankCode) || Boolean(a.bank_account_no);
   const replace = (a: Account) => setAccounts((all) => all.map((x) => (x.id === a.id ? a : x)));
   const run = async (fn: () => Promise<void>) => {
     setError("");
@@ -54,6 +57,23 @@ export default function ChartEditor({ companyId, canManage }: { companyId: strin
                 )}
               </td>
               <td className="w-24 py-1 text-xs text-[var(--text-secondary)]">{a.type}{a.contra ? " (contra)" : ""}</td>
+              <td className="w-40 py-1">
+                {isBank(a) && (canManage ? (
+                  <input
+                    className={`${INPUT} w-full text-xs`}
+                    aria-label={`Bank account number for ${a.code}`}
+                    placeholder="Bank account no."
+                    maxLength={40}
+                    defaultValue={a.bank_account_no ?? ""}
+                    onBlur={(e) => {
+                      const value = e.target.value.trim();
+                      if (value !== (a.bank_account_no ?? "")) run(async () => replace(await accountingApi.updateAccount(a.id, { bank_account_no: value })));
+                    }}
+                  />
+                ) : (
+                  <span className="text-xs text-[var(--text-secondary)]">{a.bank_account_no}</span>
+                ))}
+              </td>
               <td className="w-40 py-1 text-right text-xs">
                 {a.system_key ? (
                   <span className="inline-flex items-center gap-1 text-[var(--text-secondary)]"><Lock size={12} /> used by posting</span>

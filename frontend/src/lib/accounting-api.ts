@@ -11,6 +11,12 @@ import type {
   AtcDatabank,
   AuditFilters,
   AuditPage,
+  BankConfirm,
+  BankMonth,
+  BankOverview,
+  BankRule,
+  BankStatement,
+  ReconcileResult,
   Company,
   CompanyInput,
   ConfirmAssignment,
@@ -36,6 +42,33 @@ import type {
 } from "@/types/accounting";
 
 export const accountingApi = {
+  // Bank statements: lines, matches, reconciliation
+  bankOverview: (companyId: string) =>
+    api.get<BankOverview>(`/accounting/companies/${companyId}/bank`).then((r) => r.data),
+  bankMonth: (companyId: string, account: string, month: string) =>
+    api.get<BankMonth>(`/accounting/companies/${companyId}/bank/lines`, { params: { account, month } }).then((r) => r.data),
+  confirmBankLine: (lineId: string, body: BankConfirm = {}) =>
+    api.post<BankMonth>(`/accounting/bank-lines/${lineId}/confirm`, body).then((r) => r.data),
+  rejectBankLine: (lineId: string, reason = "") =>
+    api.post<BankMonth>(`/accounting/bank-lines/${lineId}/reject`, { reason }).then((r) => r.data),
+  excludeBankLine: (lineId: string, reason = "") =>
+    api.post<BankMonth>(`/accounting/bank-lines/${lineId}/exclude`, { reason }).then((r) => r.data),
+  rematchBank: (companyId: string) =>
+    api.post<BankOverview>(`/accounting/companies/${companyId}/bank/rematch`).then((r) => r.data),
+  setStatementAccount: (statementId: string, accountCode: string) =>
+    api.patch<BankStatement>(`/accounting/bank-statements/${statementId}`, { account_code: accountCode }).then((r) => r.data),
+  reconcileBank: (companyId: string, accountCode: string, monthStart: string) =>
+    api
+      .post<ReconcileResult>(`/accounting/companies/${companyId}/bank/reconcile`, {
+        account_code: accountCode,
+        month_start: monthStart,
+      })
+      .then((r) => r.data),
+  reconciliationFile: (id: string) =>
+    api.get<Blob>(`/accounting/bank-reconciliations/${id}/file`, { responseType: "blob" }).then((r) => r.data),
+  bankRules: (companyId: string) =>
+    api.get<BankRule[]>(`/accounting/companies/${companyId}/bank/rules`).then((r) => r.data),
+  deleteBankRule: (id: string) => api.delete(`/accounting/bank-rules/${id}`).then(() => undefined),
   /** Audit log: newest first, firm-scoped; filter by company, person, Manila calendar days, entity. */
   auditEvents: (filters: AuditFilters) =>
     api.get<AuditPage>("/accounting/audit-events", { params: filters }).then((r) => r.data),
@@ -156,7 +189,7 @@ export const accountingApi = {
     api.get<Account[]>(`/accounting/companies/${companyId}/accounts`).then((r) => r.data),
   addAccount: (companyId: string, data: { code: string; name: string; parent_code: string }) =>
     api.post<Account>(`/accounting/companies/${companyId}/accounts`, data).then((r) => r.data),
-  updateAccount: (id: string, patch: { name?: string; active?: boolean }) =>
+  updateAccount: (id: string, patch: { name?: string; active?: boolean; bank_account_no?: string }) =>
     api.patch<Account>(`/accounting/accounts/${id}`, patch).then((r) => r.data),
   journalEntries: (companyId: string, year: number) =>
     api
@@ -193,8 +226,13 @@ export const accountingApi = {
     api.get<AlphalistStatus[]>("/accounting/alphalist-status", { params: { year } }).then((r) => r.data),
   booksYear: (companyId: string, year: number) =>
     api.get<BooksYear>(`/accounting/companies/${companyId}/books/${year}`).then((r) => r.data),
-  closeBooksMonth: (companyId: string, monthStart: string) =>
-    api.post<BooksYear>(`/accounting/companies/${companyId}/books/close`, { month_start: monthStart }).then((r) => r.data),
+  closeBooksMonth: (companyId: string, monthStart: string, overrideReason = "") =>
+    api
+      .post<BooksYear>(`/accounting/companies/${companyId}/books/close`, {
+        month_start: monthStart,
+        override_reason: overrideReason,
+      })
+      .then((r) => r.data),
   reopenBooksMonth: (companyId: string, reason = "") =>
     api.post<BooksYear>(`/accounting/companies/${companyId}/books/reopen`, { reason }).then((r) => r.data),
   bindBooksYear: (companyId: string, year: number) =>

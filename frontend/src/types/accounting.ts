@@ -106,10 +106,25 @@ export interface TreeAnnual {
   filed: boolean;
 }
 
+export interface TreeBankMonth {
+  month_start: string;
+  lines: number;
+  open: number;
+  reconciled: boolean;
+}
+
+export interface TreeBankAccount {
+  account_code: string; // "" = a statement whose account isn't chosen yet
+  name: string;
+  last4: string;
+  months: TreeBankMonth[];
+}
+
 export interface TreeYear {
   year: number;
   quarters: TreeQuarter[];
   annual: TreeAnnual;
+  bank?: TreeBankAccount[];
 }
 
 export interface TreeCompany {
@@ -203,7 +218,10 @@ export interface FolderRef {
   companyId: string;
   year: number | null;
   quarter: number | null;
-  view?: "books" | "atc" | "employees" | "audit";
+  view?: "books" | "atc" | "employees" | "audit" | "bank";
+  /** view "bank": the bank account code ("" = unassigned statements) and month (YYYY-MM). */
+  bankAccount?: string;
+  month?: string;
 }
 
 export type DocumentPatch = Record<string, string | number | boolean | null>;
@@ -441,6 +459,7 @@ export interface Account {
   parent_code: string | null;
   system_key: string | null;
   active: boolean;
+  bank_account_no?: string;
 }
 
 export interface JournalLine {
@@ -587,4 +606,116 @@ export interface AuditFilters {
   entity_id?: string;
   limit?: number;
   offset?: number;
+}
+
+// --- Bank statements ----------------------------------------------------------------------------------------------
+
+export type BankMatchStatus = "unmatched" | "ambiguous" | "suggested" | "matched" | "confirmed" | "excluded";
+
+export interface BankCandidate {
+  kind: "document" | "tax" | "journal";
+  ref: string;
+  label: string;
+  amount: string;
+  date: string;
+  strength: "strong" | "weak" | "conflict" | "partial";
+}
+
+export interface BankLine {
+  id: string;
+  statement_id: string;
+  account_code: string;
+  line_no: number;
+  line_date: string;
+  amount: string; // signed: + money in
+  balance: string | null;
+  narration: string;
+  check_no: string;
+  match_status: BankMatchStatus;
+  match_kind: "" | "document" | "posting" | "tax" | "journal";
+  matched_ref: string;
+  match_label: string;
+  match_amount: string | null;
+  posting: { kind?: string; key?: string; account?: string; label?: string };
+  candidates: BankCandidate[];
+  review_reason: "" | "bank_match_ambiguous" | "bank_line_unmatched";
+  matched_at: string | null;
+}
+
+export interface BankStatement {
+  id: string;
+  document_id: string;
+  account_code: string;
+  account_number: string;
+  bank_name: string;
+  period_start: string | null;
+  period_end: string | null;
+  opening_balance: string | null;
+  closing_balance: string | null;
+  ties: boolean;
+  tie_breaks: number[];
+}
+
+export interface BankReconciliation {
+  id: string;
+  account_code: string;
+  month_start: string;
+  month_end: string;
+  statement_balance: string;
+  book_balance: string;
+  uncleared: { id: string; date: string; amount: string; label: string }[];
+  reconciled_at: string;
+}
+
+export interface BankAccountInfo {
+  code: string;
+  name: string;
+  bank_account_no: string;
+  reconciled_through: string | null;
+  opening_missing: { date: string; statement: string; books: string } | null;
+}
+
+export interface BankOverview {
+  accounts: BankAccountInfo[];
+  unassigned: BankStatement[];
+  rules: number;
+}
+
+export interface BankMonth {
+  account: BankAccountInfo | null;
+  month_start: string;
+  statements: BankStatement[];
+  lines: BankLine[];
+  reconciliation: BankReconciliation | null;
+  opening_balance: string | null;
+  closing_balance: string | null;
+}
+
+export interface BankConfirm {
+  kind?: "document" | "posting" | "tax" | "journal";
+  ref?: string;
+  account_code?: string;
+  amount?: string;
+}
+
+export interface ReconcileResult {
+  ok: boolean;
+  problem: string;
+  statement_balance: string | null;
+  book_balance: string | null;
+  outstanding: string | null;
+  difference: string | null;
+  uncleared: { id: string; date: string; amount: string; label: string }[];
+  open_lines: number;
+  reconciliation: BankReconciliation | null;
+}
+
+export interface BankRule {
+  id: string;
+  pattern: string;
+  direction: "in" | "out" | "any";
+  kind: "payee" | "posting";
+  account_code: string;
+  payee_name: string;
+  hits: number;
 }

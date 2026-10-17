@@ -208,7 +208,7 @@ async def confirm_line(line_id: uuid.UUID, body: ConfirmLineIn | None = None, us
     line.rejected = [r for r in (line.rejected or []) if r != line.matched_ref]
     await bank.learn_from(db, company, line, None)
     audit.record(db, label=_line_label(line), ent=ent, company_id=company.id, user=user, entity="bank_line",
-                 entity_id=line.id, action="confirm", before=before, after=audit.snapshot(line, _LINE_FIELDS))
+                 entity_id=line.id, action="match_confirmed", before=before, after=audit.snapshot(line, _LINE_FIELDS))
     await _after_change(db, company, line)
     await db.commit()
     return await _month_out(db, user, company, line)
@@ -229,7 +229,7 @@ async def reject_line(line_id: uuid.UUID, body: LineReasonIn | None = None, user
     line.match_status, line.match_kind, line.matched_ref, line.match_amount = "unmatched", "", "", None
     line.posting, line.matched_by, line.matched_at = {}, user.id, datetime.now(timezone.utc)
     audit.record(db, label=_line_label(line), ent=ent, company_id=company.id, user=user, entity="bank_line",
-                 entity_id=line.id, action="reject", before=before, after=audit.snapshot(line, _LINE_FIELDS),
+                 entity_id=line.id, action="match_rejected", before=before, after=audit.snapshot(line, _LINE_FIELDS),
                  reason=body.reason if body else "")
     await _after_change(db, company, line)
     await db.commit()

@@ -15,6 +15,10 @@ export const ENTITY_LABELS: Record<string, string> = {
   employee: "Employee",
   atc: "ATC databank",
   upload: "Upload",
+  bank_statement: "Bank statement",
+  bank_line: "Bank line",
+  bank_rule: "Bank rule",
+  bank_reconciliation: "Bank reconciliation",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -30,6 +34,9 @@ const ACTION_LABELS: Record<string, string> = {
   supplier_rule: "Moved by a correction to the same supplier",
   confirm: "Files confirmed for this company",
   close: "Month closed",
+  match_confirmed: "Bank match confirmed",
+  match_rejected: "Bank match rejected",
+  reconcile: "Reconciled",
   reopen: "Month reopened",
   bind: "Year bound",
   inputs: "Inputs saved",

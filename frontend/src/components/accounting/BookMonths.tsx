@@ -24,6 +24,9 @@ export default function BookMonths({ companyId, year, canManage, onChanged }: Pr
   const [error, setError] = useState("");
   const [confirmReopen, setConfirmReopen] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
+  // A month whose bank statement isn't reconciled can still close, with a reason for the audit log.
+  const [bankBlock, setBankBlock] = useState<{ month: string; message: string } | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
 
   const load = useCallback(() => accountingApi.booksYear(companyId, year).then(setData), [companyId, year]);
 
@@ -35,16 +38,23 @@ export default function BookMonths({ companyId, year, canManage, onChanged }: Pr
     return () => { cancelled = true; };
   }, [companyId, year]);
 
-  async function run(label: string, action: () => Promise<BooksYear>) {
+  async function run(label: string, action: () => Promise<BooksYear>, month?: string) {
     setBusy(label);
     setError("");
     try {
       setData(await action());
       setConfirmReopen(false);
       setReopenReason("");
+      setBankBlock(null);
+      setOverrideReason("");
       onChanged();
     } catch (e) {
-      setError(apiErrorMessage(e, "That didn't work"));
+      const message = apiErrorMessage(e, "That didn't work");
+      if (month && message.startsWith("bank_unreconciled:")) {
+        setBankBlock({ month, message: message.replace(/^bank_unreconciled:\s*/, "") });
+      } else {
+        setError(message);
+      }
       await load().catch(() => undefined);
     } finally {
       setBusy("");
@@ -101,9 +111,27 @@ export default function BookMonths({ companyId, year, canManage, onChanged }: Pr
                     ))}
                     {canManage && !data.bound && m === nextOpen && (
                       <button className={BTN} disabled={Boolean(busy)}
-                        onClick={() => run("close", () => accountingApi.closeBooksMonth(companyId, m.start))}>
+                        onClick={() => run("close", () => accountingApi.closeBooksMonth(companyId, m.start), m.start)}>
                         {busy === "close" ? "Closing…" : "Close month"}
                       </button>
+                    )}
+                    {canManage && bankBlock?.month === m.start && (
+                      <span className="flex w-full flex-wrap items-center gap-1">
+                        <span className="text-xs text-[var(--alert-warning-text)]">{bankBlock.message}</span>
+                        <input
+                          aria-label="Why close without reconciling"
+                          className="w-56 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                          maxLength={500}
+                          placeholder="Reason (audit log, required)"
+                          value={overrideReason}
+                          onChange={(e) => setOverrideReason(e.target.value)}
+                        />
+                        <button className={BTN} disabled={Boolean(busy) || overrideReason.trim().length < 5}
+                          onClick={() => run("close", () => accountingApi.closeBooksMonth(companyId, m.start, overrideReason.trim()), m.start)}>
+                          Close anyway
+                        </button>
+                        <button className={BTN} onClick={() => setBankBlock(null)}>Cancel</button>
+                      </span>
                     )}
                     {canManage && !data.bound && m === lastClosed && !confirmReopen && (
                       <button className={BTN} disabled={Boolean(busy)} onClick={() => setConfirmReopen(true)}>Reopen</button>

@@ -14,6 +14,7 @@ import AlphalistChecklist from "@/components/accounting/AlphalistChecklist";
 import EmployeesPanel from "@/components/accounting/EmployeesPanel";
 import AtcDatabankPanel from "@/components/accounting/AtcDatabankPanel";
 import AuditLogPanel from "@/components/accounting/AuditLogPanel";
+import BankPanel from "@/components/accounting/BankPanel";
 import PeriodPanel from "@/components/accounting/PeriodPanel";
 import AppendPrompt from "@/components/accounting/AppendPrompt";
 import UploadReviewDialog from "@/components/accounting/UploadReviewDialog";
@@ -350,6 +351,19 @@ export default function AccountingPage() {
                 key={selected.companyId}
                 companyId={selected.companyId}
                 companyName={tree.find((c) => c.id === selected.companyId)?.registered_name ?? ""}
+                onChanged={() => {
+                  loadTree().catch(() => undefined);
+                  setPeriodRefresh((n) => n + 1);
+                }}
+              />
+            )}
+            {selected?.view === "bank" && selected.month && (
+              <BankPanel
+                key={`${selected.companyId}-${selected.bankAccount}-${selected.month}`}
+                companyId={selected.companyId}
+                account={selected.bankAccount ?? ""}
+                month={selected.month}
+                canManage={canManage}
                 onChanged={() => {
                   loadTree().catch(() => undefined);
                   setPeriodRefresh((n) => n + 1);

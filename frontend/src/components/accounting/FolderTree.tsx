@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Buildings, CaretDown, CaretRight, Plus } from "@phosphor-icons/react";
+import { Bank, Buildings, CaretDown, CaretRight, Plus } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
-import type { FolderRef, TreeAnnual, TreeCompany } from "@/types/accounting";
+import type { FolderRef, TreeAnnual, TreeBankAccount, TreeCompany } from "@/types/accounting";
 
 interface Props {
   tree: TreeCompany[];
@@ -33,7 +33,65 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
 
   const isSelected = (ref: FolderRef) =>
     selected?.companyId === ref.companyId && selected.year === ref.year && selected.quarter === ref.quarter &&
-    (selected.view ?? null) === (ref.view ?? null);
+    (selected.view ?? null) === (ref.view ?? null) && (selected.bankAccount ?? null) === (ref.bankAccount ?? null) &&
+    (selected.month ?? null) === (ref.month ?? null);
+
+  const monthLabel = (iso: string) =>
+    new Date(`${iso}T00:00:00`).toLocaleDateString("en-PH", { month: "short", year: "numeric" });
+
+  // Company → Year → Bank → account → month: each month leaf shows lines still open, or Reconciled.
+  const bank = (companyId: string, year: number, accounts: TreeBankAccount[]) => {
+    const key = `${companyId}:${year}:bank`;
+    const open_lines = accounts.reduce((n, a) => n + a.months.reduce((m, x) => m + x.open, 0), 0);
+    return (
+      <li>
+        <button onClick={() => toggle(key)} className={`${ROW} text-[var(--text-primary)]`}>
+          {open.has(key) ? <CaretDown size={12} /> : <CaretRight size={12} />}
+          <Bank size={14} className="shrink-0 text-[var(--text-secondary)]" />
+          <span className="truncate">Bank</span>
+          {open_lines > 0 && (
+            <span className="ml-auto rounded-full bg-[var(--badge-yellow-bg)] px-1.5 text-[11px] font-medium text-[var(--badge-yellow-text)]">{open_lines}</span>
+          )}
+        </button>
+        {open.has(key) && (
+          <ul className="ml-3 border-l border-[var(--border)] pl-2">
+            {accounts.map((a) => (
+              <li key={a.account_code || "unset"}>
+                <div className="truncate px-2 pt-1 text-xs text-[var(--text-secondary)]">
+                  {a.account_code ? `${a.account_code} ${a.name}` : a.name}
+                  {a.last4 && ` ····${a.last4}`}
+                </div>
+                <ul>
+                  {a.months.map((m) => {
+                    const ref: FolderRef = {
+                      companyId, year, quarter: null, view: "bank", bankAccount: a.account_code, month: m.month_start.slice(0, 7),
+                    };
+                    return (
+                      <li key={m.month_start}>
+                        <button
+                          onClick={() => onSelect(ref)}
+                          className={`${ROW} ${isSelected(ref) ? "bg-[var(--accent-subtle)] font-semibold" : ""} text-[var(--text-primary)]`}
+                        >
+                          <span className="truncate">{monthLabel(m.month_start)}</span>
+                          <span className="ml-auto text-xs text-[var(--text-secondary)]">{m.lines}</span>
+                          {m.open > 0 && (
+                            <span className="rounded-full bg-[var(--badge-yellow-bg)] px-1.5 text-[11px] font-medium text-[var(--badge-yellow-text)]">{m.open}</span>
+                          )}
+                          {m.reconciled && (
+                            <span className="rounded-full bg-[var(--badge-green-bg)] px-1.5 text-[11px] font-medium text-[var(--badge-green-text)]">Reconciled</span>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        )}
+      </li>
+    );
+  };
 
   const leaf = (ref: FolderRef, label: string, count: number | null, review: number, status?: TreeAnnual) => (
     <button
@@ -77,6 +135,7 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
                 {c.books_start && (
                   <li>{leaf({ companyId: c.id, year: y.year, quarter: null, view: "books" }, "Books", null, 0)}</li>
                 )}
+                {y.bank && y.bank.length > 0 && bank(c.id, y.year, y.bank)}
                 <li>{leaf({ companyId: c.id, year: y.year, quarter: 0 }, "Annual return", null, 0, y.annual)}</li>
                 {c.has_employees && (
                   <li>{leaf({ companyId: c.id, year: y.year, quarter: null, view: "employees" }, "Employees (1604-C)", null, 0)}</li>
@@ -130,6 +189,7 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
             <span className="block"><b className="text-[var(--badge-green-text)]">Filed</b> marked as filed with the BIR</span>
             <span className="mt-1 block">Books, Employees and the ATC databank show up once a company has books or payroll set up.</span>
             <span className="mt-1 block">Audit log lists every change people made to the company, with who, when and why.</span>
+            <span className="mt-1 block">Bank lists each bank account&apos;s statement months: <b className="text-[var(--badge-yellow-text)]">2</b> lines still to match, <b className="text-[var(--badge-green-text)]">Reconciled</b> once the books agree with the statement.</span>
           </Hint>
         </p>
       )}

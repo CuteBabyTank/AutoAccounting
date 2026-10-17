@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Hint from "@/components/guide/Hint";
 import CompanyHealth from "@/components/work/CompanyHealth";
+import KpiTiles from "@/components/accounting/KpiTiles";
 import TaskList from "@/components/work/TaskList";
 import { workApi } from "@/lib/work-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
@@ -65,6 +66,10 @@ export default function CompanyOverviewPanel({ companyId, companyName, companies
             ))}
           </ul>
         ))}
+      </div>
+      <div>
+        <h3 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">Key figures this quarter</h3>
+        <KpiTiles companyId={companyId} />
       </div>
       <div>
         <h3 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">Health check</h3>

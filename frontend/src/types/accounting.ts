@@ -218,7 +218,7 @@ export interface FolderRef {
   companyId: string;
   year: number | null;
   quarter: number | null;
-  view?: "books" | "atc" | "employees" | "audit" | "bank" | "customers" | "suppliers" | "overview";
+  view?: "books" | "atc" | "employees" | "audit" | "bank" | "customers" | "suppliers" | "overview" | "reports";
   /** view "bank": the bank account code ("" = unassigned statements) and month (YYYY-MM). */
   bankAccount?: string;
   month?: string;
@@ -867,4 +867,167 @@ export interface Aging {
   rows: AgingRow[];
   totals: Record<AgingBucket | "total", string>;
   items: OpenItemRow[];
+}
+
+// --- Reports (live from the books) ---------------------------------------------------------------------------------
+
+export type ReportKind = "pnl" | "balance-sheet" | "gl" | "transactions" | "adjusted-tb" | "adjusting" | "invalid";
+
+export interface ReportParams {
+  start?: string;
+  end?: string;
+  by?: "total" | "month" | "quarter";
+  compare?: "none" | "period" | "year";
+  nonzero?: boolean;
+  thousands?: boolean;
+  account?: string;
+  party?: string;
+}
+
+export interface ReportColumn {
+  key: string;
+  label: string;
+  start: string | null;
+  end: string | null;
+  kind: "amount" | "change" | "pct";
+}
+
+export interface ReportDrill {
+  start: string | null;
+  end: string;
+}
+
+export interface ReportGridRow {
+  key: string;
+  label: string;
+  level: number;
+  kind: "header" | "account" | "total";
+  codes: string[];
+  values: (string | null)[];
+  drill: (ReportDrill | null)[];
+}
+
+export interface SourceRef {
+  kind: "document" | "bank_line" | "journal_entry" | "asset" | "tax" | "system";
+  id: string;
+}
+
+export interface PostingLine {
+  entry_id: string;
+  date: string;
+  book: string;
+  reference: string;
+  party: string;
+  particulars: string;
+  debit: string;
+  credit: string;
+  balance?: string;
+  code?: string;
+  name?: string;
+  ref: SourceRef;
+}
+
+export interface GlAccountDetail {
+  code: string;
+  name: string;
+  type: string;
+  opening: string;
+  lines: PostingLine[];
+  closing: string;
+}
+
+export interface TransactionRow {
+  entry_id: string;
+  date: string;
+  book: string;
+  source: string;
+  reference: string;
+  party: string;
+  particulars: string;
+  accounts: string[];
+  account_names: string[];
+  amount: string;
+  ref: SourceRef;
+}
+
+export interface AdjustingRow {
+  entry_id: string;
+  date: string;
+  book: string;
+  reference: string;
+  particulars: string;
+  kind: string;
+  amount: string;
+  ref: SourceRef;
+  lines: { code: string; name: string; debit: string; credit: string }[];
+}
+
+export interface InvalidRow {
+  entry_id: string;
+  date: string | null;
+  reference: string;
+  problem: string;
+  label: string;
+  detail: string;
+  ref: SourceRef;
+}
+
+export interface Report {
+  kind: ReportKind;
+  title: string;
+  subtitle: string;
+  basis: string;
+  company: string;
+  columns?: ReportColumn[];
+  /** Grid reports: ReportGridRow; transactions: TransactionRow; adjusting: AdjustingRow; invalid: InvalidRow. */
+  rows?: unknown[];
+  accounts?: GlAccountDetail[];
+  balanced?: boolean;
+  thousands?: boolean;
+  engine_error?: string;
+}
+
+export interface Postings {
+  lines: PostingLine[];
+  count: number;
+  total: string;
+  truncated: boolean;
+}
+
+export interface ReportSource {
+  kind: SourceRef["kind"];
+  entry_id: string;
+  document?: { document_id: string; page: number; title: string; doc_number: string; doc_date: string | null } | null;
+  bank_line?: { date: string; narration: string; amount: string; check_no: string; account_code: string; line_no: number };
+  journal_entry?: {
+    id: string; kind: string; book: string; entry_date: string; reference: string; particulars: string;
+    lines: JournalLine[]; is_adjusting: boolean; deleted: boolean;
+  };
+  asset?: { description: string; cost: string; in_service: string };
+}
+
+export interface CompanyKpis {
+  start: string;
+  end: string;
+  books_on: boolean;
+  note: string;
+  kpis: {
+    net_sales: string; gross_profit: string; net_income: string; operating_expenses: string;
+    gross_margin: string | null; net_margin: string | null; opex_ratio: string | null;
+    current_assets: string; quick_assets: string; current_liabilities: string;
+    current_ratio: string | null; quick_ratio: string | null;
+  } | null;
+  aging: Record<"ar" | "ap", { labels: Record<string, string>; buckets: string[]; totals: Record<string, string> }>;
+}
+
+export interface ManagementPack {
+  year: number;
+  quarter: number;
+  period: string;
+  notes: string;
+  books_on: boolean;
+  generated_at: string | null;
+  generated_by: string;
+  pdf: boolean;
+  docx: boolean;
 }

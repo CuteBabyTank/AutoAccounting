@@ -1,6 +1,13 @@
 // Accounting API client (companies, uploads, periods, books). Auth/team/admin calls live in lib/api.ts.
 import api, { seg } from "@/lib/api";
 import type {
+  CompanyKpis,
+  ManagementPack,
+  Postings,
+  Report,
+  ReportKind,
+  ReportParams,
+  ReportSource,
   AADocument,
   Account,
   AnnualInputs,
@@ -289,4 +296,43 @@ export const accountingApi = {
     api.get<Blob>(`/accounting/contacts/${seg(contactId)}/statement`, { params: { as_of: asOf }, responseType: "blob" }).then((r) => r.data),
   outputAging: (outputId: string, kind: "ar" | "ap") =>
     api.get<Blob>(`/accounting/outputs/${seg(outputId)}/aging`, { params: { kind }, responseType: "blob" }).then((r) => r.data),
+  // Reports (live from the books)
+  report: (companyId: string, kind: ReportKind, params: ReportParams) =>
+    api.get<Report>(`/accounting/companies/${seg(companyId)}/reports/${seg(kind)}`, { params }).then((r) => r.data),
+  reportFile: (companyId: string, kind: ReportKind, params: ReportParams, format: "xlsx" | "pdf") =>
+    api
+      .get<Blob>(`/accounting/companies/${seg(companyId)}/reports/${seg(kind)}/export`, {
+        params: { ...params, format },
+        responseType: "blob",
+      })
+      .then((r) => r.data),
+  reportPostings: (companyId: string, codes: string[], start: string | null, end: string) =>
+    api
+      .get<Postings>(`/accounting/companies/${seg(companyId)}/report-postings`, {
+        params: { codes: codes.join(","), end, ...(start ? { start } : {}) },
+      })
+      .then((r) => r.data),
+  reportSource: (companyId: string, entryId: string) =>
+    api
+      .get<ReportSource>(`/accounting/companies/${seg(companyId)}/report-source`, { params: { entry_id: entryId } })
+      .then((r) => r.data),
+  kpis: (companyId: string, start?: string, end?: string) =>
+    api
+      .get<CompanyKpis>(`/accounting/companies/${seg(companyId)}/kpis`, { params: { ...(start ? { start } : {}), ...(end ? { end } : {}) } })
+      .then((r) => r.data),
+  pack: (companyId: string, year: number, quarter: number) =>
+    api.get<ManagementPack>(`/accounting/companies/${seg(companyId)}/pack/${seg(year)}/${seg(quarter)}`).then((r) => r.data),
+  savePackNotes: (companyId: string, year: number, quarter: number, notes: string) =>
+    api
+      .put<ManagementPack>(`/accounting/companies/${seg(companyId)}/pack/${seg(year)}/${seg(quarter)}/notes`, { notes })
+      .then((r) => r.data),
+  generatePack: (companyId: string, year: number, quarter: number) =>
+    api.post<ManagementPack>(`/accounting/companies/${seg(companyId)}/pack/${seg(year)}/${seg(quarter)}`).then((r) => r.data),
+  packFile: (companyId: string, year: number, quarter: number, format: "pdf" | "docx") =>
+    api
+      .get<Blob>(`/accounting/companies/${seg(companyId)}/pack/${seg(year)}/${seg(quarter)}/file`, {
+        params: { format },
+        responseType: "blob",
+      })
+      .then((r) => r.data),
 };

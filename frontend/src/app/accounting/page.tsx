@@ -18,6 +18,7 @@ import BankPanel from "@/components/accounting/BankPanel";
 import ContactsPanel from "@/components/accounting/ContactsPanel";
 import CompanyOverviewPanel from "@/components/accounting/CompanyOverviewPanel";
 import PeriodPanel from "@/components/accounting/PeriodPanel";
+import ReportsPanel from "@/components/accounting/ReportsPanel";
 import AppendPrompt from "@/components/accounting/AppendPrompt";
 import UploadReviewDialog from "@/components/accounting/UploadReviewDialog";
 import DuplicateBanner from "@/components/accounting/DuplicateBanner";
@@ -402,6 +403,25 @@ export default function AccountingPage() {
                 }
               />
             )}
+            {selected?.view === "reports" && (() => {
+              const company = tree.find((c) => c.id === selected.companyId);
+              return company?.books_start ? (
+                <ReportsPanel
+                  key={selected.companyId}
+                  companyId={selected.companyId}
+                  companyName={company.registered_name}
+                  fiscalYearEndMonth={company.fiscal_year_end_month}
+                  onOpenDocument={(id) =>
+                    accountingApi
+                      .getDocument(id)
+                      .then(setOpenDoc)
+                      .catch((e) => setError(apiErrorMessage(e, "Couldn't open the document")))
+                  }
+                />
+              ) : (
+                <p className="py-6 text-sm text-[var(--text-secondary)]">Set a Books start on the company to see its reports.</p>
+              );
+            })()}
             {selected?.view === "overview" && (
               <CompanyOverviewPanel
                 key={selected.companyId}

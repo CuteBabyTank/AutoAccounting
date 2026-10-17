@@ -369,8 +369,29 @@ def transaction_list(entries: list[Entry], chart: Chart, start: date, end: date,
 
 # --- adjusted trial balance and adjusting entries --------------------------------------------------------------------
 
+_ADJUSTING_PREFIXES = {"dep:": "depreciation", "inv:": "inventory"}
+
+
+def _corrected_id(entry_id: str) -> str:
+    """The entry a closed-month correction (``fix:<id>:rev|new``) reverses or reposts; else the id itself."""
+    while entry_id.startswith("fix:") and entry_id.rsplit(":", 1)[-1] in ("rev", "new"):
+        entry_id = entry_id[4:].rsplit(":", 1)[0]
+    return entry_id
+
+
+def adjusting_kind(e: Entry, adjusting_ids: set[str]) -> str | None:
+    """Why an entry is an adjustment (a flagged journal entry, depreciation, an inventory count), looking through
+    closed-month corrections to the entry they correct; None when it isn't one."""
+    base = _corrected_id(e.id)
+    if base in adjusting_ids:
+        return "Adjusting journal entry"
+    source = e.source if base == e.id else next(
+        (s for prefix, s in _ADJUSTING_PREFIXES.items() if base.startswith(prefix)), "")
+    return ADJUSTING_SOURCES.get(source)
+
+
 def is_adjusting(e: Entry, adjusting_ids: set[str]) -> bool:
-    return e.id in adjusting_ids or e.source in ADJUSTING_SOURCES
+    return adjusting_kind(e, adjusting_ids) is not None
 
 
 def adjusted_tb(entries: list[Entry], chart: Chart, as_of: date, fye: int, closing_account: str,
@@ -406,9 +427,9 @@ def adjusted_tb(entries: list[Entry], chart: Chart, as_of: date, fye: int, closi
 def adjusting_entries(entries: list[Entry], chart: Chart, start: date, end: date, adjusting_ids: set[str]) -> list[dict]:
     out = []
     for e in sorted(_live(entries), key=lambda e: (e.date, e.id)):
-        if not start <= e.date <= end or not is_adjusting(e, adjusting_ids):
+        kind = adjusting_kind(e, adjusting_ids)
+        if not start <= e.date <= end or kind is None:
             continue
-        kind = "Adjusting journal entry" if e.id in adjusting_ids else ADJUSTING_SOURCES[e.source]
         out.append({"entry_id": e.id, "date": e.date, "book": e.book, "reference": e.reference,
                     "particulars": e.particulars, "kind": kind, "amount": c2(e.debits()), "ref": entry_ref(e.id),
                     "lines": [{"code": l.account, "name": chart.name(l.account), "debit": l.debit,

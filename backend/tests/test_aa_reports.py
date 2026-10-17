@@ -259,3 +259,23 @@ def test_no_negative_zero():
     assert all(str(v) != "-0.00" for r in report["rows"] for v in r["values"] if v is not None)
     bs = balance_sheet([], CHART, [date(2026, 12, 31)], 12, "3020")
     assert all(str(v) != "-0.00" for r in bs["rows"] for v in r["values"] if v is not None)
+
+
+def test_corrections_of_adjusting_entries_are_adjustments():
+    # An adjusting JE (and a depreciation entry) in a closed month, later changed: the frozen entry stays, and the
+    # correcting reversal and repost (fix:<id>:rev / :new, source "correction") must count as adjustments too.
+    entries = [e for e in ENTRIES if not e.id.startswith("close:")] + [
+        E("fix:je:adj1:rev", date(2026, 12, 20), ("6020", "0", "300"), ("2010", "300", "0"), source="correction"),
+        E("fix:je:adj1:new", date(2026, 12, 20), ("6020", "450", "0"), ("2010", "0", "450"), source="correction"),
+        E("fix:dep:a1:2026-11:rev", date(2026, 12, 20), ("6100", "0", "500"), ("1510", "500", "0"),
+          source="correction"),
+        E("fix:dep:a1:2026-11:new", date(2026, 12, 20), ("6100", "600", "0"), ("1510", "0", "600"),
+          source="correction"),
+    ]
+    tb = adjusted_tb(entries, CHART, date(2026, 12, 31), 12, "3020", {"je:adj1"})
+    assert _row(tb, "acct:6020")["values"] == [D("2000.00"), D("450.00"), D("2450.00")]
+    assert _row(tb, "acct:6100")["values"] == [D("0.00"), D("600.00"), D("600.00")]
+    assert _row(tb, "total")["values"] == [D("0.00"), D("0.00"), D("0.00")]
+    aje = adjusting_entries(entries, CHART, date(2026, 10, 1), date(2026, 12, 31), {"je:adj1"})
+    kinds = {a["entry_id"]: a["kind"] for a in aje}
+    assert kinds["fix:je:adj1:new"] == "Adjusting journal entry" and kinds["fix:dep:a1:2026-11:rev"] == "Depreciation"

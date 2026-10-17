@@ -84,3 +84,29 @@ def test_locked_message():
     assert locked_message(c, ["6020", "6061"]) == ("Account 6061 Gifts is locked: choose another account (unlock it "
                                                    "in the chart of accounts first if this posting is right).")
     assert locked_message(c, ["6020"]) == ""
+
+
+def test_flag_locked_documents():
+    from app.services.accounting.review_rules import flag_locked
+
+    c = Chart(standard_chart("corporation") + [ChartAccount("6061", "Gifts", "expense", parent_code="6060",
+                                                            locked=True)])
+    locked_rep = Chart([ChartAccount(a.code, a.name, a.type, a.contra, a.system_key, a.parent_code, a.active,
+                                     a.code == "6060") for a in c.accounts])
+
+    def doc(**kw):
+        return dict(dict(category="expenses", account="representation", client_role="buyer", seller_tin="123456789",
+                         review_reasons=[], needs_review=False), **kw)
+
+    plain = doc()
+    flag_locked(plain, c, {})
+    assert plain["review_reasons"] == [] and not plain["needs_review"]
+    by_rule = doc()
+    flag_locked(by_rule, c, {"123456789": "6061"})  # the supplier's default account is locked
+    assert by_rule["review_reasons"] == ["account_locked"] and by_rule["needs_review"]
+    mapped = doc()
+    flag_locked(mapped, locked_rep, {})
+    assert mapped["review_reasons"] == ["account_locked"]
+    sale = doc(category="sales", client_role="seller", account="sales")
+    flag_locked(sale, locked_rep, {})
+    assert sale["review_reasons"] == []

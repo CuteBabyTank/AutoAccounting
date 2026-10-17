@@ -21,6 +21,7 @@ from app.schemas.accounting_bank import (
 from app.services.accounting import audit
 from app.services.accounting.books import bank
 from app.services.accounting.books.closing import stored_file
+from app.services.accounting.books.chart import locked_message
 from app.services.accounting.books.loader import ensure_chart, touch_books
 from app.services.accounting.compute.health import reconciled_through
 from app.services.accounting.compute.money import ZERO, c2
@@ -174,6 +175,8 @@ async def confirm_line(line_id: uuid.UUID, body: ConfirmLineIn | None = None, us
         account = chart.get(body.account_code or "")
         if account is None or not account.active:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pick an active account from the chart")
+        if account.locked:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, locked_message(chart, [account.code]))
         if account.code == line.account_code:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "A line can't post to its own bank account")
         line.match_kind, line.matched_ref, line.match_amount = "posting", "", full

@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
-from app.models.accounting import AAAccount, AACompany, AADocument, AAJournalEntry
+from app.models.accounting import AAAccount, AACompany, AADocument, AAJournalEntry, AASupplierRule
 from app.models.user import User
 from app.routers.accounting_scope import MANAGER_ROLES, company_or_404, scope_for
 from app.schemas.accounting_books import (
@@ -23,13 +23,15 @@ from app.services.accounting.books.closing import (
     CloseError, bank_block_message, bind_deadline, bind_year, close_month, reopen_month, stored_file, year_status,
 )
 from app.services.accounting.books.links import doc_ref, invoice_docs, receipt_docs
+from app.services.accounting.books.chart import locked_message
 from app.services.accounting.books.loader import ensure_chart, touch_books
+from app.services.accounting.books.templates import placement
 from app.services.accounting.books.receipts import candidates_for
 from app.services.accounting.compute.depreciation import fiscal_year_window
 
 router = APIRouter()
 
-_ACCOUNT_FIELDS = ("code", "name", "type", "parent_code", "active", "bank_account_no")
+_ACCOUNT_FIELDS = ("code", "name", "type", "parent_code", "active", "locked", "bank_account_no")
 _ENTRY_FIELDS = ("kind", "book", "entry_date", "reference", "particulars", "lines", "is_adjusting")
 
 
@@ -50,10 +52,17 @@ async def _account_or_404(db: AsyncSession, ent: uuid.UUID, account_id: uuid.UUI
 async def list_accounts(company_id: uuid.UUID, user: User = Depends(get_current_user),
                         db: AsyncSession = Depends(get_db)):
     company = await company_or_404(db, scope_for(user), company_id)
-    await ensure_chart(db, company)
+    chart = await ensure_chart(db, company)
     await db.commit()
-    return (await db.execute(select(AAAccount).where(AAAccount.company_id == company.id)
+    rows = (await db.execute(select(AAAccount).where(AAAccount.company_id == company.id)
                              .order_by(AAAccount.code))).scalars().all()
+    return [_account_out(r, chart) for r in rows]
+
+
+def _account_out(row: AAAccount, chart) -> AccountOut:
+    out = AccountOut.model_validate(row)
+    out.placement = placement(chart, row.code)
+    return out
 
 
 @router.post("/companies/{company_id}/accounts", response_model=AccountOut, status_code=status.HTTP_201_CREATED)
@@ -81,7 +90,7 @@ async def add_account(company_id: uuid.UUID, body: AccountIn, user: User = Depen
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, f"Account code {body.code} is already in the chart")
-    return row
+    return _account_out(row, await ensure_chart(db, company))
 
 
 @router.patch("/accounts/{account_id}", response_model=AccountOut)
@@ -104,11 +113,19 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, user: User = 
             (await db.execute(select(AADocument.id).where(
                 AADocument.company_id == company.id, AADocument.deleted_at.is_(None),
                 AADocument.gl_account_code == row.code).limit(1))).first()
+        used = used or (await db.execute(select(AASupplierRule.id).where(
+            AASupplierRule.company_id == company.id, AASupplierRule.gl_account_code == row.code).limit(1))).first()
         if used:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account is used by journal entries or documents; "
-                                                             "move them to another account first")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account is used by journal entries, documents or a "
+                                                             "supplier's default account; move them with Reclassify "
+                                                             "(or change the supplier default) first")
     if body.active is not None:
         row.active = body.active
+    if body.locked is not None:
+        if body.locked and row.system_key and not row.system_key.startswith("doc:"):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "The books post to this account themselves; it can't "
+                                                             "be locked")
+        row.locked = body.locked
     if body.bank_account_no is not None:
         if row.type != "asset":
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only asset accounts can carry a bank account number")
@@ -118,7 +135,7 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, user: User = 
                  action="update", before=before, after=audit.snapshot(row, _ACCOUNT_FIELDS))
     touch_books(company)
     await db.commit()
-    return row
+    return _account_out(row, await ensure_chart(db, company))
 
 
 def _entry_label(row: AAJournalEntry) -> str:
@@ -150,6 +167,13 @@ async def _check_entry(db: AsyncSession, company: AACompany, body: JournalEntryI
                   if chart.get(l.account_code) is None or not chart.get(l.account_code).active})
     if bad:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Not active accounts in the chart: {', '.join(bad)}")
+    kept: set[str] = set()
+    if entry_id is not None:  # lines already on a locked account (posted before the lock) may stay
+        stored = await db.get(AAJournalEntry, entry_id)
+        kept = {str(x.get("account_code", "")) for x in (stored.lines or [])} if stored else set()
+    message = locked_message(chart, [l.account_code for l in body.lines if l.account_code not in kept])
+    if message:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, message)
 
 
 def _lines_json(body: JournalEntryIn) -> list[dict]:

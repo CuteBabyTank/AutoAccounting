@@ -21,7 +21,9 @@ class AccountOut(BaseModel):
     parent_code: str | None
     system_key: str | None
     active: bool
+    locked: bool = False
     bank_account_no: str = ""
+    placement: str = ""          # where it lands: "Profit and loss · Operating expenses"
 
 
 class AccountIn(BaseModel):
@@ -35,6 +37,7 @@ class AccountPatch(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
     active: bool | None = None
+    locked: bool | None = None
     bank_account_no: str | None = Field(default=None, max_length=40)
 
 

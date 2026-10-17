@@ -53,3 +53,33 @@ def sync_payment_flags(docs: Iterable, paid_ids: Iterable[str] = ()) -> None:
         if kept != reasons:
             doc.review_reasons = kept
             doc.needs_review = needs_review_for(kept)
+
+
+LOCKED_REASON = "account_locked"
+
+
+def locked_main_account(category: str, client_role: str, account: str, gl_override: str, chart) -> str | None:
+    """The locked chart account a purchase / expense / payroll document would debit, else None."""
+    if category in _BILLS and client_role == "buyer" and account != "capital_goods":
+        code = chart.doc_account(account, gl_override)
+    elif category == "payroll":
+        code = chart.doc_account("salaries", gl_override)
+    else:
+        return None
+    return code if chart.locked(code) else None
+
+
+def flag_locked(fields: dict, chart, gl_rules: dict[str, str]) -> None:
+    """A newly extracted document classified (directly or by the supplier's default account) to a locked account is
+    queued for review with ``account_locked``, never posted silently and never rejected (mutates ``fields``)."""
+    seller = fields.get("client_role") == "seller"
+    tin = fields.get("buyer_tin" if seller else "seller_tin") or ""
+    gl = fields.get("gl_account_code") or ("" if seller else gl_rules.get(tin, ""))
+    if locked_main_account(fields.get("category", ""), fields.get("client_role", ""), fields.get("account", ""),
+                           gl, chart) is None:
+        return
+    reasons = list(fields.get("review_reasons") or [])
+    if LOCKED_REASON not in reasons:
+        reasons.append(LOCKED_REASON)
+    fields["review_reasons"] = reasons
+    fields["needs_review"] = needs_review_for(reasons)

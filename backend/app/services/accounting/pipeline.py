@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.database import async_session
 from app.dependencies import bind_session_user
-from app.models.accounting import AACompany, AADocument, AAFile, AASupplierRule, AAUpload
+from app.models.accounting import AAAccount, AACompany, AADocument, AAFile, AASupplierRule, AAUpload
 from app.models.user import User
 from app.services import gemini_service
 from app.services.accounting import duplicates, gemini as aa_gemini
@@ -23,7 +23,9 @@ from app.services.accounting.classify import (
     CompanyProfile, classify_document, duplicate_key, empty_document_fields, mark_duplicates,
 )
 from app.services.accounting.books import bank
+from app.services.accounting.books.chart import Chart
 from app.services.accounting.books.links import relink_receipts
+from app.services.accounting.review_rules import flag_locked
 from app.services.accounting.jobs import JobSlots
 from app.services.accounting.extraction import (
     DETECT_PROMPT, extract_prompt, parse_detection, parse_extraction,
@@ -216,6 +218,7 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
             select(AASupplierRule).where(AASupplierRule.company_id.in_(company_ids))
         )).scalars().all() if company_ids else []:
             rules.setdefault(r.company_id, {})[r.counterparty_tin] = (r.category, r.account)
+        locks = await _locked_charts(db, company_ids)
         seen: dict[uuid.UUID, set[tuple[str, str]]] = {cid: set() for cid in company_ids}
         for company_id, seller_tin, seller_name, doc_number in (await db.execute(
             select(AADocument.company_id, AADocument.seller_tin, AADocument.seller_name, AADocument.doc_number)
@@ -266,6 +269,9 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
                         rows.append(empty_document_fields(pages, page_start=start0 + 1))
                 if not rows:
                     rows = [empty_document_fields(page_count)]
+                if company_id in locks:
+                    for fields in rows:
+                        flag_locked(fields, *locks[company_id])
                 new_seen = mark_duplicates(rows, seen[company_id])
                 added = [AADocument(enterprise_id=enterprise_scope, company_id=company_id, file_id=file_id, **fields)
                          for fields in rows]
@@ -311,3 +317,21 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
         upload = await db.get(AAUpload, upload_id)
         upload.status = "done"
         await db.commit()
+
+
+async def _locked_charts(db, company_ids: list[uuid.UUID]) -> dict[uuid.UUID, tuple[Chart, dict[str, str]]]:
+    """Chart + supplier default accounts of the companies that have a locked account (the only ones whose new
+    documents can need ``account_locked``)."""
+    from app.services.accounting.books.loader import _chart_account
+
+    if not company_ids:
+        return {}
+    locked = set((await db.execute(select(AAAccount.company_id).where(
+        AAAccount.company_id.in_(company_ids), AAAccount.locked.is_(True)).distinct())).scalars().all())
+    out: dict[uuid.UUID, tuple[Chart, dict[str, str]]] = {}
+    for cid in locked:
+        rows = (await db.execute(select(AAAccount).where(AAAccount.company_id == cid))).scalars().all()
+        gl = dict((await db.execute(select(AASupplierRule.counterparty_tin, AASupplierRule.gl_account_code).where(
+            AASupplierRule.company_id == cid, AASupplierRule.gl_account_code != ""))).all())
+        out[cid] = (Chart(_chart_account(r) for r in rows), gl)
+    return out

@@ -16,7 +16,7 @@ REVIEW_REASONS = (
     "seller_not_vat_registered", "not_an_invoice", "vat_math_mismatch", "possible_duplicate",
     "other_company_tin", "nothing_extracted", "possible_payment", "amounts_dont_add_up", "supplier_rule_mismatch",
     "tendered_less_than_total", "ewt_expected", "payment_source_unknown", "payment_unverified",
-    "duplicate_invoice_number", "personal_purchase",
+    "duplicate_invoice_number", "personal_purchase", "account_locked",
 )
 _EWT_ACCOUNTS = frozenset({"rent", "professional_fees"})
 

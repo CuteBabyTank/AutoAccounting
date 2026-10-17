@@ -38,7 +38,10 @@ from app.schemas.accounting import (
 )
 from app.services.accounting import audit, pipeline
 from app.services.accounting.books.links import relink_receipts
-from app.services.accounting.books.loader import touch_books
+from app.services.accounting.books.chart import locked_message
+from app.services.accounting.books.loader import ensure_chart, touch_books
+from app.services.accounting.compute.reclassify import document_main_account
+from app.services.accounting.review_rules import LOCKED_REASON
 from app.services.accounting import duplicates
 from app.services.accounting.classify import document_nature, needs_review_for, rule_conflicts
 from app.services.accounting.matching import file_detection_from_json, suggest_groups
@@ -747,6 +750,11 @@ async def patch_document(
     company = await _company_or_404(db, ent, doc.company_id)
     sent = body.model_fields_set
     before = audit.snapshot(doc, _AUDIT_DOC_FIELDS)
+    classifying = bool(sent & {"category", "account", "gl_account_code", "client_role"})
+    if classifying:
+        chart = await ensure_chart(db, company)
+        gl_rules = await accounting_periods.supplier_gl_rules(db, company.id)
+        old_main = document_main_account(accounting_periods.doc_line(doc, None, gl_rules), chart)
 
     for name in _PLAIN_FIELDS:
         if name not in sent:
@@ -764,7 +772,17 @@ async def patch_document(
             ))).scalar_one_or_none()
             if account is None:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Account {code} isn't an active account in the chart")
+            if account.locked and code != doc.gl_account_code:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, locked_message(chart, [code]))
         doc.gl_account_code = code
+
+    if classifying:  # a person can't classify a document into a locked account; moving it out clears the flag
+        new_main = document_main_account(accounting_periods.doc_line(doc, None, gl_rules), chart)
+        if new_main and chart.locked(new_main) and new_main != old_main:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, locked_message(chart, [new_main]))
+        if LOCKED_REASON in (doc.review_reasons or []) and not (new_main and chart.locked(new_main)):
+            doc.review_reasons = [r for r in doc.review_reasons if r != LOCKED_REASON]
+            doc.needs_review = needs_review_for(doc.review_reasons)
 
     if "settles_document_id" in sent:
         target_id = body.settles_document_id

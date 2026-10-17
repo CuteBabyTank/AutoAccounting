@@ -223,9 +223,14 @@ async def update_contact(contact_id: uuid.UUID, body: ContactPatch, as_of: date 
     rule: dict[str, str] = {}
     if "default_account" in sent:
         code = (body.default_account or "").strip()
-        if code and (await db.execute(select(AAAccount.id).where(
-                AAAccount.company_id == company.id, AAAccount.code == code, AAAccount.active.is_(True)))).first() is None:
+        found = (await db.execute(select(AAAccount.locked).where(
+            AAAccount.company_id == company.id, AAAccount.code == code, AAAccount.active.is_(True)))).first() \
+            if code else None
+        if code and found is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Account {code} isn't an active account in the chart")
+        if found is not None and found[0] and code != old_account:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Account {code} is locked: choose another default "
+                                                             "account (unlock it in the chart of accounts first)")
         rule["gl_account_code"] = code
     if "default_atc" in sent:
         rule["ewt_atc"] = (body.default_atc or "").strip().upper()

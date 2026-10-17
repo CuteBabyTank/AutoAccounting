@@ -33,11 +33,18 @@ async def _task_or_404(db: AsyncSession, ent: uuid.UUID, task_id: uuid.UUID) -> 
     return row
 
 
-async def _check_links(db: AsyncSession, ent: uuid.UUID, values: dict) -> None:
-    """The company and document must be the firm's, and the document the company's (a document alone sets it)."""
-    if values.get("company_id") is not None:
+_LINKS = ("company_id", "document_id", "assignee_id")
+
+
+async def _check_links(db: AsyncSession, ent: uuid.UUID, values: dict, changed: set[str] | None = None) -> None:
+    """The company and document must be the firm's, and the document the company's (a document alone sets it).
+
+    ``changed`` = the links an edit changes (None = all, a new task): a link the task already has isn't re-checked, so
+    a task whose document was since deleted, or whose assignee left the firm, can still be edited or completed."""
+    changed = set(_LINKS) if changed is None else changed
+    if values.get("company_id") is not None and "company_id" in changed:
         await company_or_404(db, ent, values["company_id"])
-    if values.get("document_id") is not None:
+    if values.get("document_id") is not None and changed & {"company_id", "document_id"}:
         doc = (await db.execute(select(AADocument).where(
             AADocument.id == values["document_id"], AADocument.enterprise_id == ent, AADocument.deleted_at.is_(None))
         )).scalar_one_or_none()
@@ -51,7 +58,8 @@ async def _check_links(db: AsyncSession, ent: uuid.UUID, values: dict) -> None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pick the year of the period")
     if values.get("period_year") is not None and values.get("company_id") is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A period belongs to a company: pick the company too")
-    await assignee_or_400(db, ent, values.get("assignee_id"))
+    if "assignee_id" in changed:
+        await assignee_or_400(db, ent, values.get("assignee_id"))
 
 
 def _label(row: AATask) -> str:
@@ -140,7 +148,7 @@ async def update_task(task_id: uuid.UUID, body: TaskPatch, user: User = Depends(
     merged = {k: changes.get(k, getattr(row, k)) for k in _FIELDS}
     if "company_id" in changes and "document_id" not in changes and row.document_id is not None:
         merged["document_id"] = None  # moving the task to another company drops its document link
-    await _check_links(db, ent, merged)
+    await _check_links(db, ent, merged, {k for k in _LINKS if merged[k] != getattr(row, k)})
     before = audit.snapshot(row, _FIELDS)
     for k in _FIELDS:
         setattr(row, k, merged[k].strip() if k == "title" else merged[k])

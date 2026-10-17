@@ -123,3 +123,37 @@ def test_merged_contacts_are_not_listed():
     source = contact("NAME:kalayaan constr", "Kalayaan Constr", merged=target.id)
     sub = _sub([document()], [target, source])
     assert [r.registered_name for r in contact_rows(sub, "customer")] == ["Kalayaan"]
+
+
+class _FakeDb:
+    """Records statements; every SELECT finds no contacts (a first page load on a company)."""
+
+    def __init__(self):
+        self.statements = []
+
+    async def execute(self, stmt):
+        self.statements.append(stmt)
+        return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))
+
+    async def flush(self):
+        pass
+
+
+def test_sync_contacts_insert_tolerates_a_concurrent_sync():
+    """The contacts list and the aging load together and both sync: a party the other request just inserted must be
+    skipped (ON CONFLICT DO NOTHING), not fail the page on the unique key."""
+    import asyncio
+
+    from sqlalchemy.dialects import postgresql
+    from sqlalchemy.sql.dml import Insert
+
+    from app.services.accounting.books.subledger import sync_contacts
+
+    db = _FakeDb()
+    company = SimpleNamespace(id=uuid.uuid4(), enterprise_id=uuid.uuid4())
+    asyncio.run(sync_contacts(db, company, [document(), document(buyer_tin="400500601", buyer_name="Mabuhay")]))
+    inserts = [s for s in db.statements if isinstance(s, Insert)]
+    assert len(inserts) == 1
+    sql = str(inserts[0].compile(dialect=postgresql.dialect()))
+    assert "ON CONFLICT ON CONSTRAINT uq_aa_contact_key DO NOTHING" in sql
+

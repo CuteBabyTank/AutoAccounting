@@ -11,6 +11,7 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.accounting import AACompany, AAContact, AADocument, AAOutput, AAPeriod
@@ -112,15 +113,22 @@ async def sync_contacts(db: AsyncSession, company: AACompany, docs: list[AADocum
     for key, change in updates.items():
         for name, value in change.items():
             setattr(by_key[key], name, value)
-    for c in creates:
-        row = AAContact(id=uuid.uuid4(), enterprise_id=company.enterprise_id, company_id=company.id,
-                        key=c["key"][:300], tin=c["tin"], role=c["role"], registered_name=c["registered_name"][:255],
-                        aliases=c["aliases"], address=c["address"], vat_status=c["vat_status"], manual=[])
-        db.add(row)
-        rows.append(row)
-    if creates or updates:
+    if updates:
         await db.flush()
+    if creates:
+        # Two page loads (the contacts list and the aging are fetched together) can sync the same new party at once:
+        # the loser of the race skips the row the other one inserted instead of failing on the unique key.
+        await db.execute(pg_insert(AAContact).values([contact_values(company, c) for c in creates])
+                         .on_conflict_do_nothing(constraint="uq_aa_contact_key"))
+        rows = list((await db.execute(select(AAContact).where(
+            AAContact.enterprise_id == company.enterprise_id, AAContact.company_id == company.id))).scalars().all())
     return rows
+
+
+def contact_values(company: AACompany, c: dict) -> dict:
+    return {"id": uuid.uuid4(), "enterprise_id": company.enterprise_id, "company_id": company.id,
+            "key": c["key"][:300], "tin": c["tin"], "role": c["role"], "registered_name": c["registered_name"][:255],
+            "aliases": c["aliases"], "address": c["address"], "vat_status": c["vat_status"], "manual": []}
 
 
 def key_map_for(rows: list[AAContact]) -> dict[str, str]:

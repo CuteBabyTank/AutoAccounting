@@ -126,6 +126,7 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   so only their payments post — never give them a document entry or the opening A/R / A/P doubles); anything that
   loads documents for open items / payments (loader, subledger, bank candidates) must add them too.
 - **PDF templates** are calibrated comb-cell layouts (`forms/overlay.py`); re-calibrate when BIR revises a form.
+- **Global search** (`routers/accounting_search.py`, parser `services/accounting/search.py`): one firm-scoped SELECT per group; add a new searchable table there (and its index to `schema.search_index_statements`, pg_trgm GIN only when the extension exists). Results open through `lib/search-nav.ts`: `/accounting?company=&view=&year=&quarter=&account=&month=&contact=&doc=` is parsed by `parseTarget` (UUIDs via `safeId`, shapes checked); on `/accounting` it's the `aa:open-target` event instead of a reload. The palette (`components/search/SearchPalette.tsx`, "/" or Cmd/Ctrl-K) lives in the Sidebar.
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.
 - **Frontend token** lives in `sessionStorage` (`autoaccounting_token`). The axios interceptor attaches it, and on 401 it is cleared and AuthGate redirects.
 

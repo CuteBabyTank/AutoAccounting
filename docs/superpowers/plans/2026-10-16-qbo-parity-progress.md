@@ -320,3 +320,39 @@ comma (1.234,50) is refused, not read as 1.23 (32aebb9). Tests: 829 → 838.
 A code in the chart whose row name clearly means another account ("1100 Inventory" where 1100 is A/R) is a
 `conflict` to confirm, showing the code match and the best name matches (agrees when the normalised names are
 equal, the fuzzy score is ≥ 0.72 or one name's words contain the other's). Tests: 838 → 839.
+
+## 09 Global search (2026-10-18)
+
+Plan: `2026-10-16-qbo-09-search.md` (Decisions section there).
+
+Shipped:
+- Pure `services/accounting/search.py`: amounts ("1500", "1,500.00", "₱1,500", "P1,500", "PHP 1500"; decimal commas
+  refused), TINs in any format (9 or 12–14 digits → the stored 9; 3–8 digits as a TIN prefix), PH dates (ISO, MM/DD/YYYY
+  with both readings when ambiguous, DD/MM when only that is valid, two-digit years, "Oct 15, 2026", "15 Oct 2026",
+  "Oct 2026" / "2026-10" as the month), review reason short names ("duplicate", "EWT expected"), LIKE escaping, 2-char
+  minimum, ranking (exact > prefix > word start > contains, plus TIN / amount / reason / date hits).
+- `GET /api/accounting/search` (`routers/accounting_search.py`): documents (number, names, title, payment ref, TIN,
+  gross / VATable / VAT / withholding amount, doc date, review reasons; deleted never, excluded with a chip), contacts
+  (name, aliases, TIN; merged ones skipped), live bank lines (narration, check no., ± amount, date), journal entries
+  (memo, reference, date), tasks (title, notes, due date), companies (name, aliases, TIN). Filters: types, company, date
+  range, `review` (documents still needing review; empty query allowed). Every SELECT filters `enterprise_id` (and the
+  joined company's). Per group: limit (5 type-ahead, 25 page, max 50), `more` flag, navigation context (document +
+  page + period, contact role, bank account / month / fiscal year, JE fiscal year).
+- Indexes via `schema.search_index_statements()`: btree (enterprise, amount / TIN / date) and, when pg_trgm is installed
+  or can be created (guarded DO block, never fails startup), GIN trigram indexes on the searched text columns. Dev DB:
+  pg_trgm 1.6 created, all 14 indexes present.
+- UI: Search row in the rail (and an icon in the mobile bar) opening a palette on "/" (not while typing) or Cmd/Ctrl-K:
+  250 ms debounce with abort of stale requests, grouped results with "matched …" hints, ↑↓ / Enter / Esc, Review queue
+  chip, "See all results and filters" → `/accounting/search` (type chips, company, from / to, Review queue, Hint).
+  Results open the document panel in its quarter folder, the contact page (new `initialContactId` on ContactsPanel),
+  the bank month, the books year, the company overview, or the Tasks tab; deep links parsed by `lib/search-nav.ts`.
+- Live smoke on the dev stack: API ("1500", "Bayanihan", "Dec 2026", "elena", "50%", "a" too short) and in the browser
+  (palette from /admin → contact page; Ctrl-K on /accounting → document panel; results page bank filter → December
+  bank month).
+
+Tests: 839 → 899 passing. Gates: pytest, ruff, lint, tsc, build all green.
+
+Not done: journal entries are not matched by amount (lines are JSON strings); no saved searches or "thumbs" feedback;
+help articles / reports aren't in the index; a task result opens the Tasks tab filtered to its company, not the task
+itself (no per-task deep link yet); bank lines have no page number, so the bank month opens rather than the
+statement page.

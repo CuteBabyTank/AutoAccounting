@@ -6,10 +6,12 @@ import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
 from fastapi import Path as PathParam
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -41,7 +43,7 @@ from app.services.accounting.books.links import relink_receipts
 from app.services.accounting.books.chart import locked_message
 from app.services.accounting.books.loader import ensure_chart, touch_books
 from app.services.accounting.compute.reclassify import document_main_account
-from app.services.accounting.review_rules import LOCKED_REASON
+from app.services.accounting.review_rules import BULK_MAX, LOCKED_REASON, bulk_targets
 from app.services.accounting import duplicates
 from app.services.accounting.classify import document_nature, needs_review_for, rule_conflicts
 from app.services.accounting.matching import file_detection_from_json, suggest_groups
@@ -837,6 +839,54 @@ async def patch_document(
     out = await _document_out(db, doc, company)
     out.rule_applied_to = applied
     return out
+
+
+class BulkResolveIn(BaseModel):
+    document_ids: list[uuid.UUID] = Field(min_length=1, max_length=BULK_MAX)
+    reason_code: str = Field(min_length=1, max_length=40)
+    action: Literal["reviewed", "exclude"]
+    reason: str = Field(min_length=3, max_length=500)
+
+
+@router.post("/documents/bulk-resolve")
+async def bulk_resolve(body: BulkResolveIn, user: User = Depends(get_current_user),
+                       db: AsyncSession = Depends(get_db)):
+    """Resolve many documents flagged for the same reason in one go (mark reviewed or exclude), one audit event
+    per document; documents that are already resolved or don't carry the reason are skipped and listed."""
+    ent = _scope(user)
+    ids = list(dict.fromkeys(body.document_ids))
+    docs = list((await db.execute(select(AADocument).where(
+        AADocument.enterprise_id == ent, AADocument.id.in_(ids)))).scalars().all())
+    found = {d.id for d in docs}
+    ok, skipped = bulk_targets(docs, body.reason_code)
+    reason = body.reason.strip()
+    for doc in ok:
+        before = audit.snapshot(doc, ("reviewed", "excluded"))
+        if body.action == "reviewed":
+            doc.reviewed = True
+        else:
+            doc.excluded = True
+        old, new = audit.diff(before, audit.snapshot(doc, ("reviewed", "excluded")))
+        if body.action == "reviewed":
+            new["overridden_reasons"] = list(doc.review_reasons or [])
+        audit.record(db, label=audit.document_label(doc), ent=ent, company_id=doc.company_id, user=user,
+                     entity="document", entity_id=doc.id, action=audit.document_action(old, new), before=old,
+                     after=new, reason=f"Bulk: {reason}")
+    if ok and body.action == "exclude":
+        await db.flush()
+        for doc in ok:
+            if doc.doc_type == "statement":
+                await bank_service.statement_document_changed(db, doc)
+        for company_id in {d.company_id for d in ok}:
+            company = await db.get(AACompany, company_id)
+            await relink_receipts(db, company_id)
+            if company is not None:
+                await bank_service.rematch(db, company)
+            await duplicates.refresh_flags(db, company_id)
+    await db.commit()
+    return {"resolved": [str(d.id) for d in ok],
+            "skipped": [{"id": str(i), "why": why} for i, why in skipped]
+            + [{"id": str(i), "why": "not found"} for i in ids if i not in found]}
 
 
 async def _bank_after_document_change(db: AsyncSession, doc: AADocument, company: AACompany | None) -> None:

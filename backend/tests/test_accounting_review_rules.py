@@ -297,3 +297,22 @@ def test_month_close_ignores_reviewed_documents():
     sql = str(open_review_query(uuid.uuid4(), d(2026, 10, 1), d(2026, 10, 31)).compile())
     assert "aa_documents.reviewed IS false" in sql and "aa_documents.needs_review IS true" in sql
     assert "aa_documents.excluded IS false" in sql and "aa_documents.deleted_at IS NULL" in sql
+
+
+def test_bulk_targets_skip_other_reasons():
+    from types import SimpleNamespace as NS
+    from datetime import datetime, timezone
+
+    from app.services.accounting.review_rules import bulk_targets
+
+    def doc(i, reasons, **kw):
+        return NS(**dict(dict(id=i, needs_review=True, reviewed=False, excluded=False, deleted_at=None,
+                              review_reasons=reasons), **kw))
+
+    docs = [doc(1, ["ewt_expected"]), doc(2, ["ewt_expected", "low_confidence"]), doc(3, ["low_confidence"]),
+            doc(4, ["ewt_expected"], reviewed=True), doc(5, ["ewt_expected"], excluded=True),
+            doc(6, ["ewt_expected"], deleted_at=datetime.now(timezone.utc))]
+    ok, skipped = bulk_targets(docs, "ewt_expected")
+    assert [d.id for d in ok] == [1, 2]
+    assert [(i, why) for i, why in skipped] == [
+        (3, "doesn't carry this reason"), (4, "already resolved"), (5, "already resolved"), (6, "deleted")]

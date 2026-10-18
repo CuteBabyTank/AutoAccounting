@@ -83,3 +83,21 @@ def flag_locked(fields: dict, chart, gl_rules: dict[str, str]) -> None:
         reasons.append(LOCKED_REASON)
     fields["review_reasons"] = reasons
     fields["needs_review"] = needs_review_for(reasons)
+
+
+BULK_MAX = 200
+
+
+def bulk_targets(docs, reason_code: str) -> tuple[list, list[tuple]]:
+    """The documents a bulk resolve acts on (open and carrying ``reason_code``) and the rest with why not."""
+    ok, skipped = [], []
+    for d in docs:
+        if d.deleted_at is not None:
+            skipped.append((d.id, "deleted"))
+        elif d.reviewed or d.excluded or not d.needs_review:
+            skipped.append((d.id, "already resolved"))
+        elif reason_code not in (d.review_reasons or []):
+            skipped.append((d.id, "doesn't carry this reason"))
+        else:
+            ok.append(d)
+    return ok, skipped

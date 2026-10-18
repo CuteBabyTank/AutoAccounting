@@ -745,3 +745,40 @@ class AACoaTemplate(Base):
     )
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
+
+
+class AAOpeningItem(Base):
+    """A customer invoice (A/R) or supplier bill (A/P) still open when the books start, imported from a list.
+
+    The opening trial balance already carries it in A/R / A/P, so it never posts on its own: it only shows in the
+    aging and can be paid (a matched bank line, or a payment recorded on the item), which posts the collection.
+    """
+
+    __tablename__ = "aa_opening_items"
+    __table_args__ = (Index("ix_aa_opening_items_company", "company_id", "kind"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(2), nullable=False)                      # ar | ap
+    contact_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    contact_tin: Mapped[str] = mapped_column(String(9), nullable=False, default="")
+    doc_number: Mapped[str] = mapped_column(String(60), nullable=False, default="")
+    doc_date: Mapped[date] = mapped_column(Date, nullable=False)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    terms_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    amount: Mapped[Decimal] = _money()
+    # a payment a person recorded on the item (cash / bank); a matched bank line replaces it
+    paid_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    paid_via: Mapped[str] = mapped_column(String(10), nullable=False, default="")
+    paid_account: Mapped[str] = mapped_column(String(10), nullable=False, default="")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

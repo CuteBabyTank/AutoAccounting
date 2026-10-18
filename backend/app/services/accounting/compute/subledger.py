@@ -35,6 +35,7 @@ class OpenDoc:
     terms_days: int | None = None   # printed terms ("Net 30")
     payment_unverified: bool = False
     period: tuple[int, int] | None = None   # (fiscal year, quarter)
+    opening: bool = False           # an imported opening item (no document behind it)
 
 
 @dataclass(frozen=True)

@@ -51,7 +51,7 @@ def _item_out(i: OpenItem) -> OpenItemOut:
     return OpenItemOut(document_id=d.id, kind=d.kind, doc_number=d.doc_number, doc_date=d.doc_date, due=i.due,
                        total=d.total, withheld=d.withheld, paid=i.paid, open=i.open, days_past_due=i.days_past_due,
                        bucket=i.bucket, payment_unverified=d.payment_unverified, contact_name=d.contact_name,
-                       contact_tin=d.contact_tin)
+                       contact_tin=d.contact_tin, opening=d.opening)
 
 
 async def _contact_or_404(db: AsyncSession, ent: uuid.UUID, contact_id: uuid.UUID) -> AAContact:

@@ -32,6 +32,7 @@ from app.services.accounting.compute.books import BooksInput, Entry, QuarterTaxe
 from app.services.accounting.compute.ewt import compute_ewt
 from app.services.accounting.compute.inputs import PeriodData, inputs_from_json
 from app.services.accounting.compute.money import ZERO, c2
+from app.services.accounting.opening_items import opening_doc_line
 from app.services.accounting.periods import period_for
 from app.services.accounting.review_rules import sync_payment_flags
 
@@ -146,7 +147,7 @@ async def _contributions(db: AsyncSession, company: AACompany, lines, chart) -> 
 async def _candidates(db: AsyncSession, company: AACompany, docs: list[AADocument], used: dict[str, Decimal],
                       used_refs: set[str]) -> list[Candidate]:
     from app.routers.accounting_periods import company_facts, doc_line, supplier_atc_rules, supplier_gl_rules
-    from app.services.accounting.books.loader import ensure_chart, filed_payments
+    from app.services.accounting.books.loader import ensure_chart, filed_payments, opening_items
 
     facts = company_facts(company)
     chart = await ensure_chart(db, company)
@@ -155,6 +156,7 @@ async def _candidates(db: AsyncSession, company: AACompany, docs: list[AADocumen
     posted = [d for d in docs if d.settles_document_id is None]
     atc_rules, gl_rules = await supplier_atc_rules(db, company.id), await supplier_gl_rules(db, company.id)
     lines = [doc_line(d, atc_rules, gl_rules) for d in posted]
+    opening = await opening_items(db, company) if company.books_start else []
     today = date.today()
     where = period_for(today, company.fiscal_year_end_month)
     ewt = {i: tax for i, (_, tax) in compute_ewt(lines, facts, where.fiscal_year, where.quarter).by_line().items()}
@@ -165,7 +167,11 @@ async def _candidates(db: AsyncSession, company: AACompany, docs: list[AADocumen
     for d in posted:  # paid in cash / e-wallet, or by a receipt: not waiting for the bank
         if (d.paid_on is not None and (d.paid_via or "cash") != "bank") or str(d.id) in paid_by_receipt:
             paid[str(d.id)] = Decimal("999999999999.99")
-    out = open_items(lines, ewt, contributions, paid, refs={str(d.id): d.payment_ref for d in posted})
+    for i in opening:  # an opening item paid in cash isn't waiting for the bank either
+        if i.paid_on is not None and (i.paid_via or "cash") != "bank":
+            paid[str(i.id)] = Decimal("999999999999.99")
+    out = open_items(lines + [opening_doc_line(i, company.books_start) for i in opening], ewt, contributions, paid,
+                     refs={str(d.id): d.payment_ref for d in posted})
 
     for r in receipts:  # a receipt that pays an invoice is the payment the bank shows
         invoice = by_id.get(str(r.settles_document_id))

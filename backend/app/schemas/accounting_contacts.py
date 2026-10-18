@@ -49,6 +49,7 @@ class OpenItemOut(BaseModel):
     payment_unverified: bool
     contact_name: str = ""
     contact_tin: str = ""
+    opening: bool = False           # imported opening item: no document to open
 
 
 class ContactDocumentOut(BaseModel):

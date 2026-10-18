@@ -25,6 +25,7 @@ from app.services.accounting.compute.subledger import (
 )
 from app.services.accounting.contacts import SeenParty, plan_contacts, resolve
 from app.services.accounting.extraction import due_fields
+from app.services.accounting.opening_items import opening_open_doc, opening_payments, opening_seen_party
 from app.services.accounting.parsing import parse_money
 from app.services.accounting.periods import period_for
 
@@ -109,11 +110,12 @@ class Subledger:
     documents: dict[str, AADocument]
 
 
-async def sync_contacts(db: AsyncSession, company: AACompany, docs: list[AADocument]) -> list[AAContact]:
-    """Create / update the company's contacts from its documents (flushes; the caller commits)."""
+async def sync_contacts(db: AsyncSession, company: AACompany, docs: list[AADocument],
+                        extra: list[SeenParty] | None = None) -> list[AAContact]:
+    """Create / update the company's contacts from its documents (and opening items; flushes, the caller commits)."""
     rows = list((await db.execute(select(AAContact).where(
         AAContact.enterprise_id == company.enterprise_id, AAContact.company_id == company.id))).scalars().all())
-    seen = [s for s in (seen_party(d) for d in docs) if s is not None]
+    seen = [s for s in (seen_party(d) for d in docs) if s is not None] + list(extra or [])
     creates, updates = plan_contacts(seen, rows)
     by_key = {r.key: r for r in rows}
     for key, change in updates.items():
@@ -156,10 +158,11 @@ async def company_documents(db: AsyncSession, company: AACompany) -> list[AADocu
 async def load_subledger(db: AsyncSession, company: AACompany, as_of: date) -> Subledger:
     from app.routers.accounting_periods import company_facts, doc_line, supplier_atc_rules, supplier_gl_rules
     from app.services.accounting.books.bank import matched_lines
-    from app.services.accounting.books.loader import document_payments
+    from app.services.accounting.books.loader import document_payments, opening_items
 
     docs = await company_documents(db, company)
-    contacts = await sync_contacts(db, company, docs)
+    opening = await opening_items(db, company)
+    contacts = await sync_contacts(db, company, docs, [opening_seen_party(i) for i in opening])
     key_map = key_map_for(contacts)
     names = {r.key: (r.registered_name, r.tin) for r in contacts}
     receipts = [d for d in docs if d.settles_document_id is not None]
@@ -170,10 +173,11 @@ async def load_subledger(db: AsyncSession, company: AACompany, as_of: date) -> S
     lines = [doc_line(d, atc_rules, gl_rules) for d in posted]
     ewt = compute_ewt(lines, facts, where.fiscal_year, where.quarter).by_line()
     taxes = {i: tax for i, (_, tax) in ewt.items()}
-    payments = document_payments(receipts, posted)
+    payments = document_payments(receipts, posted) + opening_payments(opening)
     payments, _, _ = apply_bank_lines(payments, (), await matched_lines(db, company.id, as_of))
     fye = company.fiscal_year_end_month
     open_docs = [o for o in (open_doc_from(d, taxes, key_map, names, fye) for d in posted) if o is not None]
+    open_docs += [opening_open_doc(i, key_map, names) for i in opening]
     terms = {r.key: r.payment_terms_days for r in contacts if r.payment_terms_days is not None}
     items = open_items(open_docs, payments, as_of, terms)
     received = []

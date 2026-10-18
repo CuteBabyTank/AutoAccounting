@@ -41,7 +41,7 @@ from app.services.accounting.books.loader import active_closes, ensure_chart, op
 from app.services.accounting.compute.money import ZERO, c2
 from app.services.accounting.import_rows import (
     JE_FIELDS, JE_SYNONYMS, OPEN_FIELDS, OPEN_SYNONYMS, TB_FIELDS, TB_SYNONYMS, TEMPLATES, AccountChoice,
-    build_journals, build_open_items, build_tb, control_tie, item_key,
+    build_journals, build_open_items, build_tb, control_tie, document_keys, item_key,
 )
 from app.services.accounting.importing import DATE_LABELS, AccountRef, suggest_columns
 from app.services.accounting.opening_items import control_balances
@@ -117,6 +117,19 @@ async def _control(db: AsyncSession, company: AACompany, chart: Chart) -> dict[s
     return control_balances(entry.lines if entry else [], chart)
 
 
+async def _uploaded_keys(db: AsyncSession, company: AACompany) -> set[tuple[str, str, str]]:
+    """The sales / bills already uploaded (they age on their own, so an opening item for one would count twice)."""
+    from app.services.accounting.books.subledger import company_documents, counterparty, doc_kind
+
+    out = []
+    for d in await company_documents(db, company):
+        kind = doc_kind(d)
+        if kind is not None:
+            tin, name, _ = counterparty(d)
+            out.append((kind, name, tin, d.doc_number or ""))
+    return document_keys(out)
+
+
 def _totals(items) -> dict[str, Decimal]:
     out = {"ar": ZERO, "ap": ZERO}
     for i in items:
@@ -165,7 +178,8 @@ async def _build(db: AsyncSession, company: AACompany, kind: str, file: UploadFi
         current = await opening_items(db, company)
         r = build_open_items(headers, rows, columns, company.books_start, default_kind=opts.default_kind,
                              date_format=opts.date_format,
-                             existing={item_key(i.kind, i.contact_name, i.doc_number) for i in current})
+                             existing={item_key(i.kind, i.contact_name, i.doc_number) for i in current},
+                             documents=await _uploaded_keys(db, company))
         control = await _control(db, company, chart)
         after = _totals(current)
         for k, v in r.totals.items():
@@ -175,7 +189,7 @@ async def _build(db: AsyncSession, company: AACompany, kind: str, file: UploadFi
             **common, date_format=r.date_format, date_formats=_formats(r.date_candidates),
             errors=[RowIssueOut(**vars(e)) for e in r.errors], warnings=warnings, ready=r.ready,
             items=[OpenItemPreviewOut(**{k: v for k, v in vars(i).items()}) for i in r.items[:PREVIEW_ROWS]],
-            item_count=len(r.items), totals=r.totals, control=control, skipped=r.skipped)
+            item_count=len(r.items), totals=r.totals, control=control, skipped=r.skipped + r.documented)
         return _Built(preview, r, chart)
     closes = await active_closes(db, company.id)
     last_closed = closes[-1].month_end if closes else None
@@ -259,7 +273,7 @@ async def confirm_import(company_id: uuid.UUID, kind: ImportKind, file: UploadFi
                      entity="opening_item", entity_id=str(company.id), action="import", before={},
                      after={"items": len(built.result.items), "receivables": totals.get("ar", ZERO),
                             "payables": totals.get("ap", ZERO), "file": name}, always=True)
-        out.created, out.skipped = len(built.result.items), built.result.skipped
+        out.created, out.skipped = len(built.result.items), built.result.skipped + built.result.documented
         await db.flush()
         await bank.rematch(db, company)
     else:

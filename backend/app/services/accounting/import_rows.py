@@ -309,6 +309,7 @@ class OpenResult:
     date_format: str | None = None
     date_candidates: list[str] = field(default_factory=list)
     skipped: int = 0            # already imported (same type, party and number)
+    documented: int = 0         # already uploaded as a document (it ages from there)
     errors: list[RowIssue] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -319,6 +320,19 @@ class OpenResult:
 
 def item_key(kind: str, name: str, doc_number: str) -> tuple[str, str, str]:
     return kind, norm_name(name), doc_number.strip().upper()
+
+
+def document_keys(docs) -> set[tuple[str, str, str]]:
+    """Keys of the sales / bills already uploaded, from (kind, party name, party TIN, number): by name and by TIN."""
+    out: set[tuple[str, str, str]] = set()
+    for kind, name, tin, number in docs:
+        if not (number or "").strip():
+            continue
+        out.add(item_key(kind, name or "", number))
+        digits = re.sub(r"\D", "", tin or "")[:9]
+        if len(digits) == 9 and len(set(digits)) > 1:
+            out.add(item_key(kind, f"tin {digits}", number))
+    return out
 
 
 def _kind(text: str, default: str | None) -> str | None:
@@ -339,7 +353,8 @@ def _terms(text: str) -> int | None:
 
 def build_open_items(headers: list[str], rows: list[list[str]], columns: dict[str, str], books_start: date, *,
                      default_kind: str | None = None, date_format: str | None = None,
-                     existing: set[tuple[str, str, str]] | frozenset = frozenset()) -> OpenResult:
+                     existing: set[tuple[str, str, str]] | frozenset = frozenset(),
+                     documents: set[tuple[str, str, str]] | frozenset = frozenset()) -> OpenResult:
     get, index = _getter(headers, columns)
     out = OpenResult()
     missing = [OPEN_FIELDS[f] for f in ("contact_name", "doc_date", "amount") if f not in index]
@@ -392,8 +407,12 @@ def build_open_items(headers: list[str], rows: list[list[str]], columns: dict[st
         if key in seen:
             out.errors.append(RowIssue(n, f"{doc_number or 'This invoice'} for {name} is in the sheet twice."))
             continue
-        seen.add(key)
         digits = re.sub(r"\D", "", get(row, "contact_tin"))
+        if doc_number.strip() and (key in documents or (
+                len(digits) >= 9 and item_key(kind, f"tin {digits[:9]}", doc_number) in documents)):
+            out.documented += 1     # the uploaded invoice / bill already ages (and takes its payments)
+            continue
+        seen.add(key)
         if digits and len(digits) < 9:
             out.warnings.append(f"Row {n}: TIN '{get(row, 'contact_tin')}' has fewer than 9 digits; left blank.")
         if amount < 0:
@@ -403,6 +422,9 @@ def build_open_items(headers: list[str], rows: list[list[str]], columns: dict[st
         out.totals[kind] = out.totals.get(kind, ZERO) + amount
     if len(out.items) > MAX_OPEN_ITEMS:
         out.errors.append(RowIssue(0, f"Import at most {MAX_OPEN_ITEMS} open items at a time."))
+    if out.documented:
+        out.warnings.append(f"{out.documented} item(s) are already uploaded as documents (same type, number and party) "
+                            "and are skipped: they are in the aging from the document.")
     if out.skipped:
         out.warnings.append(f"{out.skipped} item(s) were imported before (same type, party and number) and are skipped.")
     return out

@@ -58,3 +58,25 @@ def test_je_closest_name_match_blocks_the_entry_until_confirmed():
     assert not r.ready and any("closest" in m for m in r.entries[0].errors)
     r = build_journals(head, rows, cols, REFS, {source_key("", "Rent income"): "4100"}, books_start=date(2026, 1, 1))
     assert r.ready and r.entries[0].lines[0]["account_code"] == "4100"
+
+
+# --- an opening item that is already an uploaded document would age twice ----------------------------------------
+
+from app.services.accounting.import_rows import build_open_items, document_keys, item_key  # noqa: E402
+
+OPEN_HEAD = ["Type", "Customer", "TIN", "Invoice no.", "Invoice date", "Amount"]
+OPEN_COLS = {"kind": "Type", "contact_name": "Customer", "contact_tin": "TIN", "doc_number": "Invoice no.",
+             "doc_date": "Invoice date", "amount": "Amount"}
+
+
+def test_open_items_skip_invoices_already_uploaded_as_documents():
+    rows = [["AR", "Mabuhay Builders Inc.", "", "0003", "2025-12-10", "150000"],
+            ["AR", "Other Buyer", "123-456-789", "0004", "2025-12-11", "1000"],
+            ["AP", "Pacific Steel", "", "PS-1", "2025-12-12", "800"]]
+    uploaded = document_keys([("ar", "MABUHAY BUILDERS, INC.", "", "0003"),      # same name and number
+                              ("ar", "Renamed Buyer", "123456789000", "0004"),     # same TIN and number
+                              ("ap", "Pacific Steel", "", "PS-2")])                # another bill
+    r = build_open_items(OPEN_HEAD, rows, OPEN_COLS, date(2026, 1, 1), documents=uploaded)
+    assert [i.doc_number for i in r.items] == ["PS-1"] and r.ready
+    assert r.documented == 2 and any("uploaded" in w for w in r.warnings)
+    assert item_key("ar", "Mabuhay Builders Inc.", "0003") == item_key("ar", "MABUHAY BUILDERS INC", "0003")

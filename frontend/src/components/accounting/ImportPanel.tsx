@@ -338,7 +338,7 @@ export default function ImportPanel({ companyId, companyName, onChanged }: Props
           {kind === "open-items" && (
             <section>
               <h3 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">
-                {preview.item_count} item(s){preview.skipped ? ` · ${preview.skipped} already imported` : ""} · receivables {formatPeso(preview.totals.ar ?? "0")} · payables {formatPeso(preview.totals.ap ?? "0")}
+                {preview.item_count} item(s){preview.skipped ? ` · ${preview.skipped} already in the books` : ""} · receivables {formatPeso(preview.totals.ar ?? "0")} · payables {formatPeso(preview.totals.ap ?? "0")}
               </h3>
               <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
                 <table className="w-full text-sm">

@@ -32,7 +32,7 @@ from app.services.accounting.compute.depreciation import fiscal_year_window
 router = APIRouter()
 
 _ACCOUNT_FIELDS = ("code", "name", "type", "parent_code", "active", "locked", "bank_account_no")
-_ENTRY_FIELDS = ("kind", "book", "entry_date", "reference", "particulars", "lines", "is_adjusting")
+ENTRY_FIELDS = ("kind", "book", "entry_date", "reference", "particulars", "lines", "is_adjusting")
 
 
 def _require_manager(user: User) -> None:
@@ -138,7 +138,7 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, user: User = 
     return _account_out(row, await ensure_chart(db, company))
 
 
-def _entry_label(row: AAJournalEntry) -> str:
+def entry_label(row: AAJournalEntry) -> str:
     return " · ".join(p for p in (row.entry_date.isoformat() if row.entry_date else "", row.reference,
                                   row.particulars) if p)
 
@@ -159,24 +159,37 @@ async def _check_entry(db: AsyncSession, company: AACompany, body: JournalEntryI
             AAJournalEntry.deleted_at.is_(None), AAJournalEntry.id != (entry_id or uuid.uuid4())))).first()
         if clash:
             raise HTTPException(status.HTTP_409_CONFLICT, "This company already has opening balances; edit them")
-    elif body.entry_date < company.books_start:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"The books start on {company.books_start:%b %d, %Y}; date the entry on or after it")
     chart = await ensure_chart(db, company)
-    bad = sorted({l.account_code for l in body.lines
-                  if chart.get(l.account_code) is None or not chart.get(l.account_code).active})
-    if bad:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Not active accounts in the chart: {', '.join(bad)}")
     kept: set[str] = set()
     if entry_id is not None:  # lines already on a locked account (posted before the lock) may stay
         stored = await db.get(AAJournalEntry, entry_id)
         kept = {str(x.get("account_code", "")) for x in (stored.lines or [])} if stored else set()
-    message = locked_message(chart, [l.account_code for l in body.lines if l.account_code not in kept])
+    message = entry_problem(chart, body, company.books_start, kept)
     if message:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, message)
 
 
-def _lines_json(body: JournalEntryIn) -> list[dict]:
+def entry_problem(chart, body: JournalEntryIn, books_start, kept: set[str] | frozenset = frozenset()) -> str:
+    """Why a typed (or imported) journal entry can't post ("" when it can): date, inactive or locked accounts."""
+    if body.kind != "opening" and body.entry_date < books_start:
+        return f"The books start on {books_start:%b %d, %Y}; date the entry on or after it"
+    bad = sorted({l.account_code for l in body.lines
+                  if chart.get(l.account_code) is None or not chart.get(l.account_code).active})
+    if bad:
+        return f"Not active accounts in the chart: {', '.join(bad)}"
+    return locked_message(chart, [l.account_code for l in body.lines if l.account_code not in kept])
+
+
+def new_entry_row(ent: uuid.UUID, company: AACompany, body: JournalEntryIn, user: User) -> AAJournalEntry:
+    """A journal entry row from a validated body (the opening balances always sit on the books start)."""
+    return AAJournalEntry(id=uuid.uuid4(), enterprise_id=ent, company_id=company.id, kind=body.kind, book=body.book,
+                          entry_date=company.books_start if body.kind == "opening" else body.entry_date,
+                          reference=body.reference, particulars=body.particulars or (
+                              "Opening balances" if body.kind == "opening" else ""),
+                          lines=lines_json(body), is_adjusting=body.is_adjusting, created_by=user.id)
+
+
+def lines_json(body: JournalEntryIn) -> list[dict]:
     return [{"account_code": l.account_code, "debit": str(l.debit), "credit": str(l.credit),
              "party_name": l.party_name.strip(), "party_tin": l.party_tin.strip()} for l in body.lines]
 
@@ -200,15 +213,11 @@ async def create_journal_entry(company_id: uuid.UUID, body: JournalEntryIn, user
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
     await _check_entry(db, company, body)
-    row = AAJournalEntry(id=uuid.uuid4(), enterprise_id=ent, company_id=company.id, kind=body.kind, book=body.book,
-                         entry_date=company.books_start if body.kind == "opening" else body.entry_date,
-                         reference=body.reference, particulars=body.particulars or (
-                             "Opening balances" if body.kind == "opening" else ""),
-                         lines=_lines_json(body), is_adjusting=body.is_adjusting, created_by=user.id)
+    row = new_entry_row(ent, company, body, user)
     db.add(row)
-    audit.record(db, label=_entry_label(row),
+    audit.record(db, label=entry_label(row),
                  ent=ent, company_id=company.id, user=user, entity="journal_entry", entity_id=row.id,
-                 action="create", after=audit.snapshot(row, _ENTRY_FIELDS))
+                 action="create", after=audit.snapshot(row, ENTRY_FIELDS))
     touch_books(company)
     await db.commit()
     return _entry_out(row)
@@ -230,14 +239,14 @@ async def update_journal_entry(entry_id: uuid.UUID, body: JournalEntryIn, user: 
     row = await _entry_or_404(db, ent, entry_id)
     company = await company_or_404(db, ent, row.company_id)
     await _check_entry(db, company, body, entry_id=row.id)
-    before = audit.snapshot(row, _ENTRY_FIELDS)
+    before = audit.snapshot(row, ENTRY_FIELDS)
     row.kind, row.book, row.reference, row.particulars = body.kind, body.book, body.reference, body.particulars
     row.entry_date = company.books_start if body.kind == "opening" else body.entry_date
-    row.lines = _lines_json(body)
+    row.lines = lines_json(body)
     row.is_adjusting = body.is_adjusting
-    audit.record(db, label=_entry_label(row),
+    audit.record(db, label=entry_label(row),
                  ent=ent, company_id=company.id, user=user, entity="journal_entry", entity_id=row.id,
-                 action="update", before=before, after=audit.snapshot(row, _ENTRY_FIELDS))
+                 action="update", before=before, after=audit.snapshot(row, ENTRY_FIELDS))
     touch_books(company)
     await db.commit()
     return _entry_out(row)
@@ -250,9 +259,9 @@ async def delete_journal_entry(entry_id: uuid.UUID, user: User = Depends(get_cur
     row = await _entry_or_404(db, ent, entry_id)
     company = await company_or_404(db, ent, row.company_id)
     row.deleted_at = datetime.now(timezone.utc)
-    audit.record(db, label=_entry_label(row),
+    audit.record(db, label=entry_label(row),
                  ent=ent, company_id=company.id, user=user, entity="journal_entry", entity_id=row.id,
-                 action="delete", before=audit.snapshot(row, _ENTRY_FIELDS), after=None)
+                 action="delete", before=audit.snapshot(row, ENTRY_FIELDS), after=None)
     touch_books(company)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

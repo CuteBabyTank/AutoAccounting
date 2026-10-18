@@ -214,3 +214,10 @@ def test_templates_have_headers_and_rows():
     for kind in ("opening-tb", "open-items", "journal-entries"):
         headers, rows = TEMPLATES[kind]
         assert headers and rows and all(len(r) == len(headers) for r in rows)
+
+
+def test_je_columns_guess_aje_as_the_adjusting_flag():
+    from app.services.accounting.import_rows import JE_SYNONYMS
+    got = suggest_columns(["Date", "Ref", "Account", "Amount", "Memo", "AJE"], JE_SYNONYMS)
+    assert got["adjusting"] == "AJE" and "journal_no" not in got
+    assert suggest_columns(["JE no", "Date"], JE_SYNONYMS)["journal_no"] == "JE no"

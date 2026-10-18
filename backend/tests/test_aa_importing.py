@@ -24,6 +24,7 @@ def test_parse_amount_variants():
     assert parse_amount("100 CR") == D("-100")
     assert parse_amount("100 dr") == D("100")
     assert parse_amount("-75.25") == D("-75.25")
+    assert parse_amount("'-75.25") == D("-75.25")      # a cell an export guarded against formulas
     assert parse_amount("") is None and parse_amount("-") is None
     with pytest.raises(ValueError):
         parse_amount("abc")

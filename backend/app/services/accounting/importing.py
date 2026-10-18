@@ -35,7 +35,7 @@ _ABBREVIATIONS = (
 
 def parse_amount(text: str) -> Decimal | None:
     """An amount as typed in a sheet; None when blank. Parentheses, a leading minus and a CR suffix are negative."""
-    t = str(text or "").strip().upper().replace("₱", "").replace("PHP", "").replace(",", "").replace(" ", "")
+    t = str(text or "").strip().lstrip("'").upper().replace("₱", "").replace("PHP", "").replace(",", "").replace(" ", "")
     if t in ("", "-", "–", "—"):
         return None
     sign = Decimal("1")

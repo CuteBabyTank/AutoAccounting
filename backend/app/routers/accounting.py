@@ -27,7 +27,7 @@ from app.models.accounting import (
 from app.models.user import User, UserRole
 from app.routers import (
     accounting_annual, accounting_atc, accounting_audit, accounting_bank, accounting_books, accounting_contacts,
-    accounting_employees,
+    accounting_employees, accounting_imports,
     accounting_periods, accounting_reclassify, accounting_reports, accounting_tasks, accounting_templates,
     accounting_work,
 )
@@ -1016,6 +1016,7 @@ async def file_page(
 router.include_router(accounting_work.router)
 router.include_router(accounting_tasks.router)
 router.include_router(accounting_books.router)
+router.include_router(accounting_imports.router)
 router.include_router(accounting_bank.router)
 router.include_router(accounting_contacts.router)
 router.include_router(accounting_audit.router)

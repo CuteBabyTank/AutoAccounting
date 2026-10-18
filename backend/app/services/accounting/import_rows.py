@@ -45,8 +45,9 @@ JE_FIELDS = {"journal_no": "Journal no.", "date": "Date", "account_code": "Accou
              "reference": "Reference", "party_name": "Party name", "party_tin": "Party TIN",
              "adjusting": "Adjusting entry (yes / no)"}
 JE_SYNONYMS = (
-    (r"journal|je ?(no|#|number)?$|entry ?(no|#|number)|voucher|batch", "journal_no"),
-    (r"adjust|^aje$", "adjusting"), (r"party ?tin|^tin$", "party_tin"),
+    (r"adjust|^aje$|^adj$", "adjusting"),
+    (r"journal|^je( ?(no|#|number))?$|entry ?(no|#|number)|voucher|batch", "journal_no"),
+    (r"party ?tin|^tin$", "party_tin"),
     (r"party|payee|customer|supplier|vendor|name of", "party_name"),
     (r"code|acct ?no|account ?no|account ?#|^gl$", "account_code"),
     (r"account|title", "account_name"), (r"date", "date"), (r"debit|^dr$", "debit"), (r"credit|^cr$", "credit"),

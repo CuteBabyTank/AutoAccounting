@@ -26,6 +26,7 @@ import { HOMEPAGE, roleLabel } from "@/lib/roles";
 import { resetGuides } from "@/lib/guides";
 import LogoMark from "@/components/layout/LogoMark";
 import NotificationBell from "@/components/work/NotificationBell";
+import SearchPalette from "@/components/search/SearchPalette";
 
 interface NavItem {
   id: string;
@@ -140,7 +141,12 @@ export default function Sidebar() {
         <LogoMark width={34} height={24} />
         <span className="lp-logo-text text-[18px] tracking-tight text-[var(--text-sidebar)]">AutoAccounting</span>
       </a>
-      {firmMember && <NotificationBell variant="bar" />}
+      {firmMember && (
+        <div className="ml-auto flex items-center">
+          <SearchPalette variant="bar" />
+          <NotificationBell variant="bar" />
+        </div>
+      )}
     </header>
 
     {/* Mobile drawer scrim */}
@@ -309,7 +315,12 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="px-[14px] pb-4">
         <div className="h-px mb-2 bg-[var(--border-sidebar)]" />
-        {firmMember && <div className="hidden md:block"><NotificationBell variant="rail" fadeStyle={fade(lastRow)} /></div>}
+        {firmMember && (
+          <div className="hidden md:block">
+            <SearchPalette variant="rail" fadeStyle={fade(lastRow)} />
+            <NotificationBell variant="rail" fadeStyle={fade(lastRow)} />
+          </div>
+        )}
         <button
           onClick={() => {
             resetGuides();

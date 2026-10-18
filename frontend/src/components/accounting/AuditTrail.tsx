@@ -23,10 +23,12 @@ export const ENTITY_LABELS: Record<string, string> = {
   work_item: "Work board",
   task: "Task",
   firm_settings: "Firm settings",
+  coa_template: "Chart template",
 };
 
 const ACTION_LABELS: Record<string, string> = {
   create: "Created",
+  reclassify: "Reclassified",
   update: "Edited",
   delete: "Deleted",
   mark_reviewed: "Marked reviewed",
@@ -66,6 +68,8 @@ const ACTION_LABELS: Record<string, string> = {
 
 const FIELD_LABELS: Record<string, string> = {
   is_adjusting: "Adjusting entry",
+  locked: "Locked",
+  coa_template: "Chart template",
   assignee_id: "Assigned to",
   status_override: "Board status",
   filed_on: "Filed on",

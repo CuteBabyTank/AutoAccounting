@@ -21,6 +21,8 @@ class ContactRowOut(BaseModel):
     cwt_pending: Decimal           # customer CWT still waiting for its 2307
     unverified: int                # bills on credit with no payment seen (payment_unverified)
     last_date: date | None
+    payment_terms_days: int | None = None
+    default_account: str = ""      # supplier default (the supplier databank's account)
 
 
 class ContactListOut(BaseModel):

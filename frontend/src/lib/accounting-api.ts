@@ -1,6 +1,11 @@
 // Accounting API client (companies, uploads, periods, books). Auth/team/admin calls live in lib/api.ts.
 import api, { seg } from "@/lib/api";
 import type {
+  BulkResolveResult,
+  CoaTemplate,
+  ReclassifyInput,
+  ReclassifyList,
+  ReclassifyPreview,
   CompanyKpis,
   ManagementPack,
   Postings,
@@ -86,8 +91,20 @@ export const accountingApi = {
     api.get<AuditPage>("/accounting/audit-events", { params: filters }).then((r) => r.data),
   listCompanies: (q = "") =>
     api.get<Company[]>("/accounting/companies", { params: q ? { q } : {} }).then((r) => r.data),
-  createCompany: (data: CompanyInput) =>
+  createCompany: (data: CompanyInput & { coa_template?: string }) =>
     api.post<Company>("/accounting/companies", data).then((r) => r.data),
+  coaTemplates: () => api.get<CoaTemplate[]>("/accounting/coa-templates").then((r) => r.data),
+  saveCoaTemplate: (companyId: string, name: string, description = "") =>
+    api.post<CoaTemplate>(`/accounting/companies/${seg(companyId)}/coa-template`, { name, description }).then((r) => r.data),
+  deleteCoaTemplate: (id: string) => api.delete(`/accounting/coa-templates/${seg(id)}`).then(() => undefined),
+  reclassifyCandidates: (companyId: string, params: { start: string; end: string; account: string; atc?: string }) =>
+    api.get<ReclassifyList>(`/accounting/companies/${seg(companyId)}/reclassify`, { params }).then((r) => r.data),
+  reclassifyPreview: (companyId: string, body: ReclassifyInput) =>
+    api.post<ReclassifyPreview>(`/accounting/companies/${seg(companyId)}/reclassify/preview`, body).then((r) => r.data),
+  reclassify: (companyId: string, body: ReclassifyInput) =>
+    api.post<ReclassifyPreview>(`/accounting/companies/${seg(companyId)}/reclassify`, body).then((r) => r.data),
+  bulkResolve: (body: { document_ids: string[]; reason_code: string; action: "reviewed" | "exclude"; reason: string }) =>
+    api.post<BulkResolveResult>("/accounting/documents/bulk-resolve", body).then((r) => r.data),
   updateCompany: (id: string, data: CompanyInput) =>
     api.put<Company>(`/accounting/companies/${seg(id)}`, data).then((r) => r.data),
   upload: (files: File[], companyId?: string) => {
@@ -201,7 +218,7 @@ export const accountingApi = {
     api.get<Account[]>(`/accounting/companies/${seg(companyId)}/accounts`).then((r) => r.data),
   addAccount: (companyId: string, data: { code: string; name: string; parent_code: string }) =>
     api.post<Account>(`/accounting/companies/${seg(companyId)}/accounts`, data).then((r) => r.data),
-  updateAccount: (id: string, patch: { name?: string; active?: boolean; bank_account_no?: string }) =>
+  updateAccount: (id: string, patch: { name?: string; active?: boolean; locked?: boolean; bank_account_no?: string }) =>
     api.patch<Account>(`/accounting/accounts/${seg(id)}`, patch).then((r) => r.data),
   journalEntries: (companyId: string, year: number) =>
     api

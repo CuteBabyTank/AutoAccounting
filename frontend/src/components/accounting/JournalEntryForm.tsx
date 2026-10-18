@@ -35,7 +35,8 @@ export default function JournalEntryForm({ accounts, initial, busy, onCancel, on
           : "";
   const setLine = (i: number, patch: Partial<JournalLine>) =>
     setEntry((e) => ({ ...e, lines: lines.map((l, j) => (j === i ? { ...l, ...patch } : l)) }));
-  const active = accounts.filter((a) => a.active);
+  // Locked accounts take no new lines; a line already on one (posted before the lock) keeps it.
+  const active = accounts.filter((a) => a.active && (!a.locked || initial.lines.some((l) => l.account_code === a.code)));
   const opening = entry.kind === "opening";
 
   return (

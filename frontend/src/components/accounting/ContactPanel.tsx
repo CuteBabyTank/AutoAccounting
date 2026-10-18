@@ -50,7 +50,7 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
       .then(([c, accounts]) => {
         if (cancelled) return;
         setData(c);
-        setChart(accounts.filter((a) => a.active));
+        setChart(accounts.filter((a) => a.active && !a.locked));
       })
       .catch((e) => !cancelled && setError(apiErrorMessage(e, "Couldn't load this contact")));
     Promise.all([accountingApi.contacts(companyId, "customer", asOf), accountingApi.contacts(companyId, "supplier", asOf)])

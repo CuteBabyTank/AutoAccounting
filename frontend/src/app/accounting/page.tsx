@@ -19,6 +19,7 @@ import ContactsPanel from "@/components/accounting/ContactsPanel";
 import CompanyOverviewPanel from "@/components/accounting/CompanyOverviewPanel";
 import PeriodPanel from "@/components/accounting/PeriodPanel";
 import ReportsPanel from "@/components/accounting/ReportsPanel";
+import ReclassifyPanel from "@/components/accounting/ReclassifyPanel";
 import AppendPrompt from "@/components/accounting/AppendPrompt";
 import UploadReviewDialog from "@/components/accounting/UploadReviewDialog";
 import DuplicateBanner from "@/components/accounting/DuplicateBanner";
@@ -422,6 +423,29 @@ export default function AccountingPage() {
                 <p className="py-6 text-sm text-[var(--text-secondary)]">Set a Books start on the company to see its reports.</p>
               );
             })()}
+            {selected?.view === "reclassify" && (() => {
+              const company = tree.find((c) => c.id === selected.companyId);
+              return company?.books_start ? (
+                <ReclassifyPanel
+                  key={selected.companyId}
+                  companyId={selected.companyId}
+                  companyName={company.registered_name}
+                  fiscalYearEndMonth={company.fiscal_year_end_month}
+                  onOpenDocument={(id) =>
+                    accountingApi
+                      .getDocument(id)
+                      .then(setOpenDoc)
+                      .catch((e) => setError(apiErrorMessage(e, "Couldn't open the document")))
+                  }
+                  onChanged={() => {
+                    loadTree().catch(() => undefined);
+                    setPeriodRefresh((n) => n + 1);
+                  }}
+                />
+              ) : (
+                <p className="py-6 text-sm text-[var(--text-secondary)]">Set a Books start on the company to reclassify its postings.</p>
+              );
+            })()}
             {selected?.view === "overview" && (
               <CompanyOverviewPanel
                 key={selected.companyId}
@@ -443,6 +467,7 @@ export default function AccountingPage() {
                 category={category}
                 onCategory={setCategory}
                 onOpen={setOpenDoc}
+                onBulkResolved={refreshAfterDocChange}
                 onEditCompany={canManage ? () => editCompany(folder.company.id) : undefined}
               />
             ) : selected?.quarter === 0 || selected?.view ? null : (

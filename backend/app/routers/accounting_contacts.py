@@ -83,6 +83,7 @@ def contact_rows(sub: Subledger, role: str) -> list[ContactRowOut]:
             cwt_pending=c2(sum((x.amount for x in pending), ZERO)),
             unverified=sum(1 for i in items if i.doc.payment_unverified),
             last_date=max((d.doc_date for d in docs), default=None),
+            payment_terms_days=getattr(c, "payment_terms_days", None),
         ))
     return sorted(out, key=lambda r: (-(r.open_balance > 0), r.registered_name.lower()))
 
@@ -96,6 +97,11 @@ async def list_contacts(company_id: uuid.UUID, role: str = Query("customer", pat
     sub = await load_subledger(db, company, as_of or today())
     await db.commit()  # contacts synced from the documents
     rows = contact_rows(sub, role)
+    if role == "supplier":
+        defaults = dict((await db.execute(select(AASupplierRule.counterparty_tin, AASupplierRule.gl_account_code).where(
+            AASupplierRule.company_id == company.id, AASupplierRule.gl_account_code != ""))).all())
+        for r in rows:
+            r.default_account = defaults.get(r.tin, "")
     return ContactListOut(role=role, as_of=sub.as_of, contacts=rows,
                           total_open=c2(sum((r.open_balance for r in rows), ZERO)),
                           total_overdue=c2(sum((r.overdue for r in rows), ZERO)),

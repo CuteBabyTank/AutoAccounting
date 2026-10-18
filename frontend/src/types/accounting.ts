@@ -218,7 +218,7 @@ export interface FolderRef {
   companyId: string;
   year: number | null;
   quarter: number | null;
-  view?: "books" | "atc" | "employees" | "audit" | "bank" | "customers" | "suppliers" | "overview" | "reports";
+  view?: "books" | "atc" | "employees" | "audit" | "bank" | "customers" | "suppliers" | "overview" | "reports" | "reclassify";
   /** view "bank": the bank account code ("" = unassigned statements) and month (YYYY-MM). */
   bankAccount?: string;
   month?: string;
@@ -459,7 +459,11 @@ export interface Account {
   parent_code: string | null;
   system_key: string | null;
   active: boolean;
+  /** Locked: no new postings by people or extraction (existing ones stay). */
+  locked?: boolean;
   bank_account_no?: string;
+  /** Where it lands, e.g. "Profit and loss · Operating expenses". */
+  placement?: string;
 }
 
 export interface JournalLine {
@@ -738,6 +742,9 @@ export interface ContactRow {
   cwt_pending: string;
   unverified: number;
   last_date: string | null;
+  payment_terms_days?: number | null;
+  /** Supplier list: the supplier's default chart account ("" = none). */
+  default_account?: string;
 }
 
 export interface ContactList {
@@ -1030,4 +1037,66 @@ export interface ManagementPack {
   generated_by: string;
   pdf: boolean;
   docx: boolean;
+}
+
+export interface CoaTemplate {
+  /** A built-in key (trading, services, manufacturing, non_vat) or a firm template id. */
+  id: string;
+  name: string;
+  description: string;
+  builtin: boolean;
+  accounts_count: number;
+}
+
+export interface ReclassifyCandidate {
+  key: string;
+  kind: "document" | "journal_entry" | "other";
+  source_id: string;
+  entry_id: string;
+  date: string;
+  book: string;
+  reference: string;
+  party: string;
+  particulars: string;
+  amount: string;
+  atc: string;
+  movable: boolean;
+  why_not: string;
+  closed: boolean;
+  account: string;
+}
+
+export interface ReclassifyList {
+  account: string;
+  account_name: string;
+  last_closed: string | null;
+  candidates: ReclassifyCandidate[];
+}
+
+export interface ReclassifyInput {
+  start: string;
+  end: string;
+  account: string;
+  atc?: string;
+  keys: string[];
+  to_account?: string;
+  to_atc?: string;
+  reason?: string;
+}
+
+export interface ReclassifyPreview {
+  items: { key: string; kind: string; date: string; reference: string; party: string; amount: string; from: string;
+    to: string; from_atc: string; to_atc: string; closed: boolean; posts_on: string }[];
+  count: number;
+  corrections: number;
+  total: string;
+  to_account: string;
+  to_name: string;
+  skipped: string[];
+  moved?: number;
+}
+
+export interface BulkResolveResult {
+  resolved: string[];
+  skipped: { id: string; why: string }[];
 }

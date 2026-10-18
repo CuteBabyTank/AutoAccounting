@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { X } from "@phosphor-icons/react";
 import { accountingApi } from "@/lib/accounting-api";
 import { BOOK_LABELS, apiErrorMessage } from "@/lib/accounting-format";
-import type { Company, CompanyInput } from "@/types/accounting";
+import type { CoaTemplate, Company, CompanyInput } from "@/types/accounting";
 
 const EMPTY: CompanyInput = {
   registered_name: "",
@@ -53,6 +53,12 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
   const [owners, setOwners] = useState((initial?.owner_names ?? []).join(", "));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [templates, setTemplates] = useState<CoaTemplate[]>([]);
+  const [template, setTemplate] = useState("");
+
+  useEffect(() => {
+    if (!companyId) accountingApi.coaTemplates().then(setTemplates).catch(() => undefined);
+  }, [companyId]);
 
   const set = <K extends keyof CompanyInput>(key: K, value: CompanyInput[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -73,7 +79,7 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
     try {
       const saved = companyId
         ? await accountingApi.updateCompany(companyId, payload)
-        : await accountingApi.createCompany(payload);
+        : await accountingApi.createCompany({ ...payload, coa_template: template });
       onSaved(saved);
     } catch (err) {
       setError(apiErrorMessage(err, "Couldn't save the company"));
@@ -202,6 +208,19 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
               <option value="services">Services</option>
             </select>
           </div>
+          {!companyId && templates.length > 0 && (
+            <div>
+              <label className={LABEL}>Chart of accounts</label>
+              <select className={INPUT} value={template} onChange={(e) => setTemplate(e.target.value)}>
+                <option value="">Standard PH chart</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id} title={t.description}>
+                    {t.name}{t.builtin ? "" : " (firm template)"}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className={LABEL}>Fiscal year ends</label>
             <select className={INPUT} value={form.fiscal_year_end_month} onChange={(e) => set("fiscal_year_end_month", Number(e.target.value))}>

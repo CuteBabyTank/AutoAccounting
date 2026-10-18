@@ -54,6 +54,7 @@ export const REASON_LABELS: Record<string, string> = {
   payment_source_unknown: "Marked paid or released, but nothing shows where the money came from. Ask the client.",
   payment_unverified: "On credit terms and no payment is linked yet.",
   duplicate_invoice_number: "This supplier used the same invoice number on another document with a different date.",
+  account_locked: "Its account is locked in the chart of accounts. Choose another account, or unlock the account if this posting is right.",
   personal_purchase: "Made out to the owner personally, so it was excluded from the books. If the company paid for it, record it as drawings.",
 };
 

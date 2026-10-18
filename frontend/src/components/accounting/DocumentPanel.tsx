@@ -66,7 +66,7 @@ function bookableAccounts(accounts: Account[], docAccount: string, current: stri
   const key = (k: string) => accounts.find((a) => a.system_key === k)?.code;
   const mapped = docAccount === "capital_goods" ? key("ppe") : (key(`doc:${docAccount}`) ?? key("doc:other"));
   return accounts.filter(
-    (a) => (a.active && mapped !== undefined && (a.code === mapped || a.parent_code === mapped)) || (current !== "" && a.code === current),
+    (a) => (a.active && !a.locked && mapped !== undefined && (a.code === mapped || a.parent_code === mapped)) || (current !== "" && a.code === current),
   );
 }
 

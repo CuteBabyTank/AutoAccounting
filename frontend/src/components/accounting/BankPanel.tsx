@@ -70,7 +70,7 @@ export default function BankPanel({ companyId, account, month, canManage, onChan
         if (cancelled) return;
         setData(m);
         setAccounts(overview.accounts);
-        setChart(all.filter((a) => a.active));
+        setChart(all.filter((a) => a.active && !a.locked));
       })
       .catch((e) => !cancelled && setError(apiErrorMessage(e, "Couldn't load the bank lines")));
     return () => {

@@ -194,6 +194,11 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
                           <span className="font-medium">{c.registered_name}</span>
                           {c.tin && <span className="ml-2 text-xs text-[var(--text-secondary)]">{c.tin}</span>}
                           {c.role === "both" && <span className="ml-2 text-xs text-[var(--text-secondary)]">customer and supplier</span>}
+                          {(c.default_account || c.payment_terms_days != null) && (
+                            <span className="block text-[11px] text-[var(--text-secondary)]" title="Supplier defaults: used for this supplier's new documents and due dates (edit on the contact page)">
+                              {[c.default_account && `Default account ${c.default_account}`, c.payment_terms_days != null && (c.payment_terms_days ? `${c.payment_terms_days}-day terms` : "Due on receipt")].filter(Boolean).join(" · ")}
+                            </span>
+                          )}
                         </td>
                         {BUCKETS.map((b) => (
                           <td key={b.key} className="py-1.5 pr-3 text-right tabular-nums">

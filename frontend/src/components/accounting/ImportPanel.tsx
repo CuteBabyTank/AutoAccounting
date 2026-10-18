@@ -33,6 +33,7 @@ const PROBLEM: Record<string, string> = {
   not_in_chart: "Not in the chart",
   inactive: "Inactive",
   locked: "Locked",
+  unconfirmed: "Confirm",
 };
 const day = (iso: string | null) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "");
 
@@ -137,7 +138,7 @@ export default function ImportPanel({ companyId, companyName, onChanged }: Props
         Import · {companyName}{" "}
         <Hint align="right">
           Bring a client&apos;s starting position and bulk journals in from Excel or CSV. Upload, check how the columns and accounts were read
-          (code first, then the account name, then the closest name; fix any row), then confirm. Negative amounts are fine (a negative debit is
+          (code first, then the account name, then the closest name, which you confirm; fix any row), then confirm. Negative amounts are fine (a negative debit is
           a credit), and the date format is detected from the values: you&apos;re asked only when it could be read two ways. Nothing posts until it
           balances. Every import is in the audit log.
         </Hint>
@@ -236,7 +237,24 @@ export default function ImportPanel({ companyId, companyName, onChanged }: Props
 
           {preview.accounts.length > 0 && (
             <section>
-              <h3 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">Accounts</h3>
+              <h3 className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+                Accounts
+                {preview.accounts.some((a) => a.problem === "unconfirmed") && (
+                  <button
+                    className={BTN}
+                    disabled={busy}
+                    onClick={() => run({
+                      ...opts,
+                      accounts: {
+                        ...(opts.accounts ?? {}),
+                        ...Object.fromEntries(preview.accounts.filter((a) => a.problem === "unconfirmed" && a.chosen).map((a) => [a.key, a.chosen as string])),
+                      },
+                    })}
+                  >
+                    Use every closest name shown
+                  </button>
+                )}
+              </h3>
               <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
                 <table className="w-full text-sm">
                   <thead>
@@ -258,6 +276,15 @@ export default function ImportPanel({ companyId, companyName, onChanged }: Props
                           >
                             {accountOptions(a.chosen)}
                           </select>
+                          {a.problem === "unconfirmed" && a.chosen && (
+                            <button
+                              className={`${BTN} ml-2`}
+                              disabled={busy}
+                              onClick={() => run({ ...opts, accounts: { ...(opts.accounts ?? {}), [a.key]: a.chosen as string } })}
+                            >
+                              Use it
+                            </button>
+                          )}
                           {a.how === "none" && a.alternatives.length > 0 && !a.chosen && (
                             <span className="ml-2 text-[11px] text-[var(--text-secondary)]">Closest: {a.alternatives.map((c) => `${c} ${name(c)}`).join(", ")}</span>
                           )}

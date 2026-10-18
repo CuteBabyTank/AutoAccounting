@@ -1122,7 +1122,7 @@ export interface ImportAccountChoice {
   score: number;
   alternatives: string[];
   chosen: string | null;
-  problem: "" | "unmapped" | "not_in_chart" | "inactive" | "locked";
+  problem: "" | "unmapped" | "not_in_chart" | "inactive" | "locked" | "unconfirmed";
   rows: number;
 }
 

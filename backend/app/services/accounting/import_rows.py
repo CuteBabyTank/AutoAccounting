@@ -92,17 +92,18 @@ class AccountChoice:
     name_in: str
     match: AccountMatch
     chosen: str | None
-    problem: str        # "" | unmapped | not_in_chart | inactive | locked
+    problem: str        # "" | unmapped | not_in_chart | inactive | locked | unconfirmed (closest name, not confirmed)
     rows: int = 0
 
 
 _PROBLEM_TEXT = {"unmapped": "isn't mapped to an account", "not_in_chart": "is mapped to an account not in the chart",
-                 "inactive": "is mapped to an inactive account", "locked": "is mapped to a locked account"}
+                 "inactive": "is mapped to an inactive account", "locked": "is mapped to a locked account",
+                 "unconfirmed": "was matched by the closest name; confirm it or pick the account"}
 
 
 def problem_text(a: AccountChoice) -> str:
     shown = " ".join(p for p in (a.code_in, a.name_in) if p) or "(blank)"
-    target = f" ({a.chosen})" if a.chosen and a.problem in ("inactive", "locked") else ""
+    target = f" ({a.chosen})" if a.chosen and a.problem in ("inactive", "locked", "unconfirmed") else ""
     return f"Account '{shown}' {_PROBLEM_TEXT[a.problem]}{target}"
 
 
@@ -120,8 +121,12 @@ class _Accounts:
         found = self.by_key.get(key)
         if found is None:
             match = match_account(code, name, self.refs)
-            chosen = (self.overrides.get(key) or "").strip() or match.code
-            found = AccountChoice(key, code.strip(), name.strip(), match, chosen or None, self._problem(chosen))
+            override = (self.overrides.get(key) or "").strip()
+            chosen = override or match.code
+            problem = self._problem(chosen)
+            if not problem and not override and match.how == "fuzzy":
+                problem = "unconfirmed"     # a closest name can be the wrong account (Rent income → Interest income)
+            found = AccountChoice(key, code.strip(), name.strip(), match, chosen or None, problem)
             self.by_key[key] = found
         found.rows += 1
         return found

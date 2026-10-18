@@ -14,6 +14,8 @@ interface Props {
   role: "customer" | "supplier";
   canManage: boolean;
   onOpenDocument: (id: string) => void;
+  /** Open this contact's page first (a search result or deep link). */
+  initialContactId?: string | null;
 }
 
 const BTN = "inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-60";
@@ -33,13 +35,13 @@ export function todayIso(): string {
 }
 
 /** Company → Customers / Suppliers: who owes the company (A/R) or whom it owes (A/P), aged, with 2307s pending. */
-export default function ContactsPanel({ companyId, companyName, role, canManage, onOpenDocument }: Props) {
+export default function ContactsPanel({ companyId, companyName, role, canManage, onOpenDocument, initialContactId }: Props) {
   const [asOf, setAsOf] = useState(todayIso);
   const [list, setList] = useState<ContactList | null>(null);
   const [aging, setAging] = useState<Aging | null>(null);
   const [search, setSearch] = useState("");
   const [openOnly, setOpenOnly] = useState(true);
-  const [contactId, setContactId] = useState<string | null>(null);
+  const [contactId, setContactId] = useState<string | null>(initialContactId ?? null);
   const [refresh, setRefresh] = useState(0);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");

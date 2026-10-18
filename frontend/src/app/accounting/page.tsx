@@ -30,6 +30,7 @@ import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
 import { DOCUMENTS_TOUR } from "@/components/guide/tours";
 import { accountingApi } from "@/lib/accounting-api";
 import { OPEN_COMPANY_EVENT, safeId } from "@/lib/work-api";
+import { OPEN_TARGET_EVENT, parseTarget } from "@/lib/search-nav";
 import { teamApi } from "@/lib/api";
 import { useGuide } from "@/lib/guides";
 import { apiErrorMessage } from "@/lib/accounting-format";
@@ -70,20 +71,38 @@ export default function AccountingPage() {
   const [append, setAppend] = useState<AffectedPeriod[] | null>(null);
   const [periodRefresh, setPeriodRefresh] = useState(0);
   const [memberCount, setMemberCount] = useState<number | null>(null);
+  const [deepContact, setDeepContact] = useState<string | null>(null);
   const guide = useGuide("documents");
 
-  // Deep link from the work board / notifications: /accounting?company=<id>&view=overview
+  // Deep links from the work board, notifications and search: /accounting?company=<id>&view=…&doc=<id>
+  // (lib/search-nav parseTarget: only UUIDs and known shapes are accepted; panels load through the firm-scoped API).
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    // Only a UUID is accepted from the URL or the event; the panel then loads it through the firm-scoped API.
-    const company = safeId(params.get("company"));
-    if (company) setSelected({ companyId: company, year: null, quarter: null, view: "overview" });
-    const open = (e: Event) => {
+    const openTarget = (params: URLSearchParams) => {
+      const t = parseTarget(params);
+      if (t.ref) setSelected(t.ref);
+      setDeepContact(t.contactId);
+      if (t.docId) {
+        accountingApi
+          .getDocument(t.docId)
+          .then(setOpenDoc)
+          .catch((e) => setError(apiErrorMessage(e, "Couldn't open the document")));
+      }
+    };
+    openTarget(new URLSearchParams(window.location.search));
+    const openCompany = (e: Event) => {
       const id = safeId((e as CustomEvent<unknown>).detail);
       if (id) setSelected({ companyId: id, year: null, quarter: null, view: "overview" });
     };
-    window.addEventListener(OPEN_COMPANY_EVENT, open);
-    return () => window.removeEventListener(OPEN_COMPANY_EVENT, open);
+    const onTarget = (e: Event) => {
+      const detail = (e as CustomEvent<unknown>).detail;
+      if (typeof detail === "string") openTarget(new URLSearchParams(detail));
+    };
+    window.addEventListener(OPEN_COMPANY_EVENT, openCompany);
+    window.addEventListener(OPEN_TARGET_EVENT, onTarget);
+    return () => {
+      window.removeEventListener(OPEN_COMPANY_EVENT, openCompany);
+      window.removeEventListener(OPEN_TARGET_EVENT, onTarget);
+    };
   }, []);
 
   useEffect(() => {
@@ -312,7 +331,10 @@ export default function AccountingPage() {
             <FolderTree
               tree={filteredTree}
               selected={selected}
-              onSelect={setSelected}
+              onSelect={(ref) => {
+                setDeepContact(null);
+                setSelected(ref);
+              }}
               canManage={canManage}
               onAddCompany={() => setCompanyForm({})}
             />
@@ -392,10 +414,11 @@ export default function AccountingPage() {
             )}
             {(selected?.view === "customers" || selected?.view === "suppliers") && (
               <ContactsPanel
-                key={`${selected.companyId}-${selected.view}`}
+                key={`${selected.companyId}-${selected.view}-${deepContact ?? ""}`}
                 companyId={selected.companyId}
                 companyName={tree.find((c) => c.id === selected.companyId)?.registered_name ?? ""}
                 role={selected.view === "customers" ? "customer" : "supplier"}
+                initialContactId={deepContact}
                 canManage={canManage}
                 onOpenDocument={(id) =>
                   accountingApi

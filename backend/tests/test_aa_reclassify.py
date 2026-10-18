@@ -193,3 +193,13 @@ def test_preview_shows_atc_only_where_apply_sets_it():
     assert by["document:d1"]["to_atc"] == "WC011" and by["document:p1"]["to_atc"] == ""
     kept, skipped = atc_only_selection(chosen, atc_keys)
     assert [c.key for c in kept] == ["document:d1"] and skipped == ["document:p1", "journal_entry:j1"]
+
+
+def test_writeoff_ar_lines_cannot_move():
+    from app.services.accounting.compute.reclassify import WRITEOFF
+
+    book = [entry("je:w1", date(2026, 10, 20), Line("6140", debit=D("100")), Line("1100", credit=D("100")),
+                  source="manual")]
+    rows = candidates(book, chart(), "1100", date(2026, 10, 1), date(2026, 10, 31), docs={},
+                      manual={"w1": WRITEOFF}, last_closed=None)
+    assert len(rows) == 1 and not rows[0].movable and "write-off" in rows[0].why_not

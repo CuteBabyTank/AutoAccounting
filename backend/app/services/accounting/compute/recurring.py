@@ -21,6 +21,16 @@ def add_period(d: date, frequency: str, anchor_day: int) -> date:
     return _on_day(months // 12, months % 12 + 1, max(1, min(anchor_day, 31)))
 
 
+def anchor_day(next_date: date, requested: int | None, previous: int | None) -> int:
+    """The anchor day to keep when a template is saved: the one asked for, else the previous anchor when the next date
+    is how that anchor falls in its month (Feb 28 for the 31st), else the next date's day."""
+    if requested:
+        return requested
+    if previous and _on_day(next_date.year, next_date.month, previous) == next_date:
+        return previous
+    return next_date.day
+
+
 def due_dates(next_date: date, frequency: str, anchor_day: int, through: date, end_date: date | None,
               limit: int = 24) -> list[date]:
     """Occurrences from ``next_date`` up to ``through`` (and ``end_date``), at most ``limit``."""

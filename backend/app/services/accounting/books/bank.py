@@ -170,6 +170,10 @@ async def _candidates(db: AsyncSession, company: AACompany, docs: list[AADocumen
     for i in opening:  # an opening item paid in cash isn't waiting for the bank either
         if i.paid_on is not None and (i.paid_via or "cash") != "bank":
             paid[str(i.id)] = Decimal("999999999999.99")
+    from app.services.accounting.books.subledger import writeoff_rows
+    from app.services.accounting.compute.writeoff import written_off
+    for item_id, amount in written_off(await writeoff_rows(db, company)).items():  # written off: not coming in
+        paid[item_id] = paid.get(item_id, ZERO) + amount
     out = open_items(lines + [opening_doc_line(i, company.books_start) for i in opening], ewt, contributions, paid,
                      refs={str(d.id): d.payment_ref for d in posted})
 

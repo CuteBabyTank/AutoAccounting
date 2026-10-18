@@ -11,6 +11,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
@@ -94,6 +95,9 @@ async def write_off(company_id: uuid.UUID, body: WriteOffIn, user: User = Depend
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and managers can write off invoices")
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
+    # one write-off per company at a time: two at once would both see the same invoices open
+    await db.execute(select(AACompany.id).where(AACompany.id == company.id, AACompany.enterprise_id == ent)
+                     .with_for_update())
     if company.books_start is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Set the books start date on the company first")
     on = body.entry_date
@@ -125,6 +129,14 @@ async def write_off(company_id: uuid.UUID, body: WriteOffIn, user: User = Depend
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not open customer invoices on "
                                                          f"{on:%b %d, %Y}: {', '.join(names.get(i, i) for i in missing)}")
     chosen = [open_by_id[i] for i in wanted]
+    today = manila_today()
+    later_pays = sub.payments if on >= today else (await load_subledger(db, company, today)).payments
+    later = wo.paid_after(later_pays, set(wanted), on)
+    if later:
+        names = {d.id: d.doc_number or d.id for d in sub.docs}
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Paid or written off after {on:%b %d, %Y}: "
+                                                         f"{', '.join(names.get(i, i) for i in wanted if i in later)}. "
+                                                         "Date the write-off after the last payment")
     total = c2(sum((i.open for i in chosen), ZERO))
     je = AAJournalEntry(
         id=uuid.uuid4(), enterprise_id=ent, company_id=company.id, kind="manual", book="GJ", entry_date=on,

@@ -262,6 +262,8 @@ async def delete_journal_entry(entry_id: uuid.UUID, user: User = Depends(get_cur
     ent = scope_for(user)
     row = await _entry_or_404(db, ent, entry_id)
     company = await company_or_404(db, ent, row.company_id)
+    if row.writeoff_items and user.role not in MANAGER_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and managers can undo a write-off")
     row.deleted_at = datetime.now(timezone.utc)
     audit.record(db, label=entry_label(row),
                  ent=ent, company_id=company.id, user=user, entity="journal_entry", entity_id=row.id,

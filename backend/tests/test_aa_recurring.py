@@ -67,3 +67,13 @@ def test_template_out_lists_due_dates_and_anchor():
     assert out.due == [date(2026, 1, 31), date(2026, 2, 28), date(2026, 3, 31)] and out.amount == "25000.00"
     row.active = False
     assert _out(row, date(2026, 3, 31)).due == []
+
+
+def test_editing_keeps_the_anchor_day_of_a_clamped_next_date():
+    from app.services.accounting.compute.recurring import anchor_day
+
+    assert anchor_day(date(2026, 2, 28), None, 31) == 31     # Feb 28 is how the 31st looks in February
+    assert anchor_day(date(2026, 4, 30), None, 31) == 31
+    assert anchor_day(date(2026, 3, 15), None, 31) == 15     # moved to a new day
+    assert anchor_day(date(2026, 3, 31), None, None) == 31
+    assert anchor_day(date(2026, 2, 28), 30, 31) == 30       # asked for explicitly

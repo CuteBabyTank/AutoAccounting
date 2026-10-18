@@ -69,6 +69,9 @@ def _source(entry_id: str) -> tuple[str, str] | None:
     return "other", entry_id
 
 
+WRITEOFF = "writeoff"   # ``manual`` kind of a write-off entry when its A/R lines are the ones listed
+
+
 def candidates(entries: list[Entry], chart: Chart, account: str, start: date, end: date,
                docs: dict[str, tuple[str | None, str]], manual: dict[str, str], last_closed: date | None,
                atc: str = "") -> list[Candidate]:
@@ -100,6 +103,8 @@ def candidates(entries: list[Entry], chart: Chart, account: str, start: date, en
             k = manual.get(sid)
             if k == "manual":
                 movable = True
+            elif k == WRITEOFF:
+                why = "A write-off's A/R lines are tied to its invoices; delete the write-off and write off again."
             else:
                 why = ("Opening balances are edited in Books." if k == "opening"
                        else "This journal entry no longer exists.")

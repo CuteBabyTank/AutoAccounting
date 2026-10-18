@@ -101,7 +101,8 @@ async def _candidates(db: AsyncSession, company: AACompany, books: Books, accoun
     closes = await active_closes(db, company.id)
     last_closed = closes[-1].month_end if closes else None
     rows = rc.candidates(books.entries or [], books.chart, account, start, end, doc_info,
-                         {str(j.id): j.kind for j in jes}, last_closed, atc)
+                         {str(j.id): rc.WRITEOFF if j.writeoff_items and account == books.chart.code("ar") else j.kind
+                          for j in jes}, last_closed, atc)
     return rows, {str(d.id): d for d in docs}, {str(j.id): j for j in jes}, last_closed
 
 

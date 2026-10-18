@@ -5,6 +5,7 @@ balance (net of the customer's CWT and of payments, as the aging shows). The ent
 open items, which the subledger reads back as payments so the invoices close; deleting the entry reopens them.
 """
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -26,12 +27,29 @@ def candidates(items: list[OpenItem], min_days_past_due: int, max_balance: Decim
 def entry_lines(items: list[OpenItem], expense_code: str, ar_code: str) -> list[dict]:
     total = c2(sum((i.open for i in items), ZERO))
     lines = [{"account_code": expense_code, "debit": str(total), "credit": "0", "party_name": "", "party_tin": ""}]
-    lines += [{"account_code": ar_code, "debit": "0", "credit": str(c2(i.open)), "party_name": i.doc.contact_name,
-               "party_tin": i.doc.contact_tin} for i in items]
+    # a JE line keeps a 9-digit TIN and a 255-character name (contact TINs are stored as NNN-NNN-NNN-branch)
+    lines += [{"account_code": ar_code, "debit": "0", "credit": str(c2(i.open)),
+               "party_name": (i.doc.contact_name or "")[:255],
+               "party_tin": re.sub(r"\D", "", i.doc.contact_tin or "")[:9]} for i in items]
     return lines
+
+
+def paid_after(pays: list[Payment], ids: set[str], on: date) -> set[str]:
+    """The items among ``ids`` with a payment (or another write-off) dated after ``on``: writing them off on ``on``
+    at the balance open then would credit A/R twice once the later payment posts."""
+    return {p.settles for p in pays if p.settles in ids and p.on > on}
 
 
 def payments(rows: list[tuple[str, date, list[dict]]]) -> list[Payment]:
     """(entry id, entry date, writeoff_items) of live write-off entries → payments that settle the items."""
     return [Payment(f"wo:{je}:{x['id']}", str(x["id"]), on, c2(Decimal(str(x["amount"]))), "writeoff", "Write-off")
             for je, on, items in rows for x in items or []]
+
+
+def written_off(rows: list[tuple[str, date, list[dict]]]) -> dict[str, Decimal]:
+    """Open item id → the total written off on it (the bank matcher counts it as paid)."""
+    out: dict[str, Decimal] = {}
+    for _, _, items in rows:
+        for x in items or []:
+            out[str(x["id"])] = c2(out.get(str(x["id"]), ZERO) + Decimal(str(x["amount"])))
+    return out

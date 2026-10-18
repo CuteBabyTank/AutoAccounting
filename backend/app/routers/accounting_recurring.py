@@ -24,7 +24,7 @@ from app.schemas.accounting import manila_today
 from app.schemas.accounting_books import JournalEntryIn, JournalEntryOut, JournalLineIn
 from app.services.accounting import audit
 from app.services.accounting.books.loader import ensure_chart, touch_books
-from app.services.accounting.compute.recurring import add_period, due_dates
+from app.services.accounting.compute.recurring import add_period, anchor_day, due_dates
 
 router = APIRouter()
 
@@ -126,7 +126,7 @@ def _apply(row: AARecurringEntry, body: RecurringIn) -> None:
     row.lines = lines_json(body)  # type: ignore[arg-type]  (same line fields as a JournalEntryIn)
     row.is_adjusting, row.frequency, row.active = body.is_adjusting, body.frequency, body.active
     row.next_date, row.end_date = body.next_date, body.end_date
-    row.day_of_month = body.day_of_month or body.next_date.day
+    row.day_of_month = anchor_day(body.next_date, body.day_of_month, row.day_of_month)
 
 
 @router.get("/companies/{company_id}/recurring-entries", response_model=list[RecurringOut])

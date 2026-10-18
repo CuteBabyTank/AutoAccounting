@@ -56,3 +56,41 @@ def test_writeoff_payments_close_the_items():
     assert sorted(i.doc.id for i in items(pays)) == ["c", "d", "e"]
     # before the write-off date the items are still open
     assert {i.doc.id for i in open_items(DOCS, pays, date(2026, 12, 30), {})} >= {"a", "b"}
+
+
+def test_entry_lines_fit_the_journal_line_schema():
+    # contact TINs are stored formatted with a branch code; a JE line keeps 9 digits (as the JE import does)
+    from app.schemas.accounting_books import JournalLineIn
+
+    d = OpenDoc(id="t", kind="ar", contact_key="k", contact_name="N" * 300, contact_tin="400-500-600-00000",
+                doc_number="SI 9", doc_date=date(2026, 1, 5), total=D("100.00"), withheld=D("0"))
+    lines = entry_lines(open_items([d], [], AS_OF, {}), "6140", "1100")
+    assert lines[1]["party_tin"] == "400500600"
+    for line in lines:
+        JournalLineIn(**line)
+
+
+def test_later_payments_block_a_backdated_writeoff():
+    from app.services.accounting.compute.writeoff import paid_after
+
+    pays = [Payment("p1", "a", date(2026, 3, 1), D("100.00"), "bank", ""),
+            Payment("p2", "b", date(2026, 9, 1), None, "cash", ""),
+            Payment("p3", "c", date(2026, 6, 30), D("5.00"), "bank", "")]
+    assert paid_after(pays, {"a", "b", "c"}, date(2026, 6, 30)) == {"b"}
+    assert paid_after(pays, {"a"}, date(2026, 1, 1)) == {"a"}
+
+
+def test_written_off_totals_feed_the_bank_matcher():
+    from app.services.accounting.bank_match import open_items as bank_open_items
+    from app.services.accounting.compute.inputs import DocLine
+    from app.services.accounting.compute.writeoff import written_off
+
+    rows = [("je1", date(2026, 12, 31), [{"id": "a", "amount": "1200.00"}]),
+            ("je2", date(2026, 12, 31), [{"id": "b", "amount": "400.00"}])]
+    paid = written_off(rows)
+    assert paid == {"a": D("1200.00"), "b": D("400.00")}
+    lines = [DocLine(id=i, category="sales", account="sales", doc_type="invoice", client_role="seller",
+                     doc_date=date(2026, 6, 1), doc_number=f"SI {i}", counterparty_tin="", counterparty_name="K",
+                     counterparty_address="", gross=D(g)) for i, g in (("a", "1200.00"), ("b", "1000.00"))]
+    left = {c.ref: c.amount for c in bank_open_items(lines, {}, {}, paid)}
+    assert left == {"b": D("600.00")}       # fully written off: never offered; partly: only the rest

@@ -311,3 +311,9 @@ Tests: 782 → 829 passing. Gates: pytest, ruff, lint, tsc, build all green.
 Not done: receipts (OR scans) can't link to an opening item (`settles_document_id` is a document FK used in ~40
 places); record the payment on the item and exclude the OR instead. No undo of a whole import batch (delete items /
 JEs one by one). Opening TB over 200 non-zero accounts is refused (JE line limit).
+
+Review fixes (2026-10-18): sheets over 5000 rows are refused instead of silently cut, cp1252 CSVs keep ñ (6a973f0);
+closest-name account matches must be confirmed ("Use it" / "Use every closest name shown") (6ac2578); open items
+already uploaded as documents are skipped, not aged twice (6ad8fd6); TB over 200 accounts / amounts past 14 digits
+fail the preview, not the confirm (24febd4); JE re-import warns about entries already posted (ff20888); a decimal
+comma (1.234,50) is refused, not read as 1.23 (32aebb9). Tests: 829 → 838.

@@ -116,7 +116,7 @@ def _doc_out(d: AADocument, open_by_id: dict[str, Decimal]) -> ContactDocumentOu
                               period_quarter=d.period_quarter, open=open_by_id.get(str(d.id)))
 
 
-_SOURCES = {"rcpt": "receipt", "paid": "paid_on", "bank": "bank"}
+_SOURCES = {"rcpt": "receipt", "paid": "paid_on", "bank": "bank", "wo": "writeoff"}
 
 
 async def _supplier_defaults(db: AsyncSession, company_id: uuid.UUID, tin: str) -> tuple[str, str]:

@@ -72,7 +72,7 @@ class ContactPaymentOut(BaseModel):
     on: date
     amount: Decimal
     via: str                        # cash | bank | ewallet
-    source: str                     # receipt | paid_on | bank
+    source: str                     # receipt | paid_on | bank | writeoff
     ref: str
 
 

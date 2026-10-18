@@ -14,10 +14,11 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.accounting import AACompany, AAContact, AADocument, AAOutput, AAPeriod
+from app.models.accounting import AACompany, AAContact, AADocument, AAJournalEntry, AAOutput, AAPeriod
 from app.services.accounting.books.receipts import party_key
 from app.services.accounting.compute.bank_books import apply_bank_lines
 from app.services.accounting.compute.books import Payment
+from app.services.accounting.compute import writeoff
 from app.services.accounting.compute.ewt import compute_ewt
 from app.services.accounting.compute.money import ZERO, c2
 from app.services.accounting.compute.subledger import (
@@ -175,6 +176,7 @@ async def load_subledger(db: AsyncSession, company: AACompany, as_of: date) -> S
     taxes = {i: tax for i, (_, tax) in ewt.items()}
     payments = document_payments(receipts, posted) + opening_payments(opening)
     payments, _, _ = apply_bank_lines(payments, (), await matched_lines(db, company.id, as_of))
+    payments += writeoff.payments(await writeoff_rows(db, company))
     fye = company.fiscal_year_end_month
     open_docs = [o for o in (open_doc_from(d, taxes, key_map, names, fye) for d in posted) if o is not None]
     open_docs += [opening_open_doc(i, key_map, names) for i in opening]
@@ -190,6 +192,15 @@ async def load_subledger(db: AsyncSession, company: AACompany, as_of: date) -> S
     marks = {str(d.id): d.cwt_2307 or {} for d in posted}
     cwt = cwt_items([o for o in open_docs if o.doc_date <= as_of], marks, received)
     return Subledger(as_of, contacts, open_docs, items, cwt, payments, ewt, received, {str(d.id): d for d in docs})
+
+
+async def writeoff_rows(db: AsyncSession, company: AACompany) -> list[tuple[str, date, list[dict]]]:
+    """(entry id, date, writeoff_items) of the company's live write-off journal entries."""
+    rows = (await db.execute(select(AAJournalEntry.id, AAJournalEntry.entry_date, AAJournalEntry.writeoff_items).where(
+        AAJournalEntry.enterprise_id == company.enterprise_id, AAJournalEntry.company_id == company.id,
+        AAJournalEntry.deleted_at.is_(None), AAJournalEntry.writeoff_items != [],
+    ))).all()
+    return [(str(i), on, items or []) for i, on, items in rows]
 
 
 def payment_rows(docs: list[OpenDoc], payments: list[Payment]) -> list[tuple[Payment, Decimal]]:

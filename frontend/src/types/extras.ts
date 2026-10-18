@@ -1,5 +1,5 @@
 // Workstream 10 extras: recurring entries, write-offs, cash forecast, checklist templates.
-import type { JournalEntry, JournalLine } from "@/types/accounting";
+import type { JournalEntry, JournalLine, OpenItemRow } from "@/types/accounting";
 
 export type Frequency = "monthly" | "quarterly";
 
@@ -27,4 +27,18 @@ export interface RecurringEntry extends RecurringInput {
 export interface RecurringPosted {
   posted: JournalEntry[];
   template: RecurringEntry;
+}
+
+export interface WriteOffCandidates {
+  as_of: string;
+  items: OpenItemRow[];
+  total: string;
+  last_closed: string | null;
+  books_start: string | null;
+}
+
+export interface WriteOffResult {
+  entry: JournalEntry;
+  count: number;
+  total: string;
 }

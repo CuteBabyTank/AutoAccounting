@@ -91,6 +91,8 @@ class JournalEntryOut(BaseModel):
     particulars: str
     lines: list[JournalLineIn]
     is_adjusting: bool = False
+    is_writeoff: bool = False        # a bulk write-off: can be deleted (reopens the invoices), not edited
+    recurring: bool = False          # posted from a recurring template
     created_at: datetime
 
 

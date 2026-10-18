@@ -73,6 +73,7 @@ _STANDARD = (
     ("6110", "Percentage tax", "expense", False, "pt_expense"),
     ("6120", "Non-creditable input VAT", "expense", False, "input_vat_expense"),
     ("6130", "Bank charges", "expense", False, "bank_charges"),
+    ("6140", "Bad debts", "expense", False, "bad_debts"),
     ("6900", "Miscellaneous expenses", "expense", False, "doc:other"),
     ("7010", "Income tax expense", "expense", False, "income_tax"),
 )

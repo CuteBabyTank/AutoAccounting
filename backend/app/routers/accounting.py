@@ -29,7 +29,7 @@ from app.routers import (
     accounting_annual, accounting_atc, accounting_audit, accounting_bank, accounting_books, accounting_contacts,
     accounting_employees, accounting_imports,
     accounting_periods, accounting_reclassify, accounting_reports, accounting_search, accounting_tasks,
-    accounting_recurring, accounting_templates,
+    accounting_recurring, accounting_templates, accounting_writeoff,
     accounting_work,
 )
 from app.routers.accounting_scope import (
@@ -1026,6 +1026,7 @@ router.include_router(accounting_reports.router)
 router.include_router(accounting_reclassify.router)
 router.include_router(accounting_templates.router)
 router.include_router(accounting_recurring.router)
+router.include_router(accounting_writeoff.router)
 router.include_router(accounting_atc.router)
 router.include_router(accounting_search.router)
 # Annual routes first: "/periods/{company}/{year}/annual" would otherwise match the quarter route's {quarter}.

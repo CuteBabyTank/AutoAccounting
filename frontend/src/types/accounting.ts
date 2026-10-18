@@ -505,6 +505,10 @@ export interface BooksYear {
 export interface JournalEntry extends JournalEntryInput {
   id: string;
   created_at: string;
+  /** A bulk write-off: delete it to reopen the invoices; it can't be edited. */
+  is_writeoff?: boolean;
+  /** Posted from a recurring template. */
+  recurring?: boolean;
 }
 
 export interface DocRef {

@@ -122,7 +122,7 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, user: User = 
     if body.active is not None:
         row.active = body.active
     if body.locked is not None:
-        if body.locked and row.system_key and not row.system_key.startswith("doc:"):
+        if body.locked and row.system_key and not row.system_key.startswith("doc:") and row.system_key != "bad_debts":
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "The books post to this account themselves; it can't "
                                                              "be locked")
         row.locked = body.locked
@@ -146,7 +146,8 @@ def entry_label(row: AAJournalEntry) -> str:
 def _entry_out(row: AAJournalEntry) -> JournalEntryOut:
     return JournalEntryOut(id=row.id, kind=row.kind, book=row.book, entry_date=row.entry_date,
                            reference=row.reference, particulars=row.particulars, lines=row.lines,
-                           is_adjusting=bool(row.is_adjusting), created_at=row.created_at)
+                           is_adjusting=bool(row.is_adjusting), is_writeoff=bool(row.writeoff_items),
+                           recurring=row.recurring_id is not None, created_at=row.created_at)
 
 
 async def _check_entry(db: AsyncSession, company: AACompany, body: JournalEntryIn,
@@ -238,6 +239,9 @@ async def update_journal_entry(entry_id: uuid.UUID, body: JournalEntryIn, user: 
     ent = scope_for(user)
     row = await _entry_or_404(db, ent, entry_id)
     company = await company_or_404(db, ent, row.company_id)
+    if row.writeoff_items:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A write-off can't be edited (its lines are tied to the "
+                                                         "invoices): delete it, which reopens them, and write off again")
     await _check_entry(db, company, body, entry_id=row.id)
     before = audit.snapshot(row, ENTRY_FIELDS)
     row.kind, row.book, row.reference, row.particulars = body.kind, body.book, body.reference, body.particulars

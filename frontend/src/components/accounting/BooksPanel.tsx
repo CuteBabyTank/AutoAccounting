@@ -181,7 +181,14 @@ export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndM
                 {e.particulars || e.reference || "(no particulars)"} ·{" "}
                 {e.lines.map((l) => `${title(l.account_code)} ${Number(l.debit) ? "Dr" : "Cr"} ${formatPeso(Number(l.debit) || Number(l.credit))}`).join(" / ")}
               </span>
-              <button className="text-[var(--accent)]" onClick={() => setEditing({ id: e.id, input: editable(e) })}>Edit</button>
+              {e.recurring && (
+                <span className="rounded-full bg-[var(--bg-secondary)] px-1.5 text-[11px] text-[var(--text-secondary)]">Recurring</span>
+              )}
+              {e.is_writeoff ? (
+                <span className="rounded-full bg-[var(--badge-yellow-bg)] px-1.5 text-[11px] font-medium text-[var(--badge-yellow-text)]" title="Delete it to reopen the invoices">Write-off</span>
+              ) : (
+                <button className="text-[var(--accent)]" onClick={() => setEditing({ id: e.id, input: editable(e) })}>Edit</button>
+              )}
               <button className="text-[var(--alert-error-text)]" disabled={busy} onClick={() => remove(e.id)}>Delete</button>
             </li>
           ))}

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FilePdf, FileXls, MagnifyingGlass } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
 import ContactPanel from "@/components/accounting/ContactPanel";
+import WriteOffPanel from "@/components/accounting/WriteOffPanel";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
 import type { Aging, AgingBucket, ContactList } from "@/types/accounting";
@@ -45,6 +46,7 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
   const [refresh, setRefresh] = useState(0);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [writingOff, setWritingOff] = useState(false);
   const kind = role === "customer" ? "ar" : "ap";
 
   useEffect(() => {
@@ -129,6 +131,9 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
           <button className={BTN} disabled={busy !== ""} onClick={() => download("pdf")}>
             <FilePdf size={16} /> Aging PDF
           </button>
+          {role === "customer" && canManage && !writingOff && (
+            <button className={BTN} onClick={() => setWritingOff(true)}>Write off…</button>
+          )}
         </div>
       </div>
       <p className="mb-3 text-xs text-[var(--text-secondary)]">
@@ -136,6 +141,17 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
         receipts, paid-on dates and matched bank lines.
       </p>
       {error && <p className="mb-2 text-sm text-[var(--alert-error-text)]">{error}</p>}
+      {writingOff && (
+        <WriteOffPanel
+          companyId={companyId}
+          asOf={asOf}
+          onClose={() => setWritingOff(false)}
+          onDone={() => {
+            setWritingOff(false);
+            setRefresh((n) => n + 1);
+          }}
+        />
+      )}
       {!list || !aging ? (
         !error && <p className="text-sm text-[var(--text-secondary)]">Loading…</p>
       ) : (

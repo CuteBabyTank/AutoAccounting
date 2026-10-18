@@ -30,7 +30,7 @@ const NUM = "py-1.5 pr-3 text-right tabular-nums";
 const day = (iso: string | null) =>
   iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "No date";
 const KIND: Record<string, string> = { ar: "Sale", ap: "Bill", "2307": "2307 received", receipt: "Receipt", other: "Other" };
-const SOURCE: Record<string, string> = { receipt: "Receipt", paid_on: "Marked paid", bank: "Bank line" };
+const SOURCE: Record<string, string> = { receipt: "Receipt", paid_on: "Marked paid", bank: "Bank line", writeoff: "Written off" };
 
 /** One customer or supplier: details, open items, 2307s to receive / issue, payments and documents. */
 export default function ContactPanel({ companyId, contactId, asOf, canManage, onBack, onOpenContact, onOpenDocument }: Props) {

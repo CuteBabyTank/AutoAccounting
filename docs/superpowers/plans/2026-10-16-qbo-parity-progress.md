@@ -358,3 +358,39 @@ Not done: journal entries are not matched by amount (lines are JSON strings); no
 help articles / reports aren't in the index; a task result opens the Tasks tab filtered to its company, not the task
 itself (no per-task deep link yet); bank lines have no page number, so the bank month opens rather than the
 statement page.
+
+## 10 P3 extras (2026-10-19)
+
+Plan: `2026-10-16-qbo-10-extras.md` (Decisions section there).
+
+Shipped:
+- **Recurring journal entries** (Books → Recurring entries): `aa_recurring_entries` (FORCE RLS), monthly / quarterly with
+  an anchor day (31st → Feb 28 → Mar 31), next / end date, pause. Nothing posts by itself: due occurrences show as
+  "N due" and post on "Post N due entries" (row lock, one JE per template per date via `aa_journal_entries.recurring_id`,
+  JE checks for books start / inactive / locked accounts, audited per entry with "Recurring: <name>"). Verified live:
+  two concurrent presses posted Aug 31 + Sep 30 once; the second got "Nothing is due yet".
+- **Write off invoices** (Customers → Write off…, managers): filter open A/R by days past due / balance, select, pick an
+  expense account (new standard `6140 Bad debts`), date in an open month, reason → one GJ entry Dr expense / Cr A/R per
+  invoice, `aa_journal_entries.writeoff_items` links it to the items, the subledger treats it as payments (aging,
+  statements, contact page "Written off"). Write-off JEs can't be edited; deleting reopens the invoices. Audited on the
+  JE and on each document / opening item. Verified in-process with today patched to Jan 15, 2027 (closed-month,
+  non-expense, unknown-item refusals; post; second write-off refused; edit refused; delete reopened ₱81,476.80).
+- **Cash-flow tile** on the company Overview: books cash (cash / bank / e-wallet) at the as-of date + open A/R − open
+  A/P by due date over 8 weeks with bars; overdue and later items shown apart, not counted
+  (`GET /companies/{id}/cash-forecast`, window-checked; `reports.cash_balance`).
+- **Customer statement types**: open item (as before), balance forward (opening line, invoices / payments / write-offs,
+  running balance), transaction (period lines and totals); aging footer and 2307 note on all
+  (`/contacts/{id}/statement?type=&start=`; `compute/statement.py`). Balance forward ties to the open-item total.
+- **Privacy toggle** ("Hide amounts") on the Overview and Work headers: per browser, blurs `.aa-amount` (KPI and aging
+  tiles, cash tile, health-check amounts).
+- **Close checklists**: built-in Monthly close (7 steps) and Quarter close (5), firm templates on Team (owners /
+  managers; copy a built-in), "Add a close checklist" on the Overview tasks (period end, assignee) creates one task per
+  step due N days after the period end; re-applying skips steps already there. `aa_checklist_templates` (FORCE RLS),
+  audited (`checklist_template`, each task `create` with the checklist as reason).
+
+Tests: 908 → 935 passing. Gates: pytest, ruff, lint, tsc, build all green.
+
+Skipped: QBO / Xero export (COA and contacts are trivial, but QBO's import layout can't be verified here and the GL /
+transaction-list XLSX already export the entries), report email scheduling (no mail infra), prepaid schedules (not in
+this row). Not done: the bank matcher can still offer a written-off invoice as a candidate; no notification for due
+recurring entries; no tour slides (Hints on each new section).

@@ -137,3 +137,14 @@ def test_query_drops_control_characters():
     assert q.text == "abc" and q.tokens == ["abc"]
     assert parse_query("\x00\x00", TODAY).too_short
 
+
+
+def test_trigram_index_failures_never_stop_startup():
+    # pg_trgm in a schema the app role can't use (e.g. a NOBYPASSRLS role without USAGE on "extensions") must not
+    # abort the startup transaction: every trigram CREATE INDEX is in its own exception block.
+    from app.services.accounting.schema import _TRGM_INDEXES, search_index_statements
+    block = search_index_statements()[-1]
+    assert block.count("EXCEPTION WHEN OTHERS") == len(_TRGM_INDEXES) + 1
+    for name, _, _ in _TRGM_INDEXES:
+        part = block.split(f"CREATE INDEX IF NOT EXISTS {name} ")[1]
+        assert part.index("EXCEPTION WHEN OTHERS") < part.index("END;")

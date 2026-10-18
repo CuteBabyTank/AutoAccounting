@@ -50,7 +50,8 @@ def column_statements() -> list[str]:
 
 
 # Global search (routers/accounting_search.py): equality lookups on amount / TIN / date, and trigram GIN indexes for
-# ILIKE '%text%' when pg_trgm is installed or may be created. Without it the same queries still run (slower).
+# ILIKE '%text%' when pg_trgm is installed or may be created. Without it (or without USAGE on its schema) the same
+# queries still run (slower); each trigram index is guarded so a failure never aborts startup.
 _TRGM_INDEXES = (
     ("ix_aa_documents_number_trgm", "aa_documents", "doc_number"),
     ("ix_aa_documents_seller_trgm", "aa_documents", "seller_name"),
@@ -65,8 +66,9 @@ _TRGM_INDEXES = (
 
 def search_index_statements() -> list[str]:
     trgm = "\n".join(
-        f"    EXECUTE 'CREATE INDEX IF NOT EXISTS {name} ON {table} USING gin ({column} ' || quote_ident(s) "
-        f"|| '.gin_trgm_ops)';"
+        f"    BEGIN\n      EXECUTE 'CREATE INDEX IF NOT EXISTS {name} ON {table} USING gin ({column} ' || "
+        f"quote_ident(s) || '.gin_trgm_ops)';\n    EXCEPTION WHEN OTHERS THEN\n"
+        f"      RAISE NOTICE 'trigram index {name} skipped: %', SQLERRM;\n    END;"
         for name, table, column in _TRGM_INDEXES
     )
     return [

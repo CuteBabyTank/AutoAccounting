@@ -29,7 +29,7 @@ from app.services.accounting.reports import Books, load_books
 router = APIRouter()
 
 _CODE = r"^\d{4,10}$"
-_DOC_FIELDS = ("gl_account_code", "ewt_atc")
+_DOC_FIELDS = ("gl_account_code", "ewt_atc", "review_reasons")
 
 
 class ReclassifyIn(BaseModel):
@@ -135,13 +135,18 @@ async def _plan(db: AsyncSession, company: AACompany, body: ReclassifyIn):
     chosen, skipped = rc.apply_selection(rows, body.keys)
     if not chosen:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "None of the selected items can be moved")
-    if body.to_atc and not body.to_account and not any(c.kind == "document" for c in chosen):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only documents carry an ATC; choose an account to move to")
+    atc_keys = {f"document:{i}" for i, d in docs.items() if d.category in rc.ATC_CATEGORIES}
+    if body.to_atc and not body.to_account:  # an ATC-only move touches purchase / expense documents only
+        chosen, no_atc = rc.atc_only_selection(chosen, atc_keys)
+        skipped = skipped + no_atc
+        if not chosen:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only purchase and expense documents carry an ATC; "
+                                                             "choose an account to move to")
     problem = rc.check_target(books.chart, body.account, body.to_account, {c.kind for c in chosen})
     if problem:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, problem)
     first_open = last_closed + timedelta(days=1) if last_closed else None
-    out = rc.preview(chosen, books.chart, body.to_account, body.to_atc, first_open)
+    out = rc.preview(chosen, books.chart, body.to_account, body.to_atc, first_open, atc_keys)
     out["skipped"] = skipped
     return chosen, docs, jes, out
 
@@ -169,18 +174,14 @@ async def reclassify_apply(company_id: uuid.UUID, body: ReclassifyIn, user: User
         if c.kind == "document":
             doc = docs[c.source_id]
             before = audit.snapshot(doc, _DOC_FIELDS)
-            if body.to_account:
-                doc.gl_account_code = body.to_account
-            if body.to_atc and doc.category in ("purchases", "expenses"):
-                doc.ewt_atc = body.to_atc
+            rc.move_document(doc, body.to_account, body.to_atc)
             audit.record(db, label=audit.document_label(doc), ent=ent, company_id=company.id, user=user,
                          entity="document", entity_id=doc.id, action="reclassify", before=before,
                          after=audit.snapshot(doc, _DOC_FIELDS), reason=reason)
         elif c.kind == "journal_entry" and body.to_account:
             je = jes[c.source_id]
             before = audit.snapshot(je, ("lines",))
-            je.lines = [dict(x, account_code=body.to_account) if str(x.get("account_code")) == body.account else x
-                        for x in je.lines or []]
+            je.lines = rc.move_lines(je.lines, body.account, body.to_account)
             audit.record(db, label=" · ".join(p for p in (je.entry_date.isoformat(), je.reference, je.particulars)
                                               if p),
                          ent=ent, company_id=company.id, user=user, entity="journal_entry", entity_id=je.id,

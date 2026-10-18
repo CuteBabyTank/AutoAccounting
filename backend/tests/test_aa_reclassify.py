@@ -139,3 +139,57 @@ def test_atc_only_change_keeps_account():
     item = preview(chosen, chart(), "", "WC011", None)["items"][0]
     assert (item["from"], item["to"], item["from_atc"], item["to_atc"]) == ("6020", "6020", "WC010", "WC011")
     assert replace(chosen[0], atc="") != chosen[0]
+
+
+def _doc(**kw):
+    from types import SimpleNamespace as NS
+
+    values = dict(category="expenses", gl_account_code="", ewt_atc="", review_reasons=[], needs_review=False)
+    values.update(kw)
+    return NS(**values)
+
+
+def test_move_document_out_of_a_locked_account_clears_the_flag():
+    from app.services.accounting.compute.reclassify import move_document
+
+    doc = _doc(review_reasons=["account_locked"], needs_review=True)
+    move_document(doc, "6900", "")
+    assert doc.gl_account_code == "6900" and doc.review_reasons == [] and doc.needs_review is False
+    kept = _doc(review_reasons=["account_locked", "ewt_expected"], needs_review=True)
+    move_document(kept, "6900", "WC011")
+    assert kept.review_reasons == ["ewt_expected"] and kept.needs_review is True and kept.ewt_atc == "WC011"
+    atc_only = _doc(review_reasons=["account_locked"], needs_review=True)
+    move_document(atc_only, "", "WC011")   # still on the locked account
+    assert atc_only.review_reasons == ["account_locked"] and atc_only.gl_account_code == ""
+
+
+def test_move_document_atc_only_on_purchases_and_expenses():
+    from app.services.accounting.compute.reclassify import move_document
+
+    payroll = _doc(category="payroll")
+    move_document(payroll, "6011", "WC011")
+    assert (payroll.gl_account_code, payroll.ewt_atc) == ("6011", "")
+
+
+def test_move_lines_rewrites_only_the_source_account():
+    from app.services.accounting.compute.reclassify import move_lines
+
+    lines = [{"account_code": "6020", "debit": "10"}, {"account_code": "1010", "credit": "10"}]
+    assert move_lines(lines, "6020", "6900") == [{"account_code": "6900", "debit": "10"},
+                                                  {"account_code": "1010", "credit": "10"}]
+
+
+def test_preview_shows_atc_only_where_apply_sets_it():
+    from app.services.accounting.compute.reclassify import atc_only_selection
+
+    book = _book() + [entry("doc:p1:payroll", date(2026, 10, 15), Line("6020", debit=D("900")),
+                            Line("2110", credit=D("900")))]
+    rows = candidates(book, chart(), "6020", date(2026, 10, 1), date(2026, 10, 31),
+                      docs={"d1": ("6020", "WC010"), "p1": ("6020", "")}, manual={"j1": "manual"}, last_closed=None)
+    chosen, _ = apply_selection(rows, ["document:d1", "document:p1", "journal_entry:j1"])
+    atc_keys = {"document:d1"}
+    out = preview(chosen, chart(), "6900", "WC011", None, atc_keys)
+    by = {i["key"]: i for i in out["items"]}
+    assert by["document:d1"]["to_atc"] == "WC011" and by["document:p1"]["to_atc"] == ""
+    kept, skipped = atc_only_selection(chosen, atc_keys)
+    assert [c.key for c in kept] == ["document:d1"] and skipped == ["document:p1", "journal_entry:j1"]

@@ -14,9 +14,11 @@ from app.services.accounting.compute.books import Entry
 from app.services.accounting.compute.cogs import is_capital_goods
 from app.services.accounting.compute.inputs import DocLine
 from app.services.accounting.compute.money import ZERO, c2
+from app.services.accounting.review_rules import LOCKED_REASON, needs_review_for
 
 PNL_TYPES = frozenset({"income", "cost", "expense"})
 DOCUMENT_TARGET_TYPES = frozenset({"cost", "expense"})
+ATC_CATEGORIES = frozenset({"purchases", "expenses"})   # the documents an ATC (EWT) applies to
 MAX_ITEMS = 500
 
 
@@ -155,14 +157,38 @@ def apply_selection(rows: list[Candidate], keys: list[str]) -> tuple[list[Candid
     return chosen, skipped
 
 
+def atc_only_selection(selected: list[Candidate], atc_keys: set[str]) -> tuple[list[Candidate], list[str]]:
+    """For an ATC-only move: the items that carry an ATC (``atc_keys``) and the keys of the rest."""
+    return [c for c in selected if c.key in atc_keys], [c.key for c in selected if c.key not in atc_keys]
+
+
+def move_document(doc, to_account: str, to_atc: str) -> None:
+    """Apply a move to a document (mutates it): the account override, the ATC on purchases / expenses only, and
+    ``account_locked`` dropped once the document leaves the locked account (targets are never locked)."""
+    if to_account:
+        doc.gl_account_code = to_account
+        if LOCKED_REASON in (doc.review_reasons or []):
+            doc.review_reasons = [r for r in doc.review_reasons if r != LOCKED_REASON]
+            doc.needs_review = needs_review_for(doc.review_reasons)
+    if to_atc and doc.category in ATC_CATEGORIES:
+        doc.ewt_atc = to_atc
+
+
+def move_lines(lines: list[dict], account: str, to_account: str) -> list[dict]:
+    """A journal entry's lines with ``account`` replaced by ``to_account``."""
+    return [dict(x, account_code=to_account) if str(x.get("account_code")) == account else x for x in lines or []]
+
+
 def preview(selected: list[Candidate], chart: Chart, to_account: str, to_atc: str,
-            first_open: date | None) -> dict:
-    """What a move would do, item by item; closed-month items post as a correction on ``first_open``."""
+            first_open: date | None, atc_keys: set[str] | None = None) -> dict:
+    """What a move would do, item by item; closed-month items post as a correction on ``first_open``.
+    ``atc_keys``: the documents an ATC applies to (None = every document)."""
     to_atc = to_atc.strip().upper()
     items = []
     for c in selected:
         doc = c.kind == "document"
-        new_atc = to_atc if (doc and to_atc) else (c.atc if doc else "")
+        takes = doc and (atc_keys is None or c.key in atc_keys)
+        new_atc = to_atc if (takes and to_atc) else (c.atc if doc else "")
         items.append({
             "key": c.key, "kind": c.kind, "date": c.date, "reference": c.reference, "party": c.party,
             "amount": c.amount, "from": c.account, "to": to_account or c.account, "from_atc": c.atc,

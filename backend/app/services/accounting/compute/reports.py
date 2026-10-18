@@ -578,6 +578,13 @@ def kpis(pnl: dict, bs: dict, chart: Chart) -> dict:
 
 # --- cash flow -------------------------------------------------------------------------------------------------------
 
+def cash_balance(entries: list[Entry], chart: Chart, as_of: date) -> Decimal:
+    """Cash on hand + banks + e-wallets (and their sub-accounts) at the end of ``as_of``."""
+    cash = {a.code for a in chart.accounts if _key(chart, a.code) in _CASH}
+    sums = _sums(_live(entries), lambda e: e.date <= as_of)
+    return c2(total(v for k, v in sums.items() if k in cash))
+
+
 def cash_flow(entries: list[Entry], chart: Chart, start: date, end: date, fye: int, closing_account: str) -> list[dict]:
     """Indirect-method cash flow for a window (opening balances entered inside it count as before it)."""
     live = _live(entries)

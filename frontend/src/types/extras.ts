@@ -42,3 +42,24 @@ export interface WriteOffResult {
   count: number;
   total: string;
 }
+
+export interface CashWeek {
+  start: string;
+  end: string;
+  inflow: string;
+  outflow: string;
+  net: string;
+  closing: string | null;
+}
+
+export interface CashForecast {
+  as_of: string;
+  opening: string | null;
+  closing: string | null;
+  weeks: CashWeek[];
+  overdue_in: string;
+  overdue_out: string;
+  later_in: string;
+  later_out: string;
+  note: string;
+}

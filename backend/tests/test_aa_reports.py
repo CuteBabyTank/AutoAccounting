@@ -6,7 +6,7 @@ from decimal import Decimal
 from app.services.accounting.books.chart import Chart, ChartAccount, standard_chart
 from app.services.accounting.compute.books import Entry, Line
 from app.services.accounting.compute.reports import (
-    adjusted_tb, adjusting_entries, balance_sheet, cash_flow, check_entries, check_manual, columns_for, entry_ref,
+    adjusted_tb, adjusting_entries, balance_sheet, cash_balance, cash_flow, check_entries, check_manual, columns_for, entry_ref,
     gl_detail, kpis, postings, prior_window, profit_and_loss, shape, transaction_list, with_change,
 )
 
@@ -291,3 +291,9 @@ def test_drill_codes_are_never_silently_cut():
     assert drill_codes("4010,,4020") == ["4010", "4020"]
     with pytest.raises(ValueError):
         drill_codes(",".join(str(10000 + n) for n in range(MAX_DRILL_CODES + 1)))
+
+
+def test_cash_balance_sums_cash_bank_and_ewallet_up_to_the_date():
+    assert cash_balance(ENTRIES, CHART, date(2026, 12, 19)) == D("103000.00")
+    assert cash_balance(ENTRIES, CHART, date(2026, 12, 31)) == D("114200.00")
+    assert cash_balance(ENTRIES, CHART, date(2024, 12, 31)) == D("0.00")

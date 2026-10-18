@@ -279,6 +279,34 @@ async def company_kpis(company_id: str, start: date | None = Query(None), end: d
     return JSONResponse(jsonable(out))
 
 
+@router.get("/companies/{company_id}/cash-forecast")
+async def cash_forecast(company_id: str, as_of: date | None = Query(None), weeks: int = Query(8, ge=1, le=26),
+                        user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Cash in the books at ``as_of`` (default today) plus open A/R − open A/P by due date, week by week."""
+    from app.services.accounting.books.subledger import load_subledger
+    from app.services.accounting.compute.cashflow import projection
+
+    company = await _company(db, user, company_id)
+    as_of = as_of or manila_today()
+    _check(None, as_of, company)
+    opening, note = None, ""
+    if company.books_start is None:
+        note = "Books are off: only the receivables and payables are shown."
+    elif as_of < company.books_start:
+        note = f"The books start on {company.books_start:%b %-d, %Y}: no cash balance before then."
+    else:
+        books = await _books(db, company, as_of, strict=False)
+        if books.entries is None:
+            note = f"The books can't be built: {books.error}"
+        else:
+            opening = r.cash_balance(books.entries, books.chart, as_of)
+    sub = await load_subledger(db, company, as_of)
+    await db.commit()  # contacts may have been synced
+    out = projection(opening, sub.items, as_of, weeks)
+    out["note"] = note
+    return JSONResponse(jsonable(out))
+
+
 # --- management report pack (per quarter, saved in the quarter's output folder) -------------------------------------
 
 class PackNotesIn(BaseModel):

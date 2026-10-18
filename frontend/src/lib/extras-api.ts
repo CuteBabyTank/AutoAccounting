@@ -1,6 +1,6 @@
 // Workstream 10 extras: recurring entries, write-offs, cash forecast, checklist templates.
 import api, { seg } from "@/lib/api";
-import type { RecurringEntry, RecurringInput, RecurringPosted, WriteOffCandidates, WriteOffResult } from "@/types/extras";
+import type { CashForecast, RecurringEntry, RecurringInput, RecurringPosted, WriteOffCandidates, WriteOffResult } from "@/types/extras";
 
 export const extrasApi = {
   recurring: (companyId: string) =>
@@ -16,4 +16,6 @@ export const extrasApi = {
     api.get<WriteOffCandidates>(`/accounting/companies/${seg(companyId)}/writeoffs/candidates`, { params }).then((r) => r.data),
   writeOff: (companyId: string, body: { entry_date: string; item_ids: string[]; account: string; reason: string }) =>
     api.post<WriteOffResult>(`/accounting/companies/${seg(companyId)}/writeoffs`, body).then((r) => r.data),
+  cashForecast: (companyId: string, params: { as_of?: string; weeks?: number } = {}) =>
+    api.get<CashForecast>(`/accounting/companies/${seg(companyId)}/cash-forecast`, { params }).then((r) => r.data),
 };

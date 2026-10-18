@@ -118,3 +118,22 @@ def test_score_structured_and_tokens():
     assert both > one > 0
     assert score({"name": "x"}, parse_query("123-456-789", TODAY), {"tin"}) >= 90
     assert score({"name": "x"}, parse_query("1500", TODAY), {"amount"}) >= 70
+
+
+@pytest.mark.parametrize("raw", ["(1,500)", "₱(1,500.00)", "(₱1,500)", "PHP (1500)"])
+def test_amount_in_parentheses(raw):
+    # Accounting negatives are written in parentheses; the search amount is the absolute value.
+    assert parse_amount(raw) == Decimal("1500.00")
+
+
+@pytest.mark.parametrize("raw", ["(1,500", "1,500)", "((1500))"])
+def test_unbalanced_parentheses_not_amounts(raw):
+    assert parse_amount(raw) is None
+
+
+def test_query_drops_control_characters():
+    # Postgres rejects NUL in text parameters (a 500); other control characters never match anything.
+    q = parse_query("a\x00b\x07c", TODAY)
+    assert q.text == "abc" and q.tokens == ["abc"]
+    assert parse_query("\x00\x00", TODAY).too_short
+

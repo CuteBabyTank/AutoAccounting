@@ -3,6 +3,7 @@ the rows the router found (pure; no DB)."""
 
 import calendar
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -64,8 +65,11 @@ _PLAIN = re.compile(r"^\d{1,12}(?:\.\d{1,2})?$")
 
 
 def parse_amount(s: str) -> Decimal | None:
-    """A peso amount: "1500", "1,500.00", "₱1,500", "P1,500", "PHP 1500" → 1500.00 (absolute value)."""
-    s = _CURRENCY.sub("", (s or "").strip()).lstrip("-").strip()
+    """A peso amount: "1500", "1,500.00", "₱1,500", "P1,500", "PHP 1500", "(1,500)" → 1500.00 (absolute value)."""
+    s = _CURRENCY.sub("", (s or "").strip()).strip()
+    if s.startswith("(") and s.endswith(")"):  # accounting negative: (1,500) or (₱1,500)
+        s = _CURRENCY.sub("", s[1:-1].strip()).strip()
+    s = s.lstrip("-").strip()
     if not (_GROUPED.match(s) or _PLAIN.match(s)):
         return None
     digits = s.replace(",", "")
@@ -177,7 +181,9 @@ def like_pattern(s: str) -> str:
 
 
 def parse_query(raw: str, today: date) -> SearchQuery:
-    text = re.sub(r"\s+", " ", (raw or "").strip())[:MAX_QUERY].strip()
+    # Control characters never match, and a NUL in a text parameter is a Postgres error (500): drop them.
+    text = re.sub(r"\s+", " ", (raw or "").strip())
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cc")[:MAX_QUERY].strip()
     q = SearchQuery(text=text, tokens=text.split(" ")[:MAX_TOKENS] if text else [])
     q.amount = parse_amount(text)
     q.tin = parse_tin(text)

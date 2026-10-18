@@ -97,3 +97,15 @@ def test_amounts_too_large_for_the_books_are_row_errors():
     rows = [["AR", "Big Buyer", "", "1", "2025-12-10", "10000000000000"]]
     o = build_open_items(OPEN_HEAD, rows, OPEN_COLS, date(2026, 1, 1))
     assert not o.ready and o.errors[0].row == 1
+
+
+def test_je_reimport_warns_about_entries_already_posted():
+    head = ["Date", "Reference", "Account code", "Debit", "Credit"]
+    cols = {"date": "Date", "reference": "Reference", "account_code": "Account code", "debit": "Debit",
+            "credit": "Credit"}
+    rows = [["2026-01-31", "PR-01", "6010", "100", ""], ["2026-01-31", "PR-01", "1020", "", "100"],
+            ["2026-02-28", "PR-02", "6010", "90", ""], ["2026-02-28", "PR-02", "1020", "", "90"]]
+    posted = {(date(2026, 1, 31), "PR-01", D("100.00"))}
+    r = build_journals(head, rows, cols, REFS, {}, books_start=date(2026, 1, 1), posted=posted)
+    assert r.ready and any("already" in w and "1 " in w for w in r.warnings)
+    assert not build_journals(head, rows, cols, REFS, {}, books_start=date(2026, 1, 1)).warnings

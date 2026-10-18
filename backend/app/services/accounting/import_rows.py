@@ -497,7 +497,8 @@ def _yes(text: str) -> bool:
 
 def build_journals(headers: list[str], rows: list[list[str]], columns: dict[str, str], chart: list[AccountRef],
                    overrides: dict[str, str], *, books_start: date, date_format: str | None = None,
-                   last_closed: date | None = None) -> JeResult:
+                   last_closed: date | None = None,
+                   posted: set[tuple[date, str, Decimal]] | frozenset = frozenset()) -> JeResult:
     get, index = _getter(headers, columns)
     out = JeResult()
     if "date" not in index:
@@ -581,6 +582,10 @@ def build_journals(headers: list[str], rows: list[list[str]], columns: dict[str,
         out.entries.append(draft)
     if len(out.entries) > MAX_ENTRIES:
         out.errors.append(RowIssue(0, f"Import at most {MAX_ENTRIES} journal entries at a time."))
+    again = sum(1 for d in out.entries if (d.entry_date, d.reference.strip(), d.debit) in posted)
+    if again:
+        out.warnings.append(f"{again} entr{'y looks' if again == 1 else 'ies look'} already posted (same date, "
+                            "reference and amount); importing the file again posts them twice.")
     closed = sum(1 for d in out.entries if d.posts_on and d.entry_date and d.posts_on != d.entry_date)
     if closed:
         out.warnings.append(f"{closed} entr{'y is' if closed == 1 else 'ies are'} dated in a closed month and will "

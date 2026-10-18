@@ -130,6 +130,15 @@ async def _uploaded_keys(db: AsyncSession, company: AACompany) -> set[tuple[str,
     return document_keys(out)
 
 
+async def _posted_keys(db: AsyncSession, company: AACompany) -> set[tuple[date, str, Decimal]]:
+    """(date, reference, total debit) of the company's journal entries, to spot a file imported twice."""
+    rows = (await db.execute(select(AAJournalEntry.entry_date, AAJournalEntry.reference, AAJournalEntry.lines).where(
+        AAJournalEntry.enterprise_id == company.enterprise_id, AAJournalEntry.company_id == company.id,
+        AAJournalEntry.kind == "manual", AAJournalEntry.deleted_at.is_(None)))).all()
+    return {(on, (ref or "").strip(), sum((c2(l.get("debit") or 0) for l in lines or []), ZERO))
+            for on, ref, lines in rows}
+
+
 def _totals(items) -> dict[str, Decimal]:
     out = {"ar": ZERO, "ap": ZERO}
     for i in items:
@@ -194,7 +203,7 @@ async def _build(db: AsyncSession, company: AACompany, kind: str, file: UploadFi
     closes = await active_closes(db, company.id)
     last_closed = closes[-1].month_end if closes else None
     r = build_journals(headers, rows, columns, refs, opts.accounts, books_start=company.books_start,
-                       date_format=opts.date_format, last_closed=last_closed)
+                       date_format=opts.date_format, last_closed=last_closed, posted=await _posted_keys(db, company))
     preview = ImportPreviewOut(
         **common, date_format=r.date_format, date_formats=_formats(r.date_candidates),
         accounts=[_account_out(a) for a in r.accounts], errors=[RowIssueOut(**vars(e)) for e in r.errors],

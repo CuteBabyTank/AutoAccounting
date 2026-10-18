@@ -109,3 +109,11 @@ def test_je_reimport_warns_about_entries_already_posted():
     r = build_journals(head, rows, cols, REFS, {}, books_start=date(2026, 1, 1), posted=posted)
     assert r.ready and any("already" in w and "1 " in w for w in r.warnings)
     assert not build_journals(head, rows, cols, REFS, {}, books_start=date(2026, 1, 1)).warnings
+
+
+def test_parse_amount_refuses_a_decimal_comma_instead_of_misreading_it():
+    from app.services.accounting.importing import parse_amount
+
+    with pytest.raises(ValueError):
+        parse_amount("1.234,50")            # 1,234.50 written the European way, not 1.2345
+    assert parse_amount("1,234.50") == D("1234.50") and parse_amount("1,234") == D("1234")

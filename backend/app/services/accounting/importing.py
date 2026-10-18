@@ -35,7 +35,10 @@ _ABBREVIATIONS = (
 
 def parse_amount(text: str) -> Decimal | None:
     """An amount as typed in a sheet; None when blank. Parentheses, a leading minus and a CR suffix are negative."""
-    t = str(text or "").strip().lstrip("'").upper().replace("₱", "").replace("PHP", "").replace(",", "").replace(" ", "")
+    raw = str(text or "")
+    if "," in raw and "." in raw and raw.rfind(",") > raw.rfind("."):   # 1.234,50: a decimal comma, not 1.2345
+        raise ValueError(f"'{text}' isn't an amount (use a dot for the decimals)")
+    t = raw.strip().lstrip("'").upper().replace("₱", "").replace("PHP", "").replace(",", "").replace(" ", "")
     if t in ("", "-", "–", "—"):
         return None
     sign = Decimal("1")

@@ -352,6 +352,8 @@ Shipped:
 
 Tests: 839 → 899 passing. Gates: pytest, ruff, lint, tsc, build all green.
 
+Code review fixes (951afb0, a8c254f): "(1,500)" / "₱(1,500.00)" parse as amounts; control characters are dropped from the query (a NUL reached Postgres as a 500); each trigram CREATE INDEX has its own exception block, so pg_trgm in a schema the app role can't use no longer aborts startup (verified on a scratch DB). acf55ae alone doesn't type-check (imports `types/search`, added in 57c2999). Tests 899 → 908.
+
 Not done: journal entries are not matched by amount (lines are JSON strings); no saved searches or "thumbs" feedback;
 help articles / reports aren't in the index; a task result opens the Tasks tab filtered to its company, not the task
 itself (no per-task deep link yet); bank lines have no page number, so the bank month opens rather than the

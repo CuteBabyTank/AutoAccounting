@@ -46,4 +46,42 @@ def column_statements() -> list[str]:
         "ALTER TABLE aa_periods ADD COLUMN IF NOT EXISTS pack_notes TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE aa_periods ADD COLUMN IF NOT EXISTS pack_files JSONB NOT NULL DEFAULT '{}'::jsonb",
         "ALTER TABLE aa_accounts ADD COLUMN IF NOT EXISTS locked BOOLEAN NOT NULL DEFAULT false",
+    ] + search_index_statements()
+
+
+# Global search (routers/accounting_search.py): equality lookups on amount / TIN / date, and trigram GIN indexes for
+# ILIKE '%text%' when pg_trgm is installed or may be created. Without it the same queries still run (slower).
+_TRGM_INDEXES = (
+    ("ix_aa_documents_number_trgm", "aa_documents", "doc_number"),
+    ("ix_aa_documents_seller_trgm", "aa_documents", "seller_name"),
+    ("ix_aa_documents_buyer_trgm", "aa_documents", "buyer_name"),
+    ("ix_aa_contacts_name_trgm", "aa_contacts", "registered_name"),
+    ("ix_aa_bank_lines_narration_trgm", "aa_bank_lines", "narration"),
+    ("ix_aa_journal_entries_particulars_trgm", "aa_journal_entries", "particulars"),
+    ("ix_aa_tasks_title_trgm", "aa_tasks", "title"),
+    ("ix_aa_companies_name_trgm", "aa_companies", "registered_name"),
+)
+
+
+def search_index_statements() -> list[str]:
+    trgm = "\n".join(
+        f"    EXECUTE 'CREATE INDEX IF NOT EXISTS {name} ON {table} USING gin ({column} ' || quote_ident(s) "
+        f"|| '.gin_trgm_ops)';"
+        for name, table, column in _TRGM_INDEXES
+    )
+    return [
+        "CREATE INDEX IF NOT EXISTS ix_aa_documents_ent_gross ON aa_documents (enterprise_id, gross_amount)",
+        "CREATE INDEX IF NOT EXISTS ix_aa_documents_ent_seller_tin ON aa_documents (enterprise_id, seller_tin)",
+        "CREATE INDEX IF NOT EXISTS ix_aa_documents_ent_buyer_tin ON aa_documents (enterprise_id, buyer_tin)",
+        "CREATE INDEX IF NOT EXISTS ix_aa_documents_ent_date ON aa_documents (enterprise_id, doc_date)",
+        "CREATE INDEX IF NOT EXISTS ix_aa_bank_lines_ent_amount ON aa_bank_lines (enterprise_id, amount)",
+        "CREATE INDEX IF NOT EXISTS ix_aa_contacts_ent_tin ON aa_contacts (enterprise_id, tin)",
+        "DO $$\nDECLARE s text;\nBEGIN\n"
+        "  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN\n"
+        "    BEGIN\n      CREATE EXTENSION IF NOT EXISTS pg_trgm;\n"
+        "    EXCEPTION WHEN OTHERS THEN\n      RAISE NOTICE 'pg_trgm unavailable: search uses plain indexes';\n"
+        "    END;\n  END IF;\n"
+        "  SELECT n.nspname INTO s FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace "
+        "WHERE e.extname = 'pg_trgm';\n"
+        f"  IF s IS NOT NULL THEN\n{trgm}\n  END IF;\nEND $$",
     ]

@@ -262,6 +262,8 @@ Shipped:
 
 Tests: 759 → 777 passing. Gates: pytest, ruff, lint, tsc, build all green.
 
+Code review fixes (1e65613, 4b38149): confirming a suggested bank posting (a rule's account) now refuses a locked or inactive account like a manual posting does; reclassify drops `account_locked` from documents it moves off the locked account, and its preview shows a new ATC only on purchase / expense documents (an ATC-only move skips payroll documents and JEs instead of counting them as moved). Tests 777 → 782.
+
 Not done: reclassify doesn't move opening balances (edit them in Books), sales lines (always post to Sales) or capital
 goods (asset register); existing documents already on a newly locked account are not flagged (lock blocks new
 postings only); templates don't import / export as files; no batch "make inactive" across many accounts.

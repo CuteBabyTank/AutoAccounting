@@ -24,6 +24,7 @@ const TD = "px-2 py-1.5 align-top";
 const NUM = "px-2 py-1.5 text-right tabular-nums align-top";
 const HOW: Record<string, { label: string; tone: "green" | "blue" | "yellow" | "red" }> = {
   code: { label: "Code", tone: "green" },
+  conflict: { label: "Code, but the name differs", tone: "yellow" },
   name: { label: "Name", tone: "green" },
   fuzzy: { label: "Closest name", tone: "yellow" },
   none: { label: "No match", tone: "red" },
@@ -251,7 +252,7 @@ export default function ImportPanel({ companyId, companyName, onChanged }: Props
                       },
                     })}
                   >
-                    Use every closest name shown
+                    Use every match shown
                   </button>
                 )}
               </h3>
@@ -284,6 +285,12 @@ export default function ImportPanel({ companyId, companyName, onChanged }: Props
                             >
                               Use it
                             </button>
+                          )}
+                          {a.how === "conflict" && !opts.accounts?.[a.key] && (
+                            <span className="mt-1 block text-[11px] text-[var(--text-secondary)]">
+                              By code: {a.match_code} {name(a.match_code)}
+                              {a.alternatives.length > 0 && <> · by name: {a.alternatives.map((c) => `${c} ${name(c)}`).join(", ")}</>}
+                            </span>
                           )}
                           {a.how === "none" && a.alternatives.length > 0 && !a.chosen && (
                             <span className="ml-2 text-[11px] text-[var(--text-secondary)]">Closest: {a.alternatives.map((c) => `${c} ${name(c)}`).join(", ")}</span>

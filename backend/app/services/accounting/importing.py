@@ -125,12 +125,28 @@ class AccountRef:
 @dataclass(frozen=True)
 class AccountMatch:
     code: str | None
-    how: str                      # code | name | fuzzy | none
+    how: str                      # code | conflict (code's name differs) | name | fuzzy | none
     score: float = 0.0
     alternatives: list[str] = field(default_factory=list)
 
 
 _LEADING_CODE = re.compile(r"^\s*(\d{3,10})\b[\s\-–:.]*(.*)$")
+
+
+def _by_code(account: AccountRef, name: str, chart: list[AccountRef]) -> AccountMatch:
+    """The code's account, unless the row's name clearly means another one ("1100 Inventory" where 1100 is A/R):
+    then a ``conflict`` the person confirms, with the best match by name first among the alternatives."""
+    target, own = norm_name(name), norm_name(account.name)
+    words, own_words = set(target.split()), set(own.split())
+    if (not target or target == own or SequenceMatcher(None, target, own).ratio() >= FUZZY_MIN
+            or words <= own_words or own_words <= words):     # "Capital" for "Share capital" agrees
+        return AccountMatch(account.code, "code", 1.0)
+    others = [a for a in chart if a.code != account.code]
+    by_name = match_account("", name, others)
+    containing = [a.code for a in others if words <= set(norm_name(a.name).split())]
+    alternatives = list(dict.fromkeys(c for c in ([by_name.code] if by_name.code else []) + containing
+                                      + by_name.alternatives if c))[:3]
+    return AccountMatch(account.code, "conflict", round(SequenceMatcher(None, target, own).ratio(), 3), alternatives)
 
 
 def match_account(code: str, name: str, chart: list[AccountRef]) -> AccountMatch:
@@ -141,10 +157,10 @@ def match_account(code: str, name: str, chart: list[AccountRef]) -> AccountMatch
     if code.endswith(".0") and code[:-2].isdigit():   # a numeric code read from Excel as a float
         code = code[:-2]
     if code in by_code:
-        return AccountMatch(code, "code", 1.0)
+        return _by_code(by_code[code], name, chart)
     lead = _LEADING_CODE.match(name)
     if not code and lead and lead.group(1) in by_code:
-        return AccountMatch(lead.group(1), "code", 1.0)
+        return _by_code(by_code[lead.group(1)], lead.group(2), chart)
     target = norm_name(lead.group(2) if (lead and not code and lead.group(2)) else name)
     if not target:
         return AccountMatch(None, "none")

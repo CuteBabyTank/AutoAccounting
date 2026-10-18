@@ -313,7 +313,10 @@ places); record the payment on the item and exclude the OR instead. No undo of a
 JEs one by one). Opening TB over 200 non-zero accounts is refused (JE line limit).
 
 Review fixes (2026-10-18): sheets over 5000 rows are refused instead of silently cut, cp1252 CSVs keep ñ (6a973f0);
-closest-name account matches must be confirmed ("Use it" / "Use every closest name shown") (6ac2578); open items
+closest-name account matches must be confirmed ("Use it" / "Use every match shown") (6ac2578); open items
 already uploaded as documents are skipped, not aged twice (6ad8fd6); TB over 200 accounts / amounts past 14 digits
 fail the preview, not the confirm (24febd4); JE re-import warns about entries already posted (ff20888); a decimal
 comma (1.234,50) is refused, not read as 1.23 (32aebb9). Tests: 829 → 838.
+A code in the chart whose row name clearly means another account ("1100 Inventory" where 1100 is A/R) is a
+`conflict` to confirm, showing the code match and the best name matches (agrees when the normalised names are
+equal, the fuzzy score is ≥ 0.72 or one name's words contain the other's). Tests: 838 → 839.

@@ -1118,7 +1118,7 @@ export interface ImportAccountChoice {
   code_in: string;
   name_in: string;
   match_code: string | null;
-  how: "code" | "name" | "fuzzy" | "none";
+  how: "code" | "conflict" | "name" | "fuzzy" | "none";
   score: number;
   alternatives: string[];
   chosen: string | null;

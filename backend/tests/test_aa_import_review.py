@@ -117,3 +117,18 @@ def test_parse_amount_refuses_a_decimal_comma_instead_of_misreading_it():
     with pytest.raises(ValueError):
         parse_amount("1.234,50")            # 1,234.50 written the European way, not 1.2345
     assert parse_amount("1,234.50") == D("1234.50") and parse_amount("1,234") == D("1234")
+
+
+def test_code_match_whose_name_disagrees_needs_confirmation():
+    from app.services.accounting.importing import match_account
+
+    m = match_account("1100", "Inventory", REFS)          # 1100 is Accounts receivable - trade here
+    assert (m.code, m.how) == ("1100", "conflict") and m.alternatives[0] == "1200"
+    assert match_account("1100", "Accounts receivable", REFS).how == "code"         # close enough: agrees
+    assert match_account("1020", "Cash in bank", REFS).how == "code"
+    assert match_account("", "1100 Inventory", REFS).how == "conflict"               # leading code too
+    rows = [["1100", "Inventory", "500", ""], ["3010", "Share capital", "", "500"]]
+    r = build_tb(TB_HEAD, rows, TB_COLS, REFS, {})
+    assert not r.ready and next(a for a in r.accounts if a.code_in == "1100").problem == "unconfirmed"
+    r = build_tb(TB_HEAD, rows, TB_COLS, REFS, {source_key("1100", "Inventory"): "1200"})
+    assert r.ready and r.lines[0][0] == "1200"

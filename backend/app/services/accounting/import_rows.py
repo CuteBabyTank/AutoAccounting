@@ -99,7 +99,8 @@ class AccountChoice:
 
 _PROBLEM_TEXT = {"unmapped": "isn't mapped to an account", "not_in_chart": "is mapped to an account not in the chart",
                  "inactive": "is mapped to an inactive account", "locked": "is mapped to a locked account",
-                 "unconfirmed": "was matched by the closest name; confirm it or pick the account"}
+                 "unconfirmed": "was matched by the closest name (or by a code whose name differs); confirm it or "
+                                "pick the account"}
 
 
 def problem_text(a: AccountChoice) -> str:
@@ -125,7 +126,7 @@ class _Accounts:
             override = (self.overrides.get(key) or "").strip()
             chosen = override or match.code
             problem = self._problem(chosen)
-            if not problem and not override and match.how == "fuzzy":
+            if not problem and not override and match.how in ("fuzzy", "conflict"):
                 problem = "unconfirmed"     # a closest name can be the wrong account (Rent income → Interest income)
             found = AccountChoice(key, code.strip(), name.strip(), match, chosen or None, problem)
             self.by_key[key] = found

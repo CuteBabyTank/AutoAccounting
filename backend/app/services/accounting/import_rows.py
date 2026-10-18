@@ -20,6 +20,7 @@ ZERO = Decimal("0")
 MAX_ENTRIES = 500
 MAX_LINES = 200
 MAX_OPEN_ITEMS = 2000
+MAX_AMOUNT = Decimal("999999999999.99")    # Numeric(14, 2), the journal line / opening item column
 
 TB_FIELDS = {"account_code": "Account code", "account_name": "Account name", "debit": "Debit", "credit": "Credit",
              "balance": "Balance (signed: + debit, − credit)", "as_of": "As-of date"}
@@ -172,7 +173,11 @@ def _money(text: str, label: str, row: int, errors: list[RowIssue]) -> Decimal:
     except ValueError as exc:
         errors.append(RowIssue(row, f"{label}: {exc}"))
         return ZERO
-    return (value or ZERO).quantize(Decimal("0.01"))
+    value = (value or ZERO).quantize(Decimal("0.01"))
+    if abs(value) > MAX_AMOUNT:
+        errors.append(RowIssue(row, f"{label}: {text} is more than the books can hold (₱{MAX_AMOUNT:,.2f})"))
+        return ZERO
+    return value
 
 
 def _is_total(code: str, name: str) -> bool:
@@ -271,6 +276,12 @@ def build_tb(headers: list[str], rows: list[list[str]], columns: dict[str, str],
     out.debit = sum((d for _, d, _ in out.lines), ZERO)
     out.credit = sum((c for _, _, c in out.lines), ZERO)
     out.difference = out.debit - out.credit
+    if len(out.lines) > MAX_LINES:
+        out.errors.append(RowIssue(0, f"The opening entry can have at most {MAX_LINES} accounts with a balance "
+                                      f"({len(out.lines)} here)."))
+    for code, d, k in out.lines:
+        if max(d, k) > MAX_AMOUNT:
+            out.errors.append(RowIssue(0, f"The balance of {code} is more than the books can hold."))
     if len(as_of) > 1:
         out.warnings.append("The sheet has more than one as-of date: " + ", ".join(sorted(d.isoformat() for d in as_of)))
     out.as_of = min(as_of) if as_of else None

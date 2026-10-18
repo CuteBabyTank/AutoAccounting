@@ -80,3 +80,20 @@ def test_open_items_skip_invoices_already_uploaded_as_documents():
     assert [i.doc_number for i in r.items] == ["PS-1"] and r.ready
     assert r.documented == 2 and any("uploaded" in w for w in r.warnings)
     assert item_key("ar", "Mabuhay Builders Inc.", "0003") == item_key("ar", "MABUHAY BUILDERS INC", "0003")
+
+
+# --- what the preview calls ready must also post ------------------------------------------------------------------
+
+def test_tb_over_the_entry_line_limit_is_not_ready():
+    chart = [AccountRef(str(1000 + i), f"Account {i}") for i in range(202)]
+    rows = [[str(1000 + i), "", "1", ""] for i in range(201)] + [["1201", "", "", "201"]]
+    r = build_tb(TB_HEAD, rows, TB_COLS, chart, {})
+    assert len(r.lines) == 202 and not r.ready and any("200" in e.message for e in r.errors)
+
+
+def test_amounts_too_large_for_the_books_are_row_errors():
+    r = build_tb(TB_HEAD, [["1020", "", "1e13", ""], ["3010", "", "", "1e13"]], TB_COLS, REFS, {})
+    assert not r.ready and r.errors[0].row == 1
+    rows = [["AR", "Big Buyer", "", "1", "2025-12-10", "10000000000000"]]
+    o = build_open_items(OPEN_HEAD, rows, OPEN_COLS, date(2026, 1, 1))
+    assert not o.ready and o.errors[0].row == 1

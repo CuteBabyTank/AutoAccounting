@@ -218,3 +218,9 @@ Progress entry, CLAUDE.md, this file's Decisions kept current. Commit `docs: QBO
   (≥3 chars) is required; each document gets its own audit event. Capped at 200 per call.
 - **Supplier defaults** were already built in 04 (no duplication): added the lock check, the default account in the
   locked-account flag, and the default account / terms on the Suppliers list.
+- **Reverting a reclassify** leaves the document's account override set explicitly (e.g. back to 6020) rather than
+  clearing it; the postings are identical, and an explicit override also outranks a later supplier default.
+- **Bulk exclude** runs the same follow-ups as a single exclude (receipt relinking, bank re-match, duplicate flags,
+  a statement's lines stop counting); bulk "reviewed" needs none. Audit reasons are prefixed "Bulk: ".
+- **Placement** is computed server-side on every account (`AccountOut.placement`); a new sub-account inherits its
+  parent's type and statement root, so the "where it lands" preview shows the parent's placement.

@@ -228,3 +228,41 @@ Code review fixes (191464b, 45381f0, de10b70, af79e14): a negative % change expo
 Not done: cash basis (engine is accrual-only; see Decisions); bank lines have no page number, so a bank posting opens
 its statement at the statement's first page; tax / depreciation / engine entries have no source document (the drawer
 says what posted them); report customisation is not saved per user; the pack is not emailed (no mail infra).
+
+## 07 Bulk and chart tools (2026-10-18)
+
+Plan: `2026-10-16-qbo-07-bulk-chart.md` (Decisions section there).
+
+Shipped:
+- **Reclassify** (company → Reclassify, books on): period, account, optional ATC → every posting on the account with
+  whether it can move (document expense / payroll lines and typed manual JEs; tax, payment, bank, depreciation,
+  opening and closing entries listed with the reason they can't) → select → move to another account and / or ATC →
+  preview (closed-month items "post on <first open day>") → apply with a required reason. Changes the document's
+  account override / ATC or the JE's lines and lets the engine recompute; closed months stay as printed and get
+  correcting entries. One audit event per item (`reclassify`). Targets: same statement, active, not locked; documents
+  only to cost / expense, never to engine-only accounts. Window checked like the reports (400). Pure
+  `compute/reclassify.py`; routes in `routers/accounting_reclassify.py`.
+- **Bulk resolve** in the review queue: reason chips with counts, select some / all of one reason, Mark reviewed or
+  Exclude with a reason; `POST /documents/bulk-resolve` (≤200, skips and lists docs that are resolved or don't carry
+  the reason), audited per document.
+- **Chart**: Lock / Unlock (`aa_accounts.locked`) — JEs, document account, supplier default, bank posting and
+  reclassify targets get a clear 400; newly extracted documents landing on a locked account get review reason
+  `account_locked` (cleared when a person moves them off it). Inactive accounts dimmed behind "Show inactive",
+  hidden (with locked ones) from every picker; deactivation also refused while a supplier default uses the account.
+  `placement` on every account and a "Lands on: Profit and loss · Operating expenses" line when adding a sub-account.
+- **Firm COA templates**: built-in Trading / Services / Manufacturing / Non-VAT (standard chart + industry
+  sub-accounts), "Save as firm template" from a company's chart (`aa_coa_templates`, FORCE RLS), delete, and a
+  "Chart of accounts" choice on Add company (default = the standard chart as before). Audited (`coa_template`).
+- **Supplier defaults**: already in 04 (default account / ATC in the supplier databank, terms on the contact);
+  added the lock check, the default account in the locked-account flag, and default account / terms on the Suppliers
+  list.
+- Live smoke on the dev stack: lock / JE refusal / audit, reclassify Dec rent 6020 → 6900 (closed month → correction
+  on Jan 1, 2027) and back, invalid-JE report clean, bulk resolve (resolved / skipped / not found, audit), templates
+  (built-in on create, save, firm template on create, duplicate name 409, delete); UI checked in the browser.
+
+Tests: 759 → 777 passing. Gates: pytest, ruff, lint, tsc, build all green.
+
+Not done: reclassify doesn't move opening balances (edit them in Books), sales lines (always post to Sales) or capital
+goods (asset register); existing documents already on a newly locked account are not flagged (lock blocks new
+postings only); templates don't import / export as files; no batch "make inactive" across many accounts.
+

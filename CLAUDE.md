@@ -112,6 +112,12 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   Adjusting entries = JEs with `is_adjusting` + `depreciation` / `inventory` sources. The management pack is saved
   in the quarter's output folder; latest paths on `aa_periods.pack_files`, notes in `pack_notes`.
 - **Spreadsheet output:** run every untrusted cell through `spreadsheet_safe.csv_safe` (formula injection).
+- **Reclassify / locks / templates (QBO 07):** reclassify (`routers/accounting_reclassify.py`, pure
+  `compute/reclassify.py`) only changes classification (a document's `gl_account_code` / `ewt_atc`, typed JE line
+  accounts), never generated postings; closed months correct themselves through `book_close.apply_closes`.
+  `aa_accounts.locked` blocks new postings by people (400 via `books.chart.locked_message`) and extraction (review
+  reason `account_locked`); engine-only system accounts can't be locked. Chart templates: built-ins in
+  `books/templates.py`, firm ones in `aa_coa_templates`; `coa_template` on company create.
 - **PDF templates** are calibrated comb-cell layouts (`forms/overlay.py`); re-calibrate when BIR revises a form.
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.
 - **Frontend token** lives in `sessionStorage` (`autoaccounting_token`). The axios interceptor attaches it, and on 401 it is cleared and AuthGate redirects.

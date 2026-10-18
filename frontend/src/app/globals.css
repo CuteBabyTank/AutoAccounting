@@ -1588,3 +1588,9 @@ main textarea:focus-visible {
   .gd-in { animation: none; }
   .gd-wire path { animation: none; }
 }
+
+/* Privacy toggle (lib/privacy.ts): blur amounts on dashboards while screen-sharing. */
+:root[data-privacy="on"] .aa-amount {
+  filter: blur(6px);
+  user-select: none;
+}

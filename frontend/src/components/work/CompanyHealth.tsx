@@ -14,7 +14,7 @@ interface Props {
   compact?: boolean;
 }
 
-function Check({ ok, label, hint, children }: { ok: boolean; label: string; hint?: string; children?: React.ReactNode }) {
+function Check({ ok, label, hint, children }: { ok: boolean; label: React.ReactNode; hint?: string; children?: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2">
       <div className="flex items-center gap-2">
@@ -98,7 +98,7 @@ export default function CompanyHealth({ companyId, refreshKey = 0, compact }: Pr
         </Check>
         <Check
           ok={health.cwt_pending_count === 0}
-          label={health.cwt_pending_count ? `${health.cwt_pending_count} 2307${health.cwt_pending_count === 1 ? "" : "s"} to receive · ₱${formatPeso(health.cwt_pending_amount)}` : "No 2307s waiting"}
+          label={health.cwt_pending_count ? <>{health.cwt_pending_count} 2307{health.cwt_pending_count === 1 ? "" : "s"} to receive · <span className="aa-amount">₱{formatPeso(health.cwt_pending_amount)}</span></> : "No 2307s waiting"}
           hint="Sales where the customer withheld tax and no matching 2307 for that quarter is filed yet. Without it the credit can't be claimed."
         />
         <Check
@@ -117,7 +117,7 @@ export default function CompanyHealth({ companyId, refreshKey = 0, compact }: Pr
           label="Over 90 days"
           hint="Invoices and bills more than 90 days past their due date and still open. Old receivables may need follow-up or a write-off; old payables may be paid but missing the receipt."
         >
-          A/R {health.ar_over_90_count} · ₱{formatPeso(health.ar_over_90_amount)} — A/P {health.ap_over_90_count} · ₱{formatPeso(health.ap_over_90_amount)}
+          A/R {health.ar_over_90_count} · <span className="aa-amount">₱{formatPeso(health.ar_over_90_amount)}</span> — A/P {health.ap_over_90_count} · <span className="aa-amount">₱{formatPeso(health.ap_over_90_amount)}</span>
         </Check>
         <Check
           ok={health.negative_balances.length === 0}
@@ -125,7 +125,7 @@ export default function CompanyHealth({ companyId, refreshKey = 0, compact }: Pr
           hint="An asset below zero (like negative Cash on hand) or a liability with a debit balance usually means a missing opening balance, receipt or deposit."
         >
           {health.negative_balances.map((b) => (
-            <p key={b.code}>{b.code} {b.name} · ₱{formatPeso(b.balance)} {b.type === "asset" ? "below zero" : "debit balance"}</p>
+            <p key={b.code}>{b.code} {b.name} · <span className="aa-amount">₱{formatPeso(b.balance)}</span> {b.type === "asset" ? "below zero" : "debit balance"}</p>
           ))}
         </Check>
         <Check
@@ -134,7 +134,7 @@ export default function CompanyHealth({ companyId, refreshKey = 0, compact }: Pr
           hint="VAT difference - for review and any Suspense account should end up at zero once each item is looked at and reclassified."
         >
           {health.review_balances.map((b) => (
-            <p key={b.code}>{b.code} {b.name} · ₱{formatPeso(b.balance)}</p>
+            <p key={b.code}>{b.code} {b.name} · <span className="aa-amount">₱{formatPeso(b.balance)}</span></p>
           ))}
         </Check>
       </div>

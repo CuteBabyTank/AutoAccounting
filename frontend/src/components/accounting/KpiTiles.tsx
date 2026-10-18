@@ -5,6 +5,7 @@ import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatAmount } from "@/lib/accounting-format";
 import { shortDate } from "@/components/work/ui";
+import { usePrivacy } from "@/lib/privacy";
 import type { CompanyKpis } from "@/types/accounting";
 
 const TILE = "rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2";
@@ -19,6 +20,7 @@ function ratio(value: string | null, pct: boolean): string {
 export default function KpiTiles({ companyId }: { companyId: string }) {
   const [data, setData] = useState<CompanyKpis | null>(null);
   const [error, setError] = useState("");
+  const [hidden] = usePrivacy();
 
   useEffect(() => {
     let cancelled = false;
@@ -58,9 +60,9 @@ export default function KpiTiles({ companyId }: { companyId: string }) {
       {tiles.length > 0 && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {tiles.map(([label, value, detail]) => (
-            <div key={label} className={TILE} title={detail}>
+            <div key={label} className={TILE} title={hidden ? undefined : detail}>
               <p className="text-[11px] font-medium text-[var(--text-secondary)]">{label}</p>
-              <p className="text-lg font-semibold tabular-nums text-[var(--text-primary)]">{value}</p>
+              <p className="aa-amount text-lg font-semibold tabular-nums text-[var(--text-primary)]">{value}</p>
             </div>
           ))}
         </div>
@@ -71,13 +73,13 @@ export default function KpiTiles({ companyId }: { companyId: string }) {
           return (
             <div key={kind} className={TILE}>
               <p className="mb-1 text-[11px] font-medium text-[var(--text-secondary)]">
-                {kind === "ar" ? "Receivables aging" : "Payables aging"} · {formatAmount(a.totals.total ?? "0")}
+                {kind === "ar" ? "Receivables aging" : "Payables aging"} · <span className="aa-amount">{formatAmount(a.totals.total ?? "0")}</span>
               </p>
               <div className="grid grid-cols-5 gap-1 text-center">
                 {a.buckets.map((b) => (
                   <div key={b}>
                     <p className="text-[10px] text-[var(--text-secondary)]">{a.labels[b]}</p>
-                    <p className={`text-xs tabular-nums ${b === "90+" && Number(a.totals[b]) > 0 ? "font-semibold text-[var(--badge-red-text)]" : "text-[var(--text-primary)]"}`}>
+                    <p className={`aa-amount text-xs tabular-nums ${b === "90+" && Number(a.totals[b]) > 0 ? "font-semibold text-[var(--badge-red-text)]" : "text-[var(--text-primary)]"}`}>
                       {formatAmount(a.totals[b] ?? "0", true)}
                     </p>
                   </div>

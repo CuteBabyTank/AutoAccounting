@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import PrivacyToggle from "@/components/accounting/PrivacyToggle";
 import { ArrowSquareOut, Warning } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
 import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
@@ -120,6 +121,7 @@ export default function WorkBoardPage() {
             <h1 className="text-2xl font-bold text-[var(--text-primary)]">Work</h1>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">Every client&apos;s BIR returns by due date, their health and the firm&apos;s tasks.</p>
           </div>
+          <PrivacyToggle />
           <GuideButton open={guide.open} onClick={guide.toggle} />
         </div>
         <GuideTour open={guide.open} onClose={guide.dismiss} label="Work" slides={WORK_TOUR} />

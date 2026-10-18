@@ -6,6 +6,7 @@ import Hint from "@/components/guide/Hint";
 import CompanyHealth from "@/components/work/CompanyHealth";
 import CashFlowTile from "@/components/accounting/CashFlowTile";
 import KpiTiles from "@/components/accounting/KpiTiles";
+import PrivacyToggle from "@/components/accounting/PrivacyToggle";
 import TaskList from "@/components/work/TaskList";
 import { workApi } from "@/lib/work-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
@@ -47,7 +48,8 @@ export default function CompanyOverviewPanel({ companyId, companyName, companies
               the firm&apos;s tasks for them. The work board shows the same for every client.
             </Hint>
           </h2>
-          <Link href={`/accounting/work?company=${encodeURIComponent(companyId)}`} className={`${BTN} ml-auto`}>Open on the work board</Link>
+          <PrivacyToggle className="ml-auto" />
+          <Link href={`/accounting/work?company=${encodeURIComponent(companyId)}`} className={BTN}>Open on the work board</Link>
         </div>
         {error && <p className="text-sm text-[var(--alert-error-text)]">{error}</p>}
         {board && (open.length === 0 ? (

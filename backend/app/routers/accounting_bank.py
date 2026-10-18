@@ -154,6 +154,18 @@ async def _month_out(db: AsyncSession, user: User, company: AACompany, line: AAB
     return await bank_month(company.id, line.account_code, f"{line.line_date:%Y-%m}", user, db)
 
 
+def posting_problem(chart, code: str, bank_code: str) -> str:
+    """Why a person can't post a bank line to ``code`` ("" when they can)."""
+    account = chart.get(code)
+    if account is None or not account.active:
+        return "Pick an active account from the chart"
+    if account.locked:
+        return locked_message(chart, [account.code])
+    if account.code == bank_code:
+        return "A line can't post to its own bank account"
+    return ""
+
+
 @router.post("/bank-lines/{line_id}/confirm", response_model=BankMonthOut)
 async def confirm_line(line_id: uuid.UUID, body: ConfirmLineIn | None = None, user: User = Depends(get_current_user),
                        db: AsyncSession = Depends(get_db)):
@@ -168,17 +180,19 @@ async def confirm_line(line_id: uuid.UUID, body: ConfirmLineIn | None = None, us
     if body.kind is None:
         if line.match_status not in ("matched", "suggested") or not line.match_kind:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nothing is proposed for this line; pick a match")
-        if line.match_kind == "posting" and not (line.posting or {}).get("account"):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pick the account to post this line to")
+        if line.match_kind == "posting":
+            if not (line.posting or {}).get("account"):
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pick the account to post this line to")
+            if line.match_status == "suggested":  # a person confirming a rule's account posts there
+                problem = posting_problem(await ensure_chart(db, company), line.posting["account"], line.account_code)
+                if problem:
+                    raise HTTPException(status.HTTP_400_BAD_REQUEST, problem)
     elif body.kind == "posting":
         chart = await ensure_chart(db, company)
+        problem = posting_problem(chart, body.account_code or "", line.account_code)
+        if problem:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, problem)
         account = chart.get(body.account_code or "")
-        if account is None or not account.active:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pick an active account from the chart")
-        if account.locked:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, locked_message(chart, [account.code]))
-        if account.code == line.account_code:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "A line can't post to its own bank account")
         line.match_kind, line.matched_ref, line.match_amount = "posting", "", full
         line.posting = {"kind": "manual", "account": account.code, "label": f"{account.code} {account.name}"}
     else:

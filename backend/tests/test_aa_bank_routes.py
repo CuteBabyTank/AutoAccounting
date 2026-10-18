@@ -41,3 +41,17 @@ def test_bank_routes_are_registered():
     assert {"/companies/{company_id}/bank", "/companies/{company_id}/bank/lines", "/bank-lines/{line_id}/confirm",
             "/bank-lines/{line_id}/reject", "/bank-lines/{line_id}/exclude", "/companies/{company_id}/bank/reconcile",
             "/bank-statements/{statement_id}", "/bank-reconciliations/{rec_id}/file"} <= paths
+
+
+def test_confirm_posting_refuses_locked_or_inactive_accounts():
+    from app.routers.accounting_bank import posting_problem
+    from app.services.accounting.books.chart import Chart, ChartAccount, standard_chart
+
+    chart = Chart(standard_chart("corporation") + [
+        ChartAccount("6061", "Representation", "expense", parent_code="6060", locked=True),
+        ChartAccount("6062", "Old", "expense", parent_code="6060", active=False)])
+    assert "locked" in posting_problem(chart, "6061", "1020")
+    assert posting_problem(chart, "6062", "1020") != ""
+    assert posting_problem(chart, "", "1020") != ""
+    assert posting_problem(chart, "1020", "1020") != ""
+    assert posting_problem(chart, "6060", "1020") == ""

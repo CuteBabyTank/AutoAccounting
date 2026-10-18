@@ -218,7 +218,7 @@ export interface FolderRef {
   companyId: string;
   year: number | null;
   quarter: number | null;
-  view?: "books" | "atc" | "employees" | "audit" | "bank" | "customers" | "suppliers" | "overview" | "reports" | "reclassify";
+  view?: "books" | "atc" | "employees" | "audit" | "bank" | "customers" | "suppliers" | "overview" | "reports" | "reclassify" | "import";
   /** view "bank": the bank account code ("" = unassigned statements) and month (YYYY-MM). */
   bankAccount?: string;
   month?: string;
@@ -771,6 +771,7 @@ export interface OpenItemRow {
   payment_unverified: boolean;
   contact_name: string;
   contact_tin: string;
+  opening?: boolean;          // imported opening item: no document behind it
 }
 
 export interface ContactDocument {
@@ -1099,4 +1100,96 @@ export interface ReclassifyPreview {
 export interface BulkResolveResult {
   resolved: string[];
   skipped: { id: string; why: string }[];
+}
+
+// --- spreadsheet imports (opening TB, opening open items, journal entries) ---
+export type ImportKind = "opening-tb" | "open-items" | "journal-entries";
+
+export interface ImportOptions {
+  columns?: Record<string, string>;
+  date_format?: string | null;
+  accounts?: Record<string, string>;
+  default_kind?: "ar" | "ap" | null;
+  difference_account?: string | null;
+}
+
+export interface ImportAccountChoice {
+  key: string;
+  code_in: string;
+  name_in: string;
+  match_code: string | null;
+  how: "code" | "name" | "fuzzy" | "none";
+  score: number;
+  alternatives: string[];
+  chosen: string | null;
+  problem: "" | "unmapped" | "not_in_chart" | "inactive" | "locked";
+  rows: number;
+}
+
+export interface ImportPreview {
+  kind: ImportKind;
+  filename: string;
+  headers: string[];
+  columns: Record<string, string>;
+  fields: Record<string, string>;
+  row_count: number;
+  date_format: string | null;
+  date_formats: { value: string; label: string }[];
+  accounts: ImportAccountChoice[];
+  errors: { row: number; message: string }[];
+  warnings: string[];
+  ready: boolean;
+  tb_lines: { account_code: string; account_name: string; debit: string; credit: string }[];
+  debit: string;
+  credit: string;
+  difference: string;
+  raw_difference: string;
+  as_of: string | null;
+  has_opening: boolean;
+  items: {
+    row: number; kind: "ar" | "ap"; contact_name: string; contact_tin: string; doc_number: string; doc_date: string;
+    due_date: string | null; terms_days: number | null; amount: string;
+  }[];
+  item_count: number;
+  totals: Record<string, string>;
+  control: Record<string, string>;
+  skipped: number;
+  entries: {
+    row: number; entry_date: string | null; posts_on: string | null; reference: string; particulars: string;
+    is_adjusting: boolean; debit: string; credit: string; lines: number; errors: string[];
+  }[];
+  last_closed: string | null;
+  books_start: string | null;
+}
+
+export interface ImportResult {
+  kind: ImportKind;
+  created: number;
+  updated: number;
+  skipped: number;
+  warnings: string[];
+}
+
+export interface OpeningItem {
+  id: string;
+  kind: "ar" | "ap";
+  contact_name: string;
+  contact_tin: string;
+  doc_number: string;
+  doc_date: string;
+  due_date: string | null;
+  terms_days: number | null;
+  amount: string;
+  paid_on: string | null;
+  paid_via: string;
+  paid_account: string;
+  open: string;
+}
+
+export interface OpeningItems {
+  items: OpeningItem[];
+  totals: Record<string, string>;
+  control: Record<string, string>;
+  warnings: string[];
+  books_start: string | null;
 }

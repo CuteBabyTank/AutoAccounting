@@ -2,6 +2,12 @@
 import api, { seg } from "@/lib/api";
 import type {
   BulkResolveResult,
+  ImportKind,
+  ImportOptions,
+  ImportPreview,
+  ImportResult,
+  OpeningItems,
+  OpeningItem,
   CoaTemplate,
   ReclassifyInput,
   ReclassifyList,
@@ -352,4 +358,23 @@ export const accountingApi = {
         responseType: "blob",
       })
       .then((r) => r.data),
+  importPreview: (companyId: string, kind: ImportKind, file: File, options: ImportOptions) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("options", JSON.stringify(options));
+    return api.post<ImportPreview>(`/accounting/companies/${seg(companyId)}/imports/${seg(kind)}/preview`, fd).then((r) => r.data);
+  },
+  importConfirm: (companyId: string, kind: ImportKind, file: File, options: ImportOptions) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("options", JSON.stringify(options));
+    return api.post<ImportResult>(`/accounting/companies/${seg(companyId)}/imports/${seg(kind)}`, fd).then((r) => r.data);
+  },
+  importTemplate: (kind: ImportKind, format: "csv" | "xlsx") =>
+    api.get<Blob>(`/accounting/imports/templates/${seg(kind)}`, { params: { format }, responseType: "blob" }).then((r) => r.data),
+  openingItems: (companyId: string) =>
+    api.get<OpeningItems>(`/accounting/companies/${seg(companyId)}/opening-items`).then((r) => r.data),
+  payOpeningItem: (id: string, body: { paid_on: string | null; paid_via?: string; paid_account?: string }) =>
+    api.patch<OpeningItem>(`/accounting/opening-items/${seg(id)}`, body).then((r) => r.data),
+  deleteOpeningItem: (id: string) => api.delete(`/accounting/opening-items/${seg(id)}`).then(() => undefined),
 };

@@ -155,6 +155,9 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
           {c.books_start && (
             <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "reclassify" }, "Reclassify", null, 0)}</li>
           )}
+          {c.books_start && (
+            <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "import" }, "Import", null, 0)}</li>
+          )}
           <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "customers" }, "Customers", null, 0)}</li>
           <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "suppliers" }, "Suppliers", null, 0)}</li>
           <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "atc" }, "ATC databank", null, 0)}</li>

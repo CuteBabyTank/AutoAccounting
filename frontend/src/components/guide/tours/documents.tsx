@@ -445,6 +445,7 @@ export const DOCUMENTS_TOUR: Slide[] = [
       "Employees: import the payroll register for the 1604-C alphalist and each 2316, due January 31.",
       "Reports: P&L by month or against last year, balance sheet, ledger detail, adjusted trial balance and a quarterly management pack; click any amount to reach the document behind it.",
       "Customers and Suppliers: open balances, aging, 2307s still to receive, and a statement to send a customer.",
+      "Import: the opening trial balance, invoices still open at the books start, and journal entries from Excel or CSV, with a check of every account before anything posts.",
       "ATC databank: set each supplier's withholding tax code once and every document from them uses it.",
       "Audit log: every change anyone in the firm made to the company, with the values before and after.",
     ],

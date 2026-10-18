@@ -24,6 +24,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   task: "Task",
   firm_settings: "Firm settings",
   coa_template: "Chart template",
+  opening_item: "Opening open item",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -74,6 +75,10 @@ const FIELD_LABELS: Record<string, string> = {
   status_override: "Board status",
   filed_on: "Filed on",
   approve_before_close: "Managers approve filing",
+  paid_account: "Paid through",
+  items: "Items",
+  receivables: "Receivables",
+  payables: "Payables",
   deadline_days: "Deadline reminder (days)",
   title: "Title",
   due_date: "Due date",

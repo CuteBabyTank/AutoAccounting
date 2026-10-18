@@ -20,6 +20,7 @@ import CompanyOverviewPanel from "@/components/accounting/CompanyOverviewPanel";
 import PeriodPanel from "@/components/accounting/PeriodPanel";
 import ReportsPanel from "@/components/accounting/ReportsPanel";
 import ReclassifyPanel from "@/components/accounting/ReclassifyPanel";
+import ImportPanel from "@/components/accounting/ImportPanel";
 import AppendPrompt from "@/components/accounting/AppendPrompt";
 import UploadReviewDialog from "@/components/accounting/UploadReviewDialog";
 import DuplicateBanner from "@/components/accounting/DuplicateBanner";
@@ -446,6 +447,22 @@ export default function AccountingPage() {
                 <p className="py-6 text-sm text-[var(--text-secondary)]">Set a Books start on the company to reclassify its postings.</p>
               );
             })()}
+            {selected?.view === "import" && (() => {
+              const company = tree.find((c) => c.id === selected.companyId);
+              return company?.books_start ? (
+                <ImportPanel
+                  key={selected.companyId}
+                  companyId={selected.companyId}
+                  companyName={company.registered_name}
+                  onChanged={() => {
+                    loadTree().catch(() => undefined);
+                    setPeriodRefresh((n) => n + 1);
+                  }}
+                />
+              ) : (
+                <p className="py-6 text-sm text-[var(--text-secondary)]">Set a Books start on the company to import opening balances and journals.</p>
+              );
+            })()}
             {selected?.view === "overview" && (
               <CompanyOverviewPanel
                 key={selected.companyId}
@@ -481,6 +498,7 @@ export default function AccountingPage() {
               </>
             )}
 
+            {selected?.view !== "import" && (
             <div className="mt-6 rounded-xl border border-dashed border-[var(--border)] p-6 text-center">
               <p className="text-sm font-semibold text-[var(--text-primary)]">Drop receipts, invoices or scans here</p>
               <p className="mt-1 text-xs text-[var(--text-secondary)]">
@@ -496,6 +514,7 @@ export default function AccountingPage() {
                 <UploadSimple size={16} /> Upload files
               </button>
             </div>
+            )}
 
             {isDragActive && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-[var(--accent-subtle)]/80 text-sm font-semibold text-[var(--text-primary)]">

@@ -160,9 +160,16 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
               {data.open_items.map((i) => (
                 <tr key={i.document_id} className="border-t border-[var(--border)] text-[var(--text-primary)]">
                   <td className={TD}>
-                    <button className="font-medium text-[var(--accent)] hover:underline" onClick={() => onOpenDocument(i.document_id)}>
-                      {KIND[i.kind]} {i.doc_number || "(no number)"}
-                    </button>
+                    {i.opening ? (
+                      <span className="font-medium" title="Imported as open at the books start (Import → Open items); no document behind it">
+                        {KIND[i.kind]} {i.doc_number || "(no number)"}{" "}
+                        <span className="rounded-full bg-[var(--bg-hover)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]">Opening balance</span>
+                      </span>
+                    ) : (
+                      <button className="font-medium text-[var(--accent)] hover:underline" onClick={() => onOpenDocument(i.document_id)}>
+                        {KIND[i.kind]} {i.doc_number || "(no number)"}
+                      </button>
+                    )}
                   </td>
                   <td className={TD}>{day(i.doc_date)}</td>
                   <td className={TD}>{day(i.due)}</td>

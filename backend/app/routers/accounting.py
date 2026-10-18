@@ -28,13 +28,14 @@ from app.models.user import User, UserRole
 from app.routers import (
     accounting_annual, accounting_atc, accounting_audit, accounting_bank, accounting_books, accounting_contacts,
     accounting_employees,
-    accounting_periods, accounting_reclassify, accounting_reports, accounting_tasks, accounting_work,
+    accounting_periods, accounting_reclassify, accounting_reports, accounting_tasks, accounting_templates,
+    accounting_work,
 )
 from app.routers.accounting_scope import (
     MANAGER_ROLES as _MANAGER_ROLES, company_or_404 as _company_or_404, scope_for as _scope,
 )
 from app.schemas.accounting import (
-    AffectedPeriodOut, CompanyBrief, CompanyIn, CompanyOut, ConfirmIn, DocumentOut, DocumentPatch, DuplicatePairOut,
+    AffectedPeriodOut, CompanyBrief, CompanyCreateIn, CompanyIn, CompanyOut, ConfirmIn, DocumentOut, DocumentPatch, DuplicatePairOut,
     FolderOut, NotDuplicateIn,
     TreeCompanyOut, UploadFileOut, UploadGroupOut, UploadOut,
 )
@@ -107,23 +108,29 @@ async def list_companies(
 
 @router.post("/companies", response_model=CompanyOut, status_code=status.HTTP_201_CREATED)
 async def create_company(
-    body: CompanyIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    body: CompanyCreateIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     ent = _scope(user)
     _require_manager(user)
-    company = AACompany(id=uuid.uuid4(), enterprise_id=ent, created_by=user.id, **body.model_dump())
+    template = body.coa_template.strip()
+    company = AACompany(id=uuid.uuid4(), enterprise_id=ent, created_by=user.id,
+                        **body.model_dump(exclude={"coa_template"}))
     db.add(company)
     try:
         await db.flush()  # the TIN clash surfaces here, before the event is added
-        audit.record(db, label=company.registered_name,
-                     ent=ent, company_id=company.id, user=user, entity="company", entity_id=company.id,
-                     action="create", after=audit.snapshot(company, CompanyIn.model_fields))
-        await db.commit()
     except IntegrityError:
         await db.rollback()
         raise HTTPException(
             status.HTTP_409_CONFLICT, "A company with this TIN and branch code is already in your databank"
         )
+    after = audit.snapshot(company, CompanyIn.model_fields)
+    if template:
+        await accounting_templates.apply_template(db, company, template)
+        after["coa_template"] = template
+    audit.record(db, label=company.registered_name,
+                 ent=ent, company_id=company.id, user=user, entity="company", entity_id=company.id,
+                 action="create", after=after)
+    await db.commit()
     return company
 
 
@@ -1015,6 +1022,7 @@ router.include_router(accounting_audit.router)
 router.include_router(accounting_employees.router)
 router.include_router(accounting_reports.router)
 router.include_router(accounting_reclassify.router)
+router.include_router(accounting_templates.router)
 router.include_router(accounting_atc.router)
 # Annual routes first: "/periods/{company}/{year}/annual" would otherwise match the quarter route's {quarter}.
 router.include_router(accounting_annual.router)

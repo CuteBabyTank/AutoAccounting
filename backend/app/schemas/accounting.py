@@ -105,6 +105,11 @@ class CompanyIn(BaseModel):
         return self
 
 
+class CompanyCreateIn(CompanyIn):
+    # "" = the standard chart (seeded on first use); a built-in template key or a firm template id
+    coa_template: str = Field(default="", max_length=40)
+
+
 class CompanyOut(CompanyIn):
     model_config = ConfigDict(from_attributes=True)
 

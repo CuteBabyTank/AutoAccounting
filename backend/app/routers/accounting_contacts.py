@@ -28,6 +28,7 @@ from app.services.accounting.books.subledger import (
     Subledger, counterparty, doc_kind, key_map_for, load_subledger, outgoing_2307_outputs, payment_rows,
 )
 from app.services.accounting.compute.money import ZERO, c2
+from app.services.accounting.compute.statement import activity as statement_activity
 from app.services.accounting.compute.subledger import OpenItem, aging, aging_totals
 from app.services.accounting.contacts import EDITABLE, merge_check, role_union
 from app.services.accounting.subledger_report import aging_pdf, aging_xlsx, statement_pdf
@@ -377,20 +378,32 @@ async def get_aging(company_id: uuid.UUID, kind: str = Query("ar", pattern="^(ar
 
 
 @router.get("/contacts/{contact_id}/statement")
-async def customer_statement(contact_id: uuid.UUID, as_of: date | None = None, user: User = Depends(get_current_user),
+async def customer_statement(contact_id: uuid.UUID, as_of: date | None = None,
+                             type: str = Query("open_item", pattern="^(open_item|balance_forward|transaction)$"),
+                             start: date | None = None, user: User = Depends(get_current_user),
                              db: AsyncSession = Depends(get_db)):
-    """Open-item statement of account for a customer, with an aging footer and the 2307s still owed."""
+    """Customer statement with an aging footer and the 2307s still owed: open item (what is open on the date),
+    balance forward (balance at ``start`` + the period's activity) or transaction (the period's activity)."""
     ent = scope_for(user)
     row = await _contact_or_404(db, ent, contact_id)
     company = await company_or_404(db, ent, row.company_id)
-    sub = await load_subledger(db, company, as_of or today())
+    as_of = as_of or today()
+    start = start or as_of.replace(day=1)
+    if start > as_of:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The statement starts after its end date")
+    if start < date(2000, 1, 1) or (as_of - start).days > 3660 or as_of.year > 2100:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Choose a period of ten years or less, from 2000 on")
+    sub = await load_subledger(db, company, as_of)
     await db.commit()
     target = key_map_for(sub.contacts).get(row.key, row.key)
     items = [i for i in sub.items if i.doc.kind == "ar" and i.doc.contact_key == target]
     pending = c2(sum((x.amount for x in sub.cwt if x.contact_key == target and x.status == "pending"), ZERO))
+    docs = [d for d in sub.docs if d.kind == "ar" and d.contact_key == target and d.doc_date <= as_of]
+    act = statement_activity(docs, [(p, a) for p, a in payment_rows(docs, sub.payments) if p.on <= as_of], start,
+                             as_of)
     data = await asyncio.get_running_loop().run_in_executor(None, lambda: statement_pdf(
         header_for(company), {"name": row.registered_name, "tin": row.tin, "address": row.address}, sub.as_of, items,
-        pending))
+        pending, kind=type, start=start, activity=act))
     name = f"{_safe_name(row.registered_name)} statement {sub.as_of.isoformat()}.pdf"
     return Response(content=data, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})

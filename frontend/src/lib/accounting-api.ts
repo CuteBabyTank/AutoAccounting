@@ -1,5 +1,6 @@
 // Accounting API client (companies, uploads, periods, books). Auth/team/admin calls live in lib/api.ts.
 import api, { seg } from "@/lib/api";
+import type { StatementType } from "@/types/extras";
 import type {
   BulkResolveResult,
   ImportKind,
@@ -315,8 +316,13 @@ export const accountingApi = {
     api
       .get<Blob>(`/accounting/companies/${seg(companyId)}/aging`, { params: { kind, as_of: asOf, format }, responseType: "blob" })
       .then((r) => r.data),
-  customerStatement: (contactId: string, asOf: string) =>
-    api.get<Blob>(`/accounting/contacts/${seg(contactId)}/statement`, { params: { as_of: asOf }, responseType: "blob" }).then((r) => r.data),
+  customerStatement: (contactId: string, asOf: string, type: StatementType = "open_item", start?: string) =>
+    api
+      .get<Blob>(`/accounting/contacts/${seg(contactId)}/statement`, {
+        params: { as_of: asOf, type, ...(type !== "open_item" && start ? { start } : {}) },
+        responseType: "blob",
+      })
+      .then((r) => r.data),
   outputAging: (outputId: string, kind: "ar" | "ap") =>
     api.get<Blob>(`/accounting/outputs/${seg(outputId)}/aging`, { params: { kind }, responseType: "blob" }).then((r) => r.data),
   // Reports (live from the books)

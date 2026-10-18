@@ -5,6 +5,7 @@ import { ArrowLeft, FilePdf, FileZip } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { EWT_ATC_OPTIONS, apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
+import type { StatementType } from "@/types/extras";
 import type { Account, ContactDetail, ContactPatch, ContactRow } from "@/types/accounting";
 
 interface Props {
@@ -19,6 +20,7 @@ interface Props {
 
 const BTN = "inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-50";
 const PRIMARY = "rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-60";
+const SMALL_INPUT = "rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]";
 const INPUT = "w-full rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] disabled:opacity-60";
 const LABEL = "mb-1 block text-xs text-[var(--text-secondary)]";
 const CHIP = "rounded-full px-2 py-0.5 text-[11px] font-medium";
@@ -43,6 +45,8 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
+  const [stmtType, setStmtType] = useState<StatementType>("open_item");
+  const [stmtStart, setStmtStart] = useState(() => `${asOf.slice(0, 8)}01`);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,17 +118,37 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
             Merged into another contact: open it
           </button>
         )}
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           {isCustomer && (
-            <button
-              className={BTN}
-              disabled={busy !== ""}
-              onClick={() =>
-                run("statement", async () => saveBlob(await accountingApi.customerStatement(contactId, asOf), `${data.registered_name} statement ${asOf}.pdf`))
-              }
-            >
-              <FilePdf size={14} /> Customer statement
-            </button>
+            <>
+              <select
+                className={SMALL_INPUT}
+                aria-label="Statement type"
+                value={stmtType}
+                onChange={(e) => setStmtType(e.target.value as StatementType)}
+              >
+                <option value="open_item">Open items</option>
+                <option value="balance_forward">Balance forward</option>
+                <option value="transaction">Transactions</option>
+              </select>
+              {stmtType !== "open_item" && (
+                <label className="flex items-center gap-1 text-xs text-[var(--text-secondary)]">
+                  From <input type="date" className={SMALL_INPUT} value={stmtStart} max={asOf} onChange={(e) => setStmtStart(e.target.value)} />
+                </label>
+              )}
+              <button
+                className={BTN}
+                disabled={busy !== "" || (stmtType !== "open_item" && !(stmtStart && stmtStart <= asOf))}
+                title="Open items: what is unpaid on the date. Balance forward: the balance at the start date, then the invoices, payments and write-offs since. Transactions: only the period's invoices, payments and write-offs. Every type ends with the aging."
+                onClick={() =>
+                  run("statement", async () =>
+                    saveBlob(await accountingApi.customerStatement(contactId, asOf, stmtType, stmtStart), `${data.registered_name} statement ${asOf}.pdf`),
+                  )
+                }
+              >
+                <FilePdf size={14} /> Customer statement
+              </button>
+            </>
           )}
         </div>
       </div>

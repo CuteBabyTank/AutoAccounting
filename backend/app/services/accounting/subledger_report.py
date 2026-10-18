@@ -121,10 +121,23 @@ def aging_pdf(header: Header, kind: str, as_of: date, rows: list[AgingRow], tota
     return w.bytes()
 
 
-def statement_pdf(header: Header, contact: dict, as_of: date, items: list[OpenItem], cwt_pending: Decimal) -> bytes:
-    """Open-item customer statement with an aging footer (``contact``: name, tin, address)."""
+STATEMENT_TYPES = {"open_item": "Open item", "balance_forward": "Balance forward", "transaction": "Transaction"}
+_KIND_LABELS = {"invoice": "Invoice", "credit": "Credit memo", "payment": "Payment", "writeoff": "Write-off"}
+
+
+def statement_pdf(header: Header, contact: dict, as_of: date, items: list[OpenItem], cwt_pending: Decimal,
+                  kind: str = "open_item", start: date | None = None, activity: dict | None = None) -> bytes:
+    """Customer statement with an aging footer (``contact``: name, tin, address).
+
+    ``open_item``: what is open as of the date. ``balance_forward``: the balance at ``start``, then the window's
+    invoices, payments and write-offs with a running balance. ``transaction``: the window's lines only.
+    ``activity`` is ``compute.statement.activity`` for the window (needed for the last two)."""
     w = _Writer(_PORTRAIT)
-    _header(w, header, "STATEMENT OF ACCOUNT", f"As of {as_of:%B %d, %Y}")
+    if kind == "open_item" or activity is None or start is None:
+        subtitle = f"As of {as_of:%B %d, %Y}"
+    else:
+        subtitle = f"{STATEMENT_TYPES[kind]} statement, {start:%B %d, %Y} to {as_of:%B %d, %Y}"
+    _header(w, header, "STATEMENT OF ACCOUNT", subtitle)
     w.text(f"To: {contact.get('name', '')}", bold=True)
     if contact.get("tin"):
         w.text(f"TIN {contact['tin']}", size=8)
@@ -132,18 +145,43 @@ def statement_pdf(header: Header, contact: dict, as_of: date, items: list[OpenIt
         w.text(contact["address"], size=8)
     w.gap(8)
     right = _PORTRAIT.width - MARGIN
-    w.row([(MARGIN, "Invoice", "l"), (MARGIN + 110, "Date", "l"), (MARGIN + 180, "Due", "l"),
-           (right - 270, "Amount", "r"), (right - 180, "Tax withheld", "r"), (right - 90, "Paid", "r"),
-           (right, "Balance due", "r")], bold=True)
-    for i in items:
-        d = i.doc
-        w.row([(MARGIN, _cut(d.doc_number, 100), "l"), (MARGIN + 110, d.doc_date.isoformat(), "l"),
-               (MARGIN + 180, i.due.isoformat(), "l"), (right - 270, peso(d.total), "r"),
-               (right - 180, peso(d.withheld), "r"), (right - 90, peso(i.paid), "r"), (right, peso(i.open), "r")])
-    total = sum((i.open for i in items), Decimal("0.00"))
-    w.row([(MARGIN, "Total balance due", "l"), (right, peso(total), "r")], bold=True)
+    if kind == "open_item" or activity is None or start is None:
+        w.row([(MARGIN, "Invoice", "l"), (MARGIN + 110, "Date", "l"), (MARGIN + 180, "Due", "l"),
+               (right - 270, "Amount", "r"), (right - 180, "Tax withheld", "r"), (right - 90, "Paid", "r"),
+               (right, "Balance due", "r")], bold=True)
+        for i in items:
+            d = i.doc
+            w.row([(MARGIN, _cut(d.doc_number, 100), "l"), (MARGIN + 110, d.doc_date.isoformat(), "l"),
+                   (MARGIN + 180, i.due.isoformat(), "l"), (right - 270, peso(d.total), "r"),
+                   (right - 180, peso(d.withheld), "r"), (right - 90, peso(i.paid), "r"), (right, peso(i.open), "r")])
+        total = sum((i.open for i in items), Decimal("0.00"))
+        w.row([(MARGIN, "Total balance due", "l"), (right, peso(total), "r")], bold=True)
+    else:
+        running = kind == "balance_forward"
+        amount_x = right - 90 if running else right
+        w.row([(MARGIN, "Date", "l"), (MARGIN + 70, "Activity", "l"), (MARGIN + 150, "Invoice", "l"),
+               (MARGIN + 250, "Reference", "l"), (amount_x - 90, "Charges", "r"), (amount_x, "Credits", "r")]
+              + ([(right, "Balance", "r")] if running else []), bold=True)
+        if running:
+            w.row([(MARGIN, start.isoformat(), "l"), (MARGIN + 70, "Balance forward", "l"),
+                   (right, peso(activity["opening"]), "r")])
+        for line in activity["lines"]:
+            w.row([(MARGIN, line["date"].isoformat(), "l"), (MARGIN + 70, _KIND_LABELS[line["kind"]], "l"),
+                   (MARGIN + 150, _cut(line["number"], 95), "l"), (MARGIN + 250, _cut(line["ref"], 90), "l"),
+                   (amount_x - 90, peso(line["charge"]) if line["charge"] else "", "r"),
+                   (amount_x, peso(line["credit"]) if line["credit"] else "", "r")]
+                  + ([(right, peso(line["balance"]), "r")] if running else []))
+        if not activity["lines"]:
+            w.text("No invoices, payments or credits in this period.", size=8)
+        if running:
+            w.row([(MARGIN, "Balance due", "l"), (right, peso(activity["closing"]), "r")], bold=True)
+        else:
+            w.row([(MARGIN, "Total for the period", "l"), (amount_x - 90, peso(activity["charges"]), "r"),
+                   (amount_x, peso(activity["credits"]), "r")], bold=True)
+            w.row([(MARGIN, f"Balance due as of {as_of:%B %d, %Y}", "l"),
+                   (right, peso(sum((i.open for i in items), Decimal("0.00"))), "r")], bold=True)
     w.gap(10)
-    w.text("Aging", bold=True)
+    w.text(f"Aging as of {as_of:%B %d, %Y}", bold=True)
     step = (right - MARGIN) / len(BUCKETS)
     w.row([(MARGIN + step * (n + 1), BUCKET_LABELS[b], "r") for n, b in enumerate(BUCKETS)], bold=True)
     w.row([(MARGIN + step * (n + 1), peso(sum((i.open for i in items if i.bucket == b), Decimal("0.00"))), "r")

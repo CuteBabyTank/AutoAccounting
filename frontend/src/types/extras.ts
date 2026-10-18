@@ -63,3 +63,6 @@ export interface CashForecast {
   later_out: string;
   note: string;
 }
+
+/** Customer statement: what is open on the date, balance forward with the period's activity, or the activity only. */
+export type StatementType = "open_item" | "balance_forward" | "transaction";

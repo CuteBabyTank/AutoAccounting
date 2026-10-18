@@ -397,12 +397,48 @@ class AAJournalEntry(Base):
     lines: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     # an adjusting entry (accruals, corrections at period end): shown in the Adjusted TB and the AJE report
     is_adjusting: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # posted from a recurring template (one entry per template per date)
+    recurring_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_recurring_entries.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # a bulk write-off: [{"id": open item id, "amount": "…", "doc_number", "kind": document | opening}]
+    writeoff_items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AARecurringEntry(Base):
+    """A journal entry template on a schedule (rent accrual, retainer). Due entries post only on a person's action."""
+
+    __tablename__ = "aa_recurring_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    book: Mapped[str] = mapped_column(String(5), nullable=False, default="GJ")
+    reference: Mapped[str] = mapped_column(String(60), nullable=False, default="")
+    particulars: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    lines: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)   # like aa_journal_entries.lines
+    is_adjusting: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    frequency: Mapped[str] = mapped_column(String(10), nullable=False, default="monthly")   # monthly | quarterly
+    day_of_month: Mapped[int] = mapped_column(Integer, nullable=False, default=1)          # anchor day 1–31
+    next_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
 
 
 class AABookClose(Base):
@@ -782,3 +818,24 @@ class AAOpeningItem(Base):
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AAChecklistTemplate(Base):
+    """A firm's close checklist (e.g. the monthly close): applying it creates one task per step for a company."""
+
+    __tablename__ = "aa_checklist_templates"
+    __table_args__ = (UniqueConstraint("enterprise_id", "name", name="uq_aa_checklist_template_name"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    cadence: Mapped[str] = mapped_column(String(10), nullable=False, default="monthly")   # monthly | quarterly | annual
+    # [{"title", "notes", "offset_days", "priority"}]: due = period end + offset_days
+    items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()

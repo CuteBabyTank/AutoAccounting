@@ -46,6 +46,10 @@ def column_statements() -> list[str]:
         "ALTER TABLE aa_periods ADD COLUMN IF NOT EXISTS pack_notes TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE aa_periods ADD COLUMN IF NOT EXISTS pack_files JSONB NOT NULL DEFAULT '{}'::jsonb",
         "ALTER TABLE aa_accounts ADD COLUMN IF NOT EXISTS locked BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE aa_journal_entries ADD COLUMN IF NOT EXISTS recurring_id UUID "
+        "REFERENCES aa_recurring_entries(id) ON DELETE SET NULL",
+        "CREATE INDEX IF NOT EXISTS ix_aa_journal_entries_recurring_id ON aa_journal_entries (recurring_id)",
+        "ALTER TABLE aa_journal_entries ADD COLUMN IF NOT EXISTS writeoff_items JSONB NOT NULL DEFAULT '[]'::jsonb",
     ] + search_index_statements()
 
 

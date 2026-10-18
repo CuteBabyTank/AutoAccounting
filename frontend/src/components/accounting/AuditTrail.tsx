@@ -25,6 +25,8 @@ export const ENTITY_LABELS: Record<string, string> = {
   firm_settings: "Firm settings",
   coa_template: "Chart template",
   opening_item: "Opening open item",
+  recurring_entry: "Recurring entry",
+  checklist_template: "Checklist template",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -65,10 +67,18 @@ const ACTION_LABELS: Record<string, string> = {
   task_reopened: "Task reopened",
   pack_notes: "Management pack notes saved",
   pack_generated: "Management pack generated",
+  writeoff: "Written off",
+  written_off: "Written off",
+  post_due: "Due entries posted",
+  apply: "Checklist applied",
 };
 
 const FIELD_LABELS: Record<string, string> = {
   is_adjusting: "Adjusting entry",
+  frequency: "Repeats",
+  next_date: "Next date",
+  day_of_month: "Day of month",
+  cadence: "Cadence",
   locked: "Locked",
   coa_template: "Chart template",
   assignee_id: "Assigned to",

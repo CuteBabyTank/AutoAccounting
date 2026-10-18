@@ -8,6 +8,7 @@ import BookMonths from "@/components/accounting/BookMonths";
 import ChartEditor from "@/components/accounting/ChartEditor";
 import JournalEntryForm from "@/components/accounting/JournalEntryForm";
 import OpeningAssets from "@/components/accounting/OpeningAssets";
+import RecurringEntries from "@/components/accounting/RecurringEntries";
 import type { Account, JournalEntry, JournalEntryInput } from "@/types/accounting";
 
 interface Props {
@@ -149,6 +150,16 @@ export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndM
           <OpeningAssets companyId={companyId} year={year} openingPpe={openingPpe} onChanged={onChanged} />
         )}
       </section>
+
+      <RecurringEntries
+        companyId={companyId}
+        accounts={accounts}
+        defaultDate={manualDate}
+        onPosted={() => {
+          load().catch(() => undefined);
+          onChanged();
+        }}
+      />
 
       <section>
         <div className="mb-2 flex items-center gap-2">

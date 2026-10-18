@@ -268,3 +268,46 @@ Not done: reclassify doesn't move opening balances (edit them in Books), sales l
 goods (asset register); existing documents already on a newly locked account are not flagged (lock blocks new
 postings only); templates don't import / export as files; no batch "make inactive" across many accounts.
 
+
+## 08 Opening TB import, opening open items, JE import (2026-10-18)
+
+Plan: `2026-10-16-qbo-08-imports.md` (Decisions section there).
+
+Shipped:
+- Pure `services/accounting/importing.py`: tolerant amounts (₱, commas, parentheses, CR / DR, a formula-guard
+  apostrophe), date-format detection over a column (asks only when several formats read every value, MM/DD first),
+  column guesses, account matching code → leading code in the name → normalised name (abbreviations expanded:
+  accts, A/R, A/P, PPE…) → closest name (difflib ≥ 0.72, alternatives listed).
+- Pure `services/accounting/import_rows.py`: `build_tb` (merges split rows, skips totals, negative debit = credit,
+  signed balance column, difference only to an explicitly chosen account, as-of check), `build_open_items` (AR / AP
+  per row or for the sheet, terms, due dates, dates must be before the books start, duplicates in the sheet / already
+  imported), `control_tie`, `build_journals` (group by journal no. or date + reference, signed amount column,
+  adjusting flag, per-entry balance / line / date / account errors, closed-month entries post on the first open day);
+  templates.
+- `aa_opening_items` (FORCE RLS, firm policy) + pure `opening_items.py`: the items enter the books engine as
+  sales / bills dated the day before the books start (no document entry, so A/R / A/P isn't doubled; only payments
+  post), the subledger aging (`OpenDoc.opening`, "Opening balance" chip on the contact page), contacts, and the bank
+  matcher's candidates. Payments: a matched bank line, or one recorded on the item (`paid_on` / via / account).
+- Routes (`routers/accounting_imports.py`): `POST /companies/{id}/imports/{kind}/preview` and `/imports/{kind}`
+  (kind `opening-tb | open-items | journal-entries`, multipart file + options JSON, stateless: the confirm re-reads
+  and must be ready again), `GET /imports/templates/{kind}?format=csv|xlsx` (csv_safe, numbers kept numeric),
+  `GET /companies/{id}/opening-items`, `PATCH|DELETE /opening-items/{id}`. 5 MB / 5000 rows / 500 JEs / 2000 items.
+  The opening TB writes the opening JE (create or replace its lines) and re-runs `refresh_opening_flag`; JEs go
+  through the JE form's checks (`accounting_books.entry_problem`, now shared). Audited: `journal_entry` `import`
+  per entry, `opening_item` import / update / delete.
+- UI: company → Import (books on): Opening balances / Open items / Journal entries tabs, templates, column and date
+  format selects, account table (matched by code / name / closest, fix with a select, problems in red), opening
+  entry / items / entries preview, difference account picker, control-tie warnings, confirm; opening items list
+  with record payment and delete. Hint, tour line, audit labels.
+- Live smoke on the dev stack (Bayanihan bank smoke company, restored afterwards): TB with renamed Capital → mapped
+  by hand, difference to Retained earnings; December closed → warning; after reopening, a wrong opening cash set
+  `opening_balance_missing` (400,000 vs 412,880.15) and the right one cleared it; open items in A/R / A/P aging
+  (1–30 bucket), control-tie warnings, re-import skipped duplicates, a recorded payment posted Dr 1010 / Cr 1100;
+  JE CSV with ambiguous dates (format chosen), name-matched and overridden accounts, negative lines, adjusting flag,
+  audit events. UI checked in the browser.
+
+Tests: 782 → 829 passing. Gates: pytest, ruff, lint, tsc, build all green.
+
+Not done: receipts (OR scans) can't link to an opening item (`settles_document_id` is a document FK used in ~40
+places); record the payment on the item and exclude the OR instead. No undo of a whole import batch (delete items /
+JEs one by one). Opening TB over 200 non-zero accounts is refused (JE line limit).

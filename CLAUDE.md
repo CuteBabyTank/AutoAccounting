@@ -118,6 +118,13 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   `aa_accounts.locked` blocks new postings by people (400 via `books.chart.locked_message`) and extraction (review
   reason `account_locked`); engine-only system accounts can't be locked. Chart templates: built-ins in
   `books/templates.py`, firm ones in `aa_coa_templates`; `coa_template` on company create.
+- **Imports (QBO 08):** `routers/accounting_imports.py` (stateless preview → confirm; the confirm re-parses the file),
+  pure `importing.py` (amounts, date detection, fuzzy account match) + `import_rows.py` (TB / open items / JE
+  builders); sheets read by `payroll_import.parse_sheet`. The opening TB writes the single `kind="opening"` JE; imported
+  JEs go through `accounting_books.entry_problem` (shared with the JE form). Opening open items live in
+  `aa_opening_items` and enter the engine via `opening_items.opening_doc_line` (dated the day before `books_start`,
+  so only their payments post — never give them a document entry or the opening A/R / A/P doubles); anything that
+  loads documents for open items / payments (loader, subledger, bank candidates) must add them too.
 - **PDF templates** are calibrated comb-cell layouts (`forms/overlay.py`); re-calibrate when BIR revises a form.
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.
 - **Frontend token** lives in `sessionStorage` (`autoaccounting_token`). The axios interceptor attaches it, and on 401 it is cleared and AuthGate redirects.

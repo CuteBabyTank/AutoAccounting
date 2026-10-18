@@ -1,5 +1,6 @@
 // Workstream 10 extras: recurring entries, write-offs, cash forecast, checklist templates.
 import type { JournalEntry, JournalLine, OpenItemRow } from "@/types/accounting";
+import type { Task } from "@/types/work";
 
 export type Frequency = "monthly" | "quarterly";
 
@@ -66,3 +67,33 @@ export interface CashForecast {
 
 /** Customer statement: what is open on the date, balance forward with the period's activity, or the activity only. */
 export type StatementType = "open_item" | "balance_forward" | "transaction";
+
+export type Cadence = "monthly" | "quarterly" | "annual";
+
+export interface ChecklistItem {
+  title: string;
+  notes: string;
+  /** Due this many days after the period end (negative = before). */
+  offset_days: number;
+  priority: "low" | "normal" | "high";
+}
+
+export interface ChecklistTemplate {
+  /** A uuid, or builtin:<key> for the two built-in checklists. */
+  id: string;
+  name: string;
+  cadence: Cadence;
+  items: ChecklistItem[];
+  builtin: boolean;
+}
+
+export interface ChecklistInput {
+  name: string;
+  cadence: Cadence;
+  items: ChecklistItem[];
+}
+
+export interface ChecklistApplied {
+  created: Task[];
+  skipped: number;
+}

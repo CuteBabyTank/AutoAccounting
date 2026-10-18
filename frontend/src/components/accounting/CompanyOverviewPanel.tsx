@@ -7,6 +7,7 @@ import CompanyHealth from "@/components/work/CompanyHealth";
 import CashFlowTile from "@/components/accounting/CashFlowTile";
 import KpiTiles from "@/components/accounting/KpiTiles";
 import PrivacyToggle from "@/components/accounting/PrivacyToggle";
+import ApplyChecklist from "@/components/work/ApplyChecklist";
 import TaskList from "@/components/work/TaskList";
 import { workApi } from "@/lib/work-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
@@ -23,6 +24,7 @@ interface Props {
 export default function CompanyOverviewPanel({ companyId, companyName, companies }: Props) {
   const [board, setBoard] = useState<Board | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [taskKey, setTaskKey] = useState(0);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -84,7 +86,9 @@ export default function CompanyOverviewPanel({ companyId, companyName, companies
       </div>
       <div>
         <h3 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">Tasks</h3>
+        <ApplyChecklist companyId={companyId} people={board?.people ?? []} onApplied={() => setTaskKey((n) => n + 1)} />
         <TaskList
+          key={taskKey}
           companies={companies}
           people={board?.people ?? []}
           fixed={{ company_id: companyId }}

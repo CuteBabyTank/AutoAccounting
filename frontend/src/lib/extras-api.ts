@@ -1,6 +1,6 @@
 // Workstream 10 extras: recurring entries, write-offs, cash forecast, checklist templates.
 import api, { seg } from "@/lib/api";
-import type { CashForecast, RecurringEntry, RecurringInput, RecurringPosted, WriteOffCandidates, WriteOffResult } from "@/types/extras";
+import type { CashForecast, ChecklistApplied, ChecklistInput, ChecklistTemplate, RecurringEntry, RecurringInput, RecurringPosted, WriteOffCandidates, WriteOffResult } from "@/types/extras";
 
 export const extrasApi = {
   recurring: (companyId: string) =>
@@ -18,4 +18,12 @@ export const extrasApi = {
     api.post<WriteOffResult>(`/accounting/companies/${seg(companyId)}/writeoffs`, body).then((r) => r.data),
   cashForecast: (companyId: string, params: { as_of?: string; weeks?: number } = {}) =>
     api.get<CashForecast>(`/accounting/companies/${seg(companyId)}/cash-forecast`, { params }).then((r) => r.data),
+  checklists: () => api.get<ChecklistTemplate[]>("/accounting/checklist-templates").then((r) => r.data),
+  createChecklist: (body: ChecklistInput) =>
+    api.post<ChecklistTemplate>("/accounting/checklist-templates", body).then((r) => r.data),
+  updateChecklist: (id: string, body: ChecklistInput) =>
+    api.put<ChecklistTemplate>(`/accounting/checklist-templates/${seg(id)}`, body).then((r) => r.data),
+  deleteChecklist: (id: string) => api.delete(`/accounting/checklist-templates/${seg(id)}`).then(() => undefined),
+  applyChecklist: (id: string, body: { company_id: string; period_end: string; assignee_id?: string | null }) =>
+    api.post<ChecklistApplied>(`/accounting/checklist-templates/${seg(id)}/apply`, body).then((r) => r.data),
 };

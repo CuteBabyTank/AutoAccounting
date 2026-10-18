@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { UserPlus } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
 import Hint from "@/components/guide/Hint";
+import ChecklistTemplates from "@/components/work/ChecklistTemplates";
 import FirmSettingsCard from "@/components/work/FirmSettingsCard";
 import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
 import { TEAM_TOUR } from "@/components/guide/tours";
@@ -80,6 +81,7 @@ export default function TeamPage() {
 
         <GuideTour open={guide.open} onClose={guide.dismiss} label="Team" slides={TEAM_TOUR} />
         <FirmSettingsCard />
+        <ChecklistTemplates />
 
         {usage && (
           <div className="mb-6 grid gap-3 sm:grid-cols-2">

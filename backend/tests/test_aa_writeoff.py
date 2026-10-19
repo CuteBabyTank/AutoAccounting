@@ -117,3 +117,41 @@ def test_legacy_writeoff_lines_with_formatted_tin_still_serialise():
                            particulars="", lines=[{"account_code": "1010", "debit": "5", "credit": "0"}],
                            created_at=datetime.now(timezone.utc))
     assert bare.lines[0].party_tin == "" and bare.lines[0].party_name == ""
+
+
+def test_payment_after_a_writeoff_shows_as_a_credit_like_the_books():
+    """The books credit A/R for the full payment (the write-off is a journal entry, not a payment to them), so the
+    subledger must too: the invoice shows a credit of what was written off, and the recovery is flagged."""
+    from app.services.accounting.books.chart import Chart, default_books, standard_chart
+    from app.services.accounting.compute.books import BooksInput, payment_entries
+    from app.services.accounting.compute.subledger import payment_amounts
+    from app.services.accounting.compute.writeoff import recovered
+    from tests.aa_factories import company, sale
+
+    d = doc("a", "1200.00", date(2026, 6, 1))
+    wo = payments([("je1", date(2026, 9, 30), [{"id": "a", "amount": "1200.00"}])])
+    later = Payment("p1", "a", date(2026, 11, 5), None, "bank", "")
+    [item] = open_items([d], wo + [later], AS_OF, {})
+    assert item.open == D("-1200.00") and item.paid == D("2400.00")
+    assert [a for _, a in payment_amounts([d], wo + [later])] == [D("1200.00"), D("1200.00")]
+
+    chart = Chart(standard_chart("corporation"))
+    s = sale(id="a", gross="1200.00", vatable="1071.43", vat="128.57", doc_date=date(2026, 6, 1))
+    inp = BooksInput(company=company(), chart=chart, books_kept=frozenset(default_books(True)),
+                     start=date(2026, 1, 1), through=AS_OF, lines=(s,), payments=(later,))
+    [e] = payment_entries(inp, [])
+    assert sum(x.credit for x in e.lines) == D("1200.00")     # same figure the subledger now counts
+
+    assert recovered(wo + [later]) == {"a": D("1200.00")}
+    # a payment dated before the write-off is not a recovery; none at all → nothing flagged
+    assert recovered(wo + [Payment("p0", "a", date(2026, 7, 1), D("100.00"), "bank", "")]) == {}
+    assert recovered([later]) == {}
+
+
+def test_partial_payment_then_writeoff_then_full_payment():
+    d = doc("a", "1000.00", date(2026, 6, 1))
+    pays = [Payment("p1", "a", date(2026, 7, 1), D("400.00"), "bank", "")]
+    pays += payments([("je1", date(2026, 9, 30), [{"id": "a", "amount": "600.00"}])])
+    pays.append(Payment("p2", "a", date(2026, 11, 5), None, "cash", ""))
+    [item] = open_items([d], pays, AS_OF, {})
+    assert item.open == D("-600.00")          # the books post the open-ended payment at 600 (1000 − 400)

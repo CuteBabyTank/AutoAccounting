@@ -22,7 +22,7 @@ from app.services.accounting.compute import writeoff
 from app.services.accounting.compute.ewt import compute_ewt
 from app.services.accounting.compute.money import ZERO, c2
 from app.services.accounting.compute.subledger import (
-    CwtItem, OpenDoc, OpenItem, Received2307, counter_paid, cwt_items, open_items,
+    CwtItem, OpenDoc, OpenItem, Received2307, counter_paid, cwt_items, open_items, payment_amounts,
 )
 from app.services.accounting.contacts import SeenParty, plan_contacts, resolve
 from app.services.accounting.extraction import due_fields
@@ -204,18 +204,8 @@ async def writeoff_rows(db: AsyncSession, company: AACompany) -> list[tuple[str,
 
 
 def payment_rows(docs: list[OpenDoc], payments: list[Payment]) -> list[tuple[Payment, Decimal]]:
-    """Each payment of these documents with the amount it paid (a full payment resolves to what was left)."""
-    due = {d.id: c2(d.total - d.withheld) for d in docs}
-    paid: dict[str, Decimal] = {}
-    out = []
-    for p in sorted(payments, key=lambda p: (p.on, p.id)):
-        if p.settles not in due:
-            continue
-        left = c2(due[p.settles] - paid.get(p.settles, ZERO))
-        amount = c2(p.amount) if p.amount is not None else max(left, ZERO)
-        paid[p.settles] = c2(paid.get(p.settles, ZERO) + amount)
-        out.append((p, amount))
-    return out
+    """Each payment of these documents with the amount it paid (a full payment resolves as the books post it)."""
+    return payment_amounts(docs, payments)
 
 
 async def outgoing_2307_outputs(db: AsyncSession, company: AACompany) -> dict[tuple[int, int], str]:

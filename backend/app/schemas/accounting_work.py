@@ -112,6 +112,15 @@ class HealthBalanceOut(BaseModel):
     balance: Decimal
 
 
+class HealthRecoveryOut(BaseModel):
+    """Money received on an invoice after it was written off: a bad-debt recovery for a person to post."""
+    document_id: str
+    doc_number: str
+    contact_name: str
+    amount: Decimal
+    opening: bool = False
+
+
 class HealthOut(BaseModel):
     company_id: uuid.UUID
     company_name: str
@@ -131,6 +140,7 @@ class HealthOut(BaseModel):
     ap_over_90_amount: Decimal
     negative_balances: list[HealthBalanceOut]
     review_balances: list[HealthBalanceOut]
+    writeoff_recoveries: list[HealthRecoveryOut] = []
     issues: int
     notes: list[str] = []
 

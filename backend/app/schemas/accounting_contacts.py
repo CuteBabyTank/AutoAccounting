@@ -50,6 +50,7 @@ class OpenItemOut(BaseModel):
     contact_name: str = ""
     contact_tin: str = ""
     opening: bool = False           # imported opening item: no document to open
+    recovered: Decimal = Decimal("0")   # received after the item was written off (a recovery to post)
 
 
 class ContactDocumentOut(BaseModel):

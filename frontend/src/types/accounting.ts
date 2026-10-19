@@ -776,6 +776,7 @@ export interface OpenItemRow {
   contact_name: string;
   contact_tin: string;
   opening?: boolean;          // imported opening item: no document behind it
+  recovered?: string;         // received after the item was written off (a recovery to post)
 }
 
 export interface ContactDocument {

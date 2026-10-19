@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from app.services.accounting.compute.books import Payment
 from app.services.accounting.compute.money import ZERO, c2
-from app.services.accounting.compute.subledger import OpenItem
+from app.services.accounting.compute.subledger import WRITEOFF_VIA, OpenItem
 
 MAX_ITEMS = 199   # one debit line + the credits fit the journal entry's 200-line limit
 
@@ -40,9 +40,27 @@ def paid_after(pays: list[Payment], ids: set[str], on: date) -> set[str]:
     return {p.settles for p in pays if p.settles in ids and p.on > on}
 
 
+def recovered(pays: list[Payment]) -> dict[str, Decimal]:
+    """Open item id → money received on it after it was written off (a bad-debt recovery for a person to post; the
+    books and the subledger show it as a credit on the customer until then). ``amount None`` counts the write-off."""
+    first: dict[str, date] = {}
+    wrote: dict[str, Decimal] = {}
+    for p in pays:
+        if p.via == WRITEOFF_VIA:
+            first[p.settles] = min(first.get(p.settles, p.on), p.on)
+            wrote[p.settles] = c2(wrote.get(p.settles, ZERO) + c2(p.amount or ZERO))
+    out: dict[str, Decimal] = {}
+    for p in pays:
+        if p.via != WRITEOFF_VIA and p.settles in first and p.on > first[p.settles]:
+            amount = c2(p.amount) if p.amount is not None else wrote[p.settles]
+            out[p.settles] = c2(out.get(p.settles, ZERO) + amount)
+    return out
+
+
 def payments(rows: list[tuple[str, date, list[dict]]]) -> list[Payment]:
     """(entry id, entry date, writeoff_items) of live write-off entries → payments that settle the items."""
-    return [Payment(f"wo:{je}:{x['id']}", str(x["id"]), on, c2(Decimal(str(x["amount"]))), "writeoff", "Write-off")
+    return [Payment(f"wo:{je}:{x['id']}", str(x["id"]), on, c2(Decimal(str(x["amount"]))), WRITEOFF_VIA,
+                    "Write-off")
             for je, on, items in rows for x in items or []]
 
 

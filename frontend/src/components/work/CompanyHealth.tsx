@@ -137,6 +137,17 @@ export default function CompanyHealth({ companyId, refreshKey = 0, compact }: Pr
             <p key={b.code}>{b.code} {b.name} · <span className="aa-amount">₱{formatPeso(b.balance)}</span></p>
           ))}
         </Check>
+        {(health.writeoff_recoveries?.length ?? 0) > 0 && (
+          <Check
+            ok={false}
+            label="Payment received on written-off invoice"
+            hint="Money came in on an invoice that was already written off. The books and the aging show it as a credit on the customer; a person decides how to post the recovery (e.g. Dr A/R, Cr Bad debts or Other income by journal entry) or deletes the write-off."
+          >
+            {health.writeoff_recoveries!.map((r) => (
+              <p key={r.document_id}>{r.contact_name || "Customer"} · {r.doc_number || "(no number)"} · <span className="aa-amount">₱{formatPeso(r.amount)}</span></p>
+            ))}
+          </Check>
+        )}
       </div>
     </div>
   );

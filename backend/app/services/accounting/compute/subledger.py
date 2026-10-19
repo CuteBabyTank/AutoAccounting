@@ -105,15 +105,33 @@ def bucket(days_past_due: int) -> str:
     return "90+"
 
 
-def paid_amounts(docs: list[OpenDoc], payments: list[Payment], as_of: date) -> dict[str, Decimal]:
-    """What the payments dated up to ``as_of`` paid on each document (``amount None`` = whatever was left)."""
+WRITEOFF_VIA = "writeoff"      # ``Payment.via`` of a write-off entry's credit to an item
+
+
+def payment_amounts(docs: list[OpenDoc], payments: list[Payment]) -> list[tuple[Payment, Decimal]]:
+    """Each payment of these documents with the amount it paid, as the books post it: ``amount None`` = what is
+    still due after the earlier *payments*. A write-off is a journal entry in the books, not a payment, so it never
+    shrinks a later open-ended payment: money received after a write-off credits A/R in full, and the item shows
+    that credit (see ``writeoff.recovered``)."""
     due = {d.id: c2(d.total - d.withheld) for d in docs}
-    paid: dict[str, Decimal] = {}
+    paid: dict[str, Decimal] = {}       # by real payments only (what the books' payment entries count)
+    out = []
     for p in sorted(payments, key=lambda p: (p.on, p.id)):
-        if p.settles not in due or p.on > as_of:
+        if p.settles not in due:
             continue
         left = c2(due[p.settles] - paid.get(p.settles, ZERO))
-        paid[p.settles] = c2(paid.get(p.settles, ZERO) + (c2(p.amount) if p.amount is not None else max(left, ZERO)))
+        amount = c2(p.amount) if p.amount is not None else max(left, ZERO)
+        if p.via != WRITEOFF_VIA:
+            paid[p.settles] = c2(paid.get(p.settles, ZERO) + amount)
+        out.append((p, amount))
+    return out
+
+
+def paid_amounts(docs: list[OpenDoc], payments: list[Payment], as_of: date) -> dict[str, Decimal]:
+    """What the payments (and write-offs) dated up to ``as_of`` settled on each document."""
+    paid: dict[str, Decimal] = {}
+    for p, amount in payment_amounts(docs, [p for p in payments if p.on <= as_of]):
+        paid[p.settles] = c2(paid.get(p.settles, ZERO) + amount)
     return paid
 
 

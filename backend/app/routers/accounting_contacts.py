@@ -27,6 +27,7 @@ from app.services.accounting.books.receipts import party_key
 from app.services.accounting.books.subledger import (
     Subledger, counterparty, doc_kind, key_map_for, load_subledger, outgoing_2307_outputs, payment_rows,
 )
+from app.services.accounting.compute import writeoff
 from app.services.accounting.compute.money import ZERO, c2
 from app.services.accounting.compute.statement import activity as statement_activity
 from app.services.accounting.compute.subledger import OpenItem, aging, aging_totals
@@ -47,12 +48,17 @@ def _role_matches(role: str, wanted: str) -> bool:
     return role == wanted or role == "both"
 
 
-def _item_out(i: OpenItem) -> OpenItemOut:
+def _recovered(sub: Subledger) -> dict[str, Decimal]:
+    return writeoff.recovered([p for p in sub.payments if p.on <= sub.as_of])
+
+
+def _item_out(i: OpenItem, recovered: dict[str, Decimal] | None = None) -> OpenItemOut:
     d = i.doc
     return OpenItemOut(document_id=d.id, kind=d.kind, doc_number=d.doc_number, doc_date=d.doc_date, due=i.due,
                        total=d.total, withheld=d.withheld, paid=i.paid, open=i.open, days_past_due=i.days_past_due,
                        bucket=i.bucket, payment_unverified=d.payment_unverified, contact_name=d.contact_name,
-                       contact_tin=d.contact_tin, opening=d.opening)
+                       contact_tin=d.contact_tin, opening=d.opening,
+                       recovered=(recovered or {}).get(d.id, Decimal("0")))
 
 
 async def _contact_or_404(db: AsyncSession, ent: uuid.UUID, contact_id: uuid.UUID) -> AAContact:
@@ -175,7 +181,7 @@ async def _contact_out(db: AsyncSession, company: AACompany, row: AAContact, sub
         receivable=c2(sum((i.open for i in items if i.doc.kind == "ar"), ZERO)),
         payable=c2(sum((i.open for i in items if i.doc.kind == "ap"), ZERO)),
         documents=[_doc_out(d, open_by_id) for d in mine], payments=payments,
-        open_items=[_item_out(i) for i in items], cwt_2307s=cwt, certificates=certificates,
+        open_items=[_item_out(i, _recovered(sub)) for i in items], cwt_2307s=cwt, certificates=certificates,
         outgoing_2307s=sorted(outgoing, key=lambda o: o.doc_date, reverse=True),
     )
 
@@ -342,7 +348,7 @@ def aging_out(sub: Subledger, kind: str) -> AgingOut:
     items = [i for i in sub.items if i.doc.kind == kind]
     rows = aging(items)
     ids = {c.key: c.id for c in sub.contacts}
-    return AgingOut(kind=kind, as_of=sub.as_of, totals=aging_totals(rows), items=[_item_out(i) for i in items],
+    return AgingOut(kind=kind, as_of=sub.as_of, totals=aging_totals(rows), items=[_item_out(i, _recovered(sub)) for i in items],
                     rows=[AgingRowOut(contact_id=ids.get(r.contact_key), name=r.name, tin=r.tin, buckets=r.buckets,
                                       total=r.total, count=r.count, unverified=r.unverified) for r in rows])
 

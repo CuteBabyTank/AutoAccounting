@@ -194,6 +194,14 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
                         {KIND[i.kind]} {i.doc_number || "(no number)"}
                       </button>
                     )}
+                    {Number(i.recovered || 0) > 0 && (
+                      <span
+                        className="ml-1 rounded-full bg-[var(--badge-yellow-bg)] px-2 py-0.5 text-[11px] text-[var(--badge-yellow-text)]"
+                        title="Paid after it was written off. The books and this page show the payment as a credit on the customer; post the bad-debt recovery by journal entry (e.g. Dr A/R, Cr Bad debts or Other income), or delete the write-off."
+                      >
+                        Paid after write-off
+                      </span>
+                    )}
                   </td>
                   <td className={TD}>{day(i.doc_date)}</td>
                   <td className={TD}>{day(i.due)}</td>

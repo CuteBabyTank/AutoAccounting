@@ -18,7 +18,7 @@ from app.routers.accounting_scope import (
 from app.schemas.accounting import manila_today
 from app.schemas.accounting_work import (
     BoardOut, CompanySummaryOut, FirmSettingsIn, FirmSettingsOut, HealthBalanceOut, HealthBankAccountOut, HealthOut,
-    NotificationKeysIn, NotificationOut, NotificationsOut, PersonOut, WorkCardOut, WorkItemIn,
+    HealthRecoveryOut, NotificationKeysIn, NotificationOut, NotificationsOut, PersonOut, WorkCardOut, WorkItemIn,
 )
 from app.services.accounting import audit
 from app.services.accounting.compute.specs import PDF_FORMS
@@ -194,6 +194,7 @@ async def company_health(company_id: uuid.UUID, user: User = Depends(get_current
     from app.services.accounting.books import bank
     from app.services.accounting.books.loader import ensure_chart
     from app.services.accounting.books.subledger import load_subledger
+    from app.services.accounting.compute import writeoff
     from app.services.accounting.compute.book_ledgers import balances
     from app.services.accounting.compute.health import (
         months_not_closed, negative_balances, over_90, review_balances, unreconciled_months,
@@ -242,6 +243,10 @@ async def company_health(company_id: uuid.UUID, user: User = Depends(get_current
     ar90 = over_90([i for i in sub.items if i.doc.kind == "ar"])
     ap90 = over_90([i for i in sub.items if i.doc.kind == "ap"])
     pending = [i for i in sub.cwt if i.status == "pending"]
+    by_id = {d.id: d for d in sub.docs}
+    recoveries = [HealthRecoveryOut(document_id=i, doc_number=by_id[i].doc_number, contact_name=by_id[i].contact_name,
+                                    amount=a, opening=by_id[i].opening)
+                  for i, a in writeoff.recovered([p for p in sub.payments if p.on <= today]).items() if i in by_id]
 
     negative: list[dict] = []
     parked: list[dict] = []
@@ -262,7 +267,7 @@ async def company_health(company_id: uuid.UUID, user: User = Depends(get_current
     await db.commit()  # load_subledger may have synced contacts
 
     issues = sum(1 for n in (sum(reasons.values()), unmatched, len(unrec), unassigned, len(pending), len(not_closed),
-                             ar90[0], ap90[0], len(negative), len(parked)) if n)
+                             ar90[0], ap90[0], len(negative), len(parked), len(recoveries)) if n)
     return HealthOut(
         company_id=company.id, company_name=company.registered_name, as_of=today, reviews_by_reason=reasons,
         open_reviews=len(flagged), bank_accounts=accounts, unassigned_statements=unassigned,
@@ -271,7 +276,8 @@ async def company_health(company_id: uuid.UUID, user: User = Depends(get_current
         books_on=company.books_start is not None, ar_over_90_count=ar90[0], ar_over_90_amount=ar90[1],
         ap_over_90_count=ap90[0], ap_over_90_amount=ap90[1],
         negative_balances=[HealthBalanceOut(**r) for r in negative],
-        review_balances=[HealthBalanceOut(**r) for r in parked], issues=issues, notes=notes,
+        review_balances=[HealthBalanceOut(**r) for r in parked], writeoff_recoveries=recoveries, issues=issues,
+        notes=notes,
     )
 
 

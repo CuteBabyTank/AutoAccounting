@@ -112,6 +112,7 @@ export interface CompanyHealth {
   ap_over_90_amount: string;
   negative_balances: HealthBalance[];
   review_balances: HealthBalance[];
+  writeoff_recoveries?: { document_id: string; doc_number: string; contact_name: string; amount: string; opening: boolean }[];
   issues: number;
   notes: string[];
 }

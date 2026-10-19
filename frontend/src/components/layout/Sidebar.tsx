@@ -225,13 +225,14 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Account card */}
+      {/* Account card. 33px avatar: the collapsed rail (72px less its 1px border) leaves the card 43px, so 1px border + 4px padding + 33 keeps
+          it square with the avatar centred. */}
       {user && (
         <div className="px-[14px] pb-3">
           <div className="aa-card flex items-center gap-2.5 p-1 rounded-2xl">
             <span
               aria-hidden="true"
-              className="shrink-0 grid place-items-center w-9 h-9 rounded-xl bg-[var(--lp-accent-soft)] text-[var(--accent)] text-[13px] font-semibold"
+              className="shrink-0 grid place-items-center w-[33px] h-[33px] rounded-[10px] bg-[var(--lp-accent-soft)] text-[var(--accent)] text-[13px] font-semibold"
             >
               {initials}
             </span>

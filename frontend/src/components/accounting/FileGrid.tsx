@@ -26,8 +26,16 @@ const SHORT_REASON: Record<string, string> = {
   other_company_tin: "Other company's TIN", nothing_extracted: "Nothing read", possible_payment: "Possible payment",
   supplier_rule_mismatch: "Supplier rule mismatch", tendered_less_than_total: "Tendered short", ewt_expected: "EWT expected",
   payment_source_unknown: "Payment source unknown", duplicate_invoice_number: "Duplicate number", personal_purchase: "Personal",
-  account_locked: "Locked account",
+  account_locked: "Locked account", needs_review: "Needs review",
 };
+
+const DUPLICATE = new Set(["possible_duplicate", "duplicate_invoice_number"]);
+
+/** What the review queue shows for a document: its queue reasons, duplicates first ("Needs review" when none). */
+function issues(doc: AADocument): string[] {
+  const reasons = doc.review_reasons.filter((r) => !SOFT_REASONS.has(r));
+  return reasons.length ? [...reasons].sort((a, b) => Number(DUPLICATE.has(b)) - Number(DUPLICATE.has(a))) : ["needs_review"];
+}
 
 function inCategory(doc: AADocument, category: string): boolean {
   if (category === "review") return doc.needs_review && !doc.reviewed && !doc.excluded;
@@ -178,9 +186,15 @@ export default function FileGrid({ folder, category, onCategory, onOpen, onEditC
                 <th className="py-2 pr-3 font-medium">Date</th>
                 <th className="py-2 pr-3 font-medium">Document</th>
                 <th className="py-2 pr-3 font-medium">Counterparty</th>
-                <th className="py-2 pr-3 text-right font-medium">Total</th>
-                <th className="py-2 pr-3 text-right font-medium">VAT</th>
-                <th className="py-2" />
+                {inReview ? (
+                  <th className="py-2 font-medium">Suspected issue</th>
+                ) : (
+                  <>
+                    <th className="py-2 pr-3 text-right font-medium">Total</th>
+                    <th className="py-2 pr-3 text-right font-medium">VAT</th>
+                    <th className="py-2" />
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -201,6 +215,30 @@ export default function FileGrid({ folder, category, onCategory, onOpen, onEditC
                     {d.doc_number && <span className="text-[var(--text-secondary)]"> #{d.doc_number}</span>}
                   </td>
                   <td className="py-2 pr-3">{counterpartyName(d) || "—"}</td>
+                  {inReview ? (
+                    <td className="py-2">
+                      <div className="flex flex-wrap gap-1">
+                        {issues(d).map((r) => (
+                          <button
+                            key={r}
+                            title={`${REASON_LABELS[r] ?? r} Click to see only these.`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setReasonFilter(filter === r ? null : r);
+                              setPicked(new Set());
+                              setMessage("");
+                            }}
+                            className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${DUPLICATE.has(r)
+                              ? "bg-[var(--badge-red-bg)] text-[var(--badge-red-text)]"
+                              : "border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"}`}
+                          >
+                            {SHORT_REASON[r] ?? REASON_LABELS[r] ?? r}
+                          </button>
+                        ))}
+                      </div>
+                    </td>
+                  ) : (
+                  <>
                   <td className="py-2 pr-3 text-right tabular-nums">{formatPeso(d.gross_amount)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{formatPeso(d.vat_amount)}</td>
                   <td className="py-2 text-right">
@@ -212,6 +250,8 @@ export default function FileGrid({ folder, category, onCategory, onOpen, onEditC
                       <span className="rounded-full bg-[var(--badge-yellow-bg)] px-2 py-0.5 text-xs font-medium text-[var(--badge-yellow-text)]">Review</span>
                     ) : null}
                   </td>
+                  </>
+                  )}
                 </tr>
               ))}
             </tbody>

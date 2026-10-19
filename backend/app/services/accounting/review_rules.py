@@ -7,6 +7,7 @@ the caller passes in ``paid_ids`` (bank-statement matches plug in there).
 """
 
 from collections.abc import Iterable
+from decimal import Decimal
 
 # Shown on the document, but never put it in the review queue or block a month close.
 SOFT_REASONS = frozenset({"payment_unverified"})
@@ -101,3 +102,46 @@ def bulk_targets(docs, reason_code: str) -> tuple[list, list[tuple]]:
         else:
             ok.append(d)
     return ok, skipped
+
+
+# --- VAT difference for documents stored before QBO 01 ---------------------------------------------------------------
+
+_OTHER_INPUT_VAT_ISSUES = frozenset({"not_addressed_to_client", "seller_not_vat_registered", "not_an_invoice"})
+_VAT_RATE = Decimal("0.12")
+
+
+def legacy_vat_fix(doc, filed: bool) -> str | None:
+    """What QBO 01's VAT-difference rule means for a document stored before it (input VAT disallowed only because
+    the VAT isn't 12%): "claim" (claim 12%, the excess goes to 1310 VAT difference), "keep" (its quarter's return was
+    filed without the claim: leave it and note why), or None (nothing to do)."""
+    reasons = set(doc.review_reasons or [])
+    if (doc.input_vat_valid is not False or doc.client_role != "buyer" or doc.category not in _BILLS
+            or (doc.vat_amount or 0) <= 0 or "vat_math_mismatch" not in reasons or reasons & _OTHER_INPUT_VAT_ISSUES):
+        return None
+    note = (doc.review_notes or {}).get("vat_math_mismatch") or {}
+    if filed:
+        return None if note.get("legacy") == "filed" else "keep"
+    return "claim"
+
+
+def apply_legacy_vat_fix(doc, filed: bool) -> bool:
+    """Apply ``legacy_vat_fix`` to the document (mutates it); True when something changed."""
+    action = legacy_vat_fix(doc, filed)
+    if action is None:
+        return False
+    notes = {k: dict(v) if isinstance(v, dict) else v for k, v in (doc.review_notes or {}).items()}
+    note = notes.get("vat_math_mismatch") or {}
+    if not note.get("expected"):
+        expected = (Decimal(doc.vatable_amount or 0) * _VAT_RATE).quantize(Decimal("0.01"))
+        note = {**note, "expected": str(expected),
+                "difference": str((Decimal(doc.vat_amount) - expected).quantize(Decimal("0.01")))}
+    if action == "keep":
+        note["legacy"] = "filed"
+    else:
+        note.pop("legacy", None)
+        doc.input_vat_valid = True
+        if doc.vat_treatment == "no_input_vat":
+            doc.vat_treatment = "vatable"
+    notes["vat_math_mismatch"] = note
+    doc.review_notes = notes
+    return True

@@ -66,7 +66,10 @@ export function reasonDetail(reason: string, notes?: Record<string, Record<strin
   const n = notes?.[reason];
   if (!n) return "";
   if (reason === "ewt_expected") return `Suggested ${n.atc} at ${n.rate}% of ₱${formatPeso(n.base)}: ₱${formatPeso(n.amount)}.`;
-  if (reason === "vat_math_mismatch") return `12% is ₱${formatPeso(n.expected)}; difference ₱${formatPeso(n.difference)}.`;
+  if (reason === "vat_math_mismatch")
+    return `12% is ₱${formatPeso(n.expected)}; difference ₱${formatPeso(n.difference)}.${
+      n.legacy === "filed" ? " Input VAT stays disallowed on this one: its quarter's return was filed before the VAT-difference rule." : ""
+    }`;
   if (reason === "tendered_less_than_total") return `Tendered ₱${formatPeso(n.tendered)} on a total of ₱${formatPeso(n.total)}.`;
   return "";
 }

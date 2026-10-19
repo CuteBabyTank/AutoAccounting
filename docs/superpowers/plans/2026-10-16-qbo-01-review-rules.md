@@ -111,6 +111,12 @@ Rules (each a test with pack values):
    claims `min(printed VAT, VATable × 12%)` on the books *and* the 2550-Q, and the excess goes to the new
    `1310 VAT difference - for review` asset. VAT printed below 12% claims only what is printed (never more than the
    invoice supports). Documents already stored keep their old `input_vat_valid=False` (no re-classification).
+   **Bug fix 2026-10-19:** older documents are now re-classified when a company's periods load
+   (`books/vat_backfill.backfill_vat_difference`, pure rule `review_rules.legacy_vat_fix`): a buyer purchase / expense
+   whose only input-VAT issue is `vat_math_mismatch` gets `input_vat_valid=True` (audited as "AutoAccounting (VAT
+   difference rule)", books touched, the quarter's versions go stale; closed months correct through `apply_closes`).
+   A document whose quarter is already filed keeps the disallowed VAT (the filed return didn't claim it) and gets a
+   note (`review_notes.vat_math_mismatch.legacy = "filed"`).
 2. **`payment_unverified` is soft.** Stored in `review_reasons`, shown as a note, but `needs_review` ignores it, so it
    never blocks the review queue or month close. It is raised at extraction when the document shows credit terms (not
    "after the period" — the period isn't known to have ended at extraction); evidence clears it.

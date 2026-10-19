@@ -316,3 +316,48 @@ def test_bulk_targets_skip_other_reasons():
     assert [d.id for d in ok] == [1, 2]
     assert [(i, why) for i, why in skipped] == [
         (3, "doesn't carry this reason"), (4, "already resolved"), (5, "already resolved"), (6, "deleted")]
+
+
+D = Decimal
+
+
+def _legacy(**kw):
+    from types import SimpleNamespace
+
+    values = dict(category="purchases", client_role="buyer", vat_amount=D("1500.00"), vatable_amount=D("10000.00"),
+                  input_vat_valid=False, vat_treatment="no_input_vat", review_reasons=["vat_math_mismatch"],
+                  review_notes={})
+    values.update(kw)
+    return SimpleNamespace(**values)
+
+
+def test_older_vat_mismatch_documents_claim_12_percent_unless_the_quarter_was_filed():
+    from app.services.accounting.review_rules import apply_legacy_vat_fix, legacy_vat_fix
+
+    doc = _legacy()
+    assert legacy_vat_fix(doc, filed=False) == "claim"
+    assert apply_legacy_vat_fix(doc, filed=False) is True
+    assert doc.input_vat_valid is True and doc.vat_treatment == "vatable"
+    assert doc.review_notes["vat_math_mismatch"] == {"expected": "1200.00", "difference": "300.00"}
+    assert legacy_vat_fix(doc, filed=False) is None and apply_legacy_vat_fix(doc, filed=False) is False  # idempotent
+
+    kept = _legacy()
+    assert apply_legacy_vat_fix(kept, filed=True) is True        # flagged, not changed
+    assert kept.input_vat_valid is False and kept.review_notes["vat_math_mismatch"]["legacy"] == "filed"
+    assert apply_legacy_vat_fix(kept, filed=True) is False
+    assert apply_legacy_vat_fix(kept, filed=False) is True and kept.input_vat_valid is True   # quarter unfiled later
+    assert "legacy" not in kept.review_notes["vat_math_mismatch"]
+
+
+def test_legacy_vat_fix_leaves_other_input_vat_problems_alone():
+    from app.services.accounting.review_rules import legacy_vat_fix
+
+    assert legacy_vat_fix(_legacy(review_reasons=["vat_math_mismatch", "not_an_invoice"]), filed=False) is None
+    assert legacy_vat_fix(_legacy(review_reasons=["vat_math_mismatch", "seller_not_vat_registered"]), False) is None
+    assert legacy_vat_fix(_legacy(review_reasons=["vat_math_mismatch", "not_addressed_to_client"]), False) is None
+    assert legacy_vat_fix(_legacy(review_reasons=["low_confidence"]), filed=False) is None
+    assert legacy_vat_fix(_legacy(input_vat_valid=None), filed=False) is None
+    assert legacy_vat_fix(_legacy(client_role="seller", category="sales"), filed=False) is None
+    assert legacy_vat_fix(_legacy(vat_amount=D("0")), filed=False) is None
+    # a person's other reasons (e.g. low confidence) don't stop it
+    assert legacy_vat_fix(_legacy(review_reasons=["vat_math_mismatch", "low_confidence"]), filed=False) == "claim"

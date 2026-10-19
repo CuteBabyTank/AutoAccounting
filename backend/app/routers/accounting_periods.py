@@ -156,6 +156,9 @@ async def _ensure_period(db: AsyncSession, ent: uuid.UUID, company: AACompany, y
 
 
 async def load_periods(db: AsyncSession, company: AACompany, year: int, quarter: int) -> list[PeriodData]:
+    from app.services.accounting.books.vat_backfill import backfill_vat_difference
+
+    await backfill_vat_difference(db, company)   # older VAT-mismatch purchases get QBO 01's VAT-difference rule
     docs = (await db.execute(select(AADocument).where(
         AADocument.company_id == company.id, AADocument.deleted_at.is_(None), AADocument.excluded.is_(False),
         AADocument.period_year.is_not(None), AADocument.settles_document_id.is_(None), _docs_up_to(year, quarter),

@@ -101,3 +101,12 @@ def test_a_pdf_rewrite_that_runs_out_of_memory_keeps_the_original(monkeypatch):
 
     monkeypatch.setattr(compress, "PDF_MEMORY_BYTES", 64 * 1024 * 1024)  # far too little for MuPDF + Python
     assert compress_bytes(_scanned_pdf(1), "pdf") is None
+
+
+def test_a_200_dpi_pdf_saved_at_top_quality_is_still_re_saved_smaller():
+    doc = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_image(page.rect, stream=_photo(1654, 2339, quality=100))  # A4 at 200 dpi, JPEG quality 100
+    data = doc.tobytes()
+    out, kind = compress_bytes(data, "pdf")
+    assert kind == "pdf" and len(out) < len(data) * 0.7

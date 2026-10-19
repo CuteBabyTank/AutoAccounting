@@ -90,7 +90,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
   const [tab, setTab] = useState<"details" | "history">("details");
   const [history, setHistory] = useState<AuditEvent[] | null>(null);
   // Accepting flags anyway or excluding asks why (optional); the answer goes to the History tab.
-  const [override, setOverride] = useState<"reviewed" | "exclude" | null>(null);
+  const [override, setOverride] = useState<"exclude" | null>(null);
   const [reason, setReason] = useState("");
   useEffect(() => {
     setOverride(null);
@@ -178,7 +178,8 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
     };
   }, [doc.file_id, doc.page_end, firstPage]);
 
-  async function save(extra: DocumentPatch = {}, { onlyExtra = false }: { onlyExtra?: boolean } = {}) {
+  /** Save the edits (plus ``extra``); true when it went through (or there was nothing to save). */
+  async function save(extra: DocumentPatch = {}, { onlyExtra = false }: { onlyExtra?: boolean } = {}): Promise<boolean> {
     const initial = toDraft(doc);
     const patch: DocumentPatch = { ...extra };
     for (const [key, value] of onlyExtra ? [] : Object.entries(draft)) {
@@ -187,7 +188,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
       else if (AMOUNT_KEYS.has(key)) patch[key] = value.trim() || "0";
       else patch[key] = value;
     }
-    if (Object.keys(patch).length === 0) return;
+    if (Object.keys(patch).length === 0) return true;
     setBusy(true);
     setError("");
     setNotice("");
@@ -198,8 +199,10 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
         setNotice(`Also moved ${others} other unreviewed document${others === 1 ? "" : "s"} from this supplier to the same folder and account.`);
       }
       onChanged(updated);
+      return true;
     } catch (e) {
       setError(apiErrorMessage(e, "Couldn't save the document"));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -245,6 +248,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
     </div>
   );
 
+  const needsReview = doc.needs_review && !doc.reviewed;
   const openReasons = doc.needs_review && !doc.reviewed ? doc.review_reasons.filter((r) => !SOFT_REASONS.has(r)) : [];
   const notes = doc.reviewed ? [] : doc.review_reasons.filter((r) => SOFT_REASONS.has(r));
 
@@ -505,19 +509,38 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
         {error && <p className="mt-3 text-sm text-[var(--alert-error-text)]">{error}</p>}
         {notice && <p className="mt-3 text-sm text-[var(--text-secondary)]">{notice}</p>}
 
-        <div className="mt-5 flex flex-wrap gap-2">
+        {needsReview && !override && (
+          <div className="mt-5">
+            <label className={LABEL} htmlFor="review-reason">
+              {openReasons.length > 0 ? "Why is it fine anyway? (optional, saved in the History tab)" : "Note (optional, saved in the History tab)"}
+            </label>
+            <input
+              id="review-reason"
+              className={INPUT}
+              maxLength={500}
+              value={reason}
+              placeholder="e.g. Client confirmed this is their delivery receipt"
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </div>
+        )}
+        <div className={`${needsReview && !override ? "mt-3" : "mt-5"} flex flex-wrap gap-2`}>
+          {/* One button: in review it saves the edits and marks the document reviewed together. */}
           <button
             className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
             disabled={busy}
-            onClick={() => save()}
+            onClick={async () => {
+              if (!needsReview) {
+                await save();
+                return;
+              }
+              const extra: DocumentPatch = { reviewed: true };
+              if (reason.trim()) extra.reason = reason.trim();
+              if (await save(extra)) setReason("");
+            }}
           >
-            Save
+            {needsReview ? "Mark reviewed" : "Save"}
           </button>
-          {doc.needs_review && !doc.reviewed && (
-            <button className={BTN} disabled={busy} onClick={() => setOverride("reviewed")}>
-              Mark reviewed
-            </button>
-          )}
           <button
             className={BTN}
             disabled={busy}
@@ -535,17 +558,13 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
         </div>
         {override && (
           <div className="mt-3 rounded-lg border border-[var(--border)] p-3">
-            <label className={LABEL} htmlFor="override-reason">
-              {override === "reviewed" && openReasons.length > 0
-                ? "Why is it fine anyway? (optional, saved in the History tab)"
-                : "Why? (optional, saved in the History tab)"}
-            </label>
+            <label className={LABEL} htmlFor="override-reason">Why? (optional, saved in the History tab)</label>
             <input
               id="override-reason"
               className={INPUT}
               maxLength={500}
               value={reason}
-              placeholder={override === "reviewed" ? "e.g. Client confirmed this is their delivery receipt" : "e.g. Owner's personal purchase"}
+              placeholder="e.g. Owner's personal purchase"
               onChange={(e) => setReason(e.target.value)}
             />
             <div className="mt-2 flex gap-2">
@@ -553,14 +572,14 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
                 className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
                 disabled={busy}
                 onClick={async () => {
-                  const extra: DocumentPatch = override === "reviewed" ? { reviewed: true } : { excluded: true };
+                  const extra: DocumentPatch = { excluded: true };
                   if (reason.trim()) extra.reason = reason.trim();
                   await save(extra);
                   setOverride(null);
                   setReason("");
                 }}
               >
-                {override === "reviewed" ? "Mark reviewed" : "Exclude"}
+                Exclude
               </button>
               <button className={BTN} onClick={() => setOverride(null)}>Cancel</button>
             </div>

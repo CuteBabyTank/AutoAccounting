@@ -152,3 +152,18 @@ def test_card_real_filing_and_board_filing():
     alpha = card(Obligation("1604C", 2026, 0, date(2027, 2, 1)), 12, PeriodFacts(documents=3, generated=True), None,
                  today)
     assert alpha["status"] == "docs_in"   # the 1604-C has no versions: only a board mark files it
+
+
+def test_board_queries_cover_every_obligation_year_in_the_window():
+    """The board loads periods / work items / documents only for ``year_bounds(start, end)``; every card the window
+    can hold must fall inside, for any fiscal year end."""
+    from app.services.accounting.compute.work import year_bounds
+
+    for fye in range(1, 13):
+        facts = replace(CORP, fiscal_year_end_month=fye)
+        for start, end in ((date(2026, 7, 19), date(2026, 12, 3)), (date(2026, 1, 1), date(2027, 12, 31)),
+                           (date(2027, 4, 1), date(2027, 5, 15))):
+            lo, hi = year_bounds(start, end)
+            years = {o.year for o in obligations(facts, start, end, {(y, q) for y in (2025, 2026, 2027)
+                                                                     for q in (1, 2, 3, 4)}, {2025, 2026, 2027})}
+            assert years and all(lo <= y <= hi for y in years), (fye, start, end, years, lo, hi)

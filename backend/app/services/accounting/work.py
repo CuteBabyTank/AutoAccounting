@@ -16,7 +16,7 @@ from app.models.accounting import (
 )
 from app.models.user import User, UserRole
 from app.services.accounting.compute.health import months_not_closed, unreconciled_months
-from app.services.accounting.compute.work import PeriodFacts, card, obligations, skip_obligation
+from app.services.accounting.compute.work import PeriodFacts, card, obligations, skip_obligation, year_bounds
 
 PEOPLE_ROLES = (UserRole.ADMIN, UserRole.ENTERPRISE, UserRole.MANAGER, UserRole.EMPLOYEE)
 
@@ -50,27 +50,29 @@ async def load_cards(db: AsyncSession, ent: uuid.UUID, start: date, end: date, t
                      companies: list[AACompany]) -> list[dict]:
     from app.routers.accounting_periods import company_facts
 
+    lo, hi = year_bounds(start, end)   # only the fiscal years the window's cards can belong to
     docs: dict[tuple[str, int, int], list[int]] = defaultdict(lambda: [0, 0, 0])
     for cid, year, quarter, count, reviews, payroll in (await db.execute(select(
         AADocument.company_id, AADocument.period_year, AADocument.period_quarter, func.count(AADocument.id),
         func.count(AADocument.id).filter(AADocument.needs_review.is_(True), AADocument.reviewed.is_(False)),
         func.count(AADocument.id).filter(AADocument.category == "payroll"),
-    ).where(*_live_docs(ent), AADocument.period_year.is_not(None))
+    ).where(*_live_docs(ent), AADocument.period_year.between(lo, hi))
      .group_by(AADocument.company_id, AADocument.period_year, AADocument.period_quarter))).all():
         for key in ((str(cid), year, quarter), (str(cid), year, 0)):
             docs[key][0] += count
             docs[key][1] += reviews
         docs[(str(cid), year, quarter)][2] += payroll
     periods = {(str(p.company_id), p.year, p.quarter): p for p in (await db.execute(
-        select(AAPeriod).where(AAPeriod.enterprise_id == ent))).scalars().all()}
+        select(AAPeriod).where(AAPeriod.enterprise_id == ent, AAPeriod.year.between(lo, hi)))).scalars().all()}
     generated = {(str(cid), y, q) for cid, y, q in (await db.execute(
         select(AAPeriod.company_id, AAPeriod.year, AAPeriod.quarter).join(AAOutput, AAOutput.period_id == AAPeriod.id)
-        .where(AAPeriod.enterprise_id == ent).distinct())).all()}
+        .where(AAPeriod.enterprise_id == ent, AAPeriod.year.between(lo, hi)).distinct())).all()}
     employees = {(str(cid), y): n for cid, y, n in (await db.execute(
-        select(AAEmployee.company_id, AAEmployee.year, func.count(AAEmployee.id)).where(AAEmployee.enterprise_id == ent)
+        select(AAEmployee.company_id, AAEmployee.year, func.count(AAEmployee.id)).where(
+            AAEmployee.enterprise_id == ent, AAEmployee.year.between(lo, hi))
         .group_by(AAEmployee.company_id, AAEmployee.year))).all()}
     items = {(str(i.company_id), i.year, i.quarter, i.form): i for i in (await db.execute(
-        select(AAWorkItem).where(AAWorkItem.enterprise_id == ent))).scalars().all()}
+        select(AAWorkItem).where(AAWorkItem.enterprise_id == ent, AAWorkItem.year.between(lo, hi)))).scalars().all()}
 
     cards: list[dict] = []
     for company in companies:

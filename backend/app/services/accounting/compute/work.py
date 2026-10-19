@@ -171,3 +171,10 @@ def card(ob: Obligation, fye: int, facts: PeriodFacts, item: dict | None, today:
         "filed_source": "return" if real else ("board" if manual else None),
         "assignee_id": item.get("assignee_id"), "documents": facts.documents, "open_reviews": facts.open_reviews,
     }
+
+
+def year_bounds(start: date, end: date) -> tuple[int, int]:
+    """Fiscal years whose filings can fall due in ``start``–``end``: an annual return or 1604-C is due months after its
+    year ends (so up to a year before ``start``), and a fiscal year is named for the year it ends (so up to a year
+    after ``end``)."""
+    return start.year - 1, end.year + 1

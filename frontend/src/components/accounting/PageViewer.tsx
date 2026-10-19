@@ -19,66 +19,87 @@ interface Props {
 }
 
 /** A document's pages, one at a time, fitted to the box. Click to zoom in on a spot (click again to fit), or use the
- *  slider / buttons / Ctrl-scroll (up to 500%); drag or scroll to move around when zoomed. */
+ *  slider / buttons / trackpad pinch or Ctrl-scroll, always around the pointer (up to 500%); drag or scroll to move around when zoomed. */
 export default function PageViewer({ images, firstPage, className = "" }: Props) {
   const [page, setPage] = useState(0);
-  const [zoom, setZoom] = useState(MIN);
+  const [zoom, setZoomState] = useState(MIN);
   const box = useRef<HTMLDivElement>(null);
-  const focus = useRef<{ fx: number; fy: number } | null>(null);
+  const zoomRef = useRef(MIN);
+  // The scroll position the next render must land on, so the point under the pointer stays under it.
+  const pending = useRef<{ left: number; top: number } | null>(null);
   const drag = useRef<{ x: number; y: number; left: number; top: number; moved: boolean } | null>(null);
+
+  function reset() {
+    pending.current = null;
+    zoomRef.current = MIN;
+    setZoomState(MIN);
+  }
 
   useEffect(() => {
     setPage(0);
-    setZoom(MIN);
+    reset();
   }, [images]);
 
-  // After a zoom change, keep the chosen point (click spot, or the centre) in the middle of the box.
   useLayoutEffect(() => {
     const el = box.current;
-    const f = focus.current;
-    if (!el || !f) return;
-    el.scrollLeft = f.fx * el.scrollWidth - el.clientWidth / 2;
-    el.scrollTop = f.fy * el.scrollHeight - el.clientHeight / 2;
-    focus.current = null;
+    const p = pending.current;
+    if (!el || !p) return;
+    el.scrollLeft = p.left;
+    el.scrollTop = p.top;
+    pending.current = null;
   }, [zoom]);
 
-  function zoomTo(next: number, at?: { fx: number; fy: number }) {
+  /** Zoom to ``next`` keeping the point at (ox, oy) in the box (pixels from its top-left; the centre when left out)
+   *  fixed on screen. The page's size is exactly ``zoom`` × the box, so scroll positions scale by the zoom ratio. */
+  function zoomAt(next: number, ox?: number, oy?: number, snap = true) {
     const el = box.current;
-    const z = clamp(next);
-    if (z === zoom) return;
-    focus.current = at ?? (el ? {
-      fx: (el.scrollLeft + el.clientWidth / 2) / el.scrollWidth,
-      fy: (el.scrollTop + el.clientHeight / 2) / el.scrollHeight,
-    } : { fx: 0.5, fy: 0.5 });
-    setZoom(z);
+    const old = zoomRef.current;
+    const z = snap ? clamp(next) : Math.min(MAX, Math.max(MIN, next));
+    if (!el || z === old) return;
+    const x = ox ?? el.clientWidth / 2;
+    const y = oy ?? el.clientHeight / 2;
+    const left = pending.current?.left ?? el.scrollLeft;
+    const top = pending.current?.top ?? el.scrollTop;
+    const k = z / old;
+    pending.current = { left: (left + x) * k - x, top: (top + y) * k - y };
+    zoomRef.current = z;
+    setZoomState(z);
   }
 
-  function spot(e: React.MouseEvent): { fx: number; fy: number } {
-    const el = box.current!;
-    const r = el.getBoundingClientRect();
-    return {
-      fx: (el.scrollLeft + e.clientX - r.left) / el.scrollWidth,
-      fy: (el.scrollTop + e.clientY - r.top) / el.scrollHeight,
-    };
+  function offset(e: { clientX: number; clientY: number }): [number, number] {
+    const r = box.current!.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
   }
 
-  // Ctrl/Cmd + wheel zooms (a plain wheel still scrolls). Needs a non-passive listener to stop the page zooming.
+  // Trackpad pinch (Chrome / Firefox send it as Ctrl + wheel) and Ctrl/Cmd + wheel zoom smoothly around the pointer;
+  // a plain wheel or two-finger swipe still scrolls. Safari sends pinches as gesture events instead.
   useEffect(() => {
     const el = box.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      const r = el.getBoundingClientRect();
-      const at = { fx: (el.scrollLeft + e.clientX - r.left) / el.scrollWidth, fy: (el.scrollTop + e.clientY - r.top) / el.scrollHeight };
-      setZoom((z) => {
-        const next = clamp(z + (e.deltaY < 0 ? STEP : -STEP));
-        if (next !== z) focus.current = at;
-        return next;
-      });
+      const delta = Math.max(-50, Math.min(50, e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY));
+      zoomAt(zoomRef.current * Math.exp(-delta * 0.01), ...offset(e), false);
+    };
+    let base = MIN;
+    const onGestureStart = (e: Event) => {
+      e.preventDefault();
+      base = zoomRef.current;
+    };
+    const onGestureChange = (e: Event) => {
+      e.preventDefault();
+      const g = e as Event & { scale: number; clientX: number; clientY: number };
+      zoomAt(base * g.scale, ...offset(g), false);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    el.addEventListener("gesturestart", onGestureStart);
+    el.addEventListener("gesturechange", onGestureChange);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("gesturestart", onGestureStart);
+      el.removeEventListener("gesturechange", onGestureChange);
+    };
   }, []);
 
   const zoomed = zoom > MIN;
@@ -110,13 +131,13 @@ export default function PageViewer({ images, firstPage, className = "" }: Props)
         onMouseLeave={() => (drag.current = null)}
         onClick={(e) => {
           if (drag.current?.moved) return; // that was a pan, not a click
-          if (zoomed) zoomTo(MIN, { fx: 0.5, fy: 0.5 });
-          else zoomTo(CLICK_ZOOM, spot(e));
+          if (zoomed) zoomAt(MIN);
+          else zoomAt(CLICK_ZOOM, ...offset(e));
         }}
         title={zoomed ? "Click to fit the page" : "Click to zoom in"}
       >
         {src ? (
-          <div className="p-2" style={{ width: `${zoom * 100}%`, height: `${zoom * 100}%` }}>
+          <div style={{ width: `${zoom * 100}%`, height: `${zoom * 100}%` }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={src} alt={`Page ${firstPage + page}`} draggable={false}
               className="h-full w-full select-none object-contain" />
@@ -130,18 +151,18 @@ export default function PageViewer({ images, firstPage, className = "" }: Props)
         {images.length > 1 && (
           <span className="flex items-center gap-1">
             <button className={ICON_BTN} aria-label="Previous page" disabled={page === 0}
-              onClick={() => { setPage((p) => p - 1); setZoom(MIN); }}>
+              onClick={() => { setPage((p) => p - 1); reset(); }}>
               <CaretLeft size={16} />
             </button>
             <span className="tabular-nums">Page {firstPage + page} of {firstPage + images.length - 1}</span>
             <button className={ICON_BTN} aria-label="Next page" disabled={page >= images.length - 1}
-              onClick={() => { setPage((p) => p + 1); setZoom(MIN); }}>
+              onClick={() => { setPage((p) => p + 1); reset(); }}>
               <CaretRight size={16} />
             </button>
           </span>
         )}
         <span className="ml-auto flex items-center gap-1.5">
-          <button className={ICON_BTN} aria-label="Zoom out" disabled={zoom <= MIN} onClick={() => zoomTo(zoom - STEP)}>
+          <button className={ICON_BTN} aria-label="Zoom out" disabled={zoom <= MIN} onClick={() => zoomAt(zoom - STEP)}>
             <MagnifyingGlassMinus size={16} />
           </button>
           <input
@@ -150,15 +171,15 @@ export default function PageViewer({ images, firstPage, className = "" }: Props)
             max={MAX}
             step={STEP}
             value={zoom}
-            onChange={(e) => zoomTo(Number(e.target.value))}
+            onChange={(e) => zoomAt(Number(e.target.value))}
             aria-label="Zoom"
             className="w-28 accent-[var(--accent)]"
           />
-          <button className={ICON_BTN} aria-label="Zoom in" disabled={zoom >= MAX} onClick={() => zoomTo(zoom + STEP)}>
+          <button className={ICON_BTN} aria-label="Zoom in" disabled={zoom >= MAX} onClick={() => zoomAt(zoom + STEP)}>
             <MagnifyingGlassPlus size={16} />
           </button>
           <span className="w-10 text-right tabular-nums">{zoomed ? `${Math.round(zoom * 100)}%` : "Fit"}</span>
-          <button className={ICON_BTN} aria-label="Fit the page" disabled={!zoomed} onClick={() => zoomTo(MIN, { fx: 0.5, fy: 0.5 })}>
+          <button className={ICON_BTN} aria-label="Fit the page" disabled={!zoomed} onClick={() => zoomAt(MIN)}>
             <CornersIn size={16} />
           </button>
         </span>

@@ -171,6 +171,8 @@ export interface AppNotification {
   due_date: string | null;
   severity: "high" | "normal";
   read: boolean;
+  /** The books year a recurring-entries notice opens. */
+  fiscal_year?: number | null;
 }
 
 export interface Notifications {

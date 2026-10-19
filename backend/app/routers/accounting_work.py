@@ -283,9 +283,12 @@ async def company_health(company_id: uuid.UUID, user: User = Depends(get_current
 
 # --- notifications (derived on read; read / dismissed persisted per person) -----------------------------------------
 
-async def _recurring_due(db: AsyncSession, ent: uuid.UUID, names: dict[str, str], today: date) -> list[dict]:
-    """Per company of the board: how many recurring entries are due to post by today, and the earliest date."""
+async def _recurring_due(db: AsyncSession, ent: uuid.UUID, names: dict[str, str], fyes: dict[str, int],
+                         today: date) -> list[dict]:
+    """Per company of the board: how many recurring entries are due to post by today, the earliest date and the
+    fiscal year it falls in (the notification opens that year's books)."""
     from app.models.accounting import AARecurringEntry
+    from app.services.accounting.periods import period_for
     from app.routers.accounting_recurring import MAX_DUE
     from app.services.accounting.compute.recurring import due_dates
 
@@ -298,7 +301,8 @@ async def _recurring_due(db: AsyncSession, ent: uuid.UUID, names: dict[str, str]
             continue
         due = due_dates(row.next_date, row.frequency, row.day_of_month, today, row.end_date, MAX_DUE)
         by_company.setdefault(cid, []).extend(due)
-    return [{"company_id": cid, "company_name": names[cid], "count": len(d), "oldest": min(d)}
+    return [{"company_id": cid, "company_name": names[cid], "count": len(d), "oldest": min(d),
+             "fiscal_year": period_for(min(d), fyes.get(cid, 12)).fiscal_year}
             for cid, d in by_company.items() if d]
 
 
@@ -319,7 +323,8 @@ async def _notifications(db: AsyncSession, user: User, ent: uuid.UUID):
               "company_name": names.get(str(t.company_id), "")}
              for t in (await db.execute(select(AATask).where(
                  AATask.enterprise_id == ent, AATask.assignee_id == user.id, AATask.status != "done"))).scalars()]
-    recurring = await _recurring_due(db, ent, names, today)
+    fyes = {str(c.id): c.fiscal_year_end_month for c in companies}
+    recurring = await _recurring_due(db, ent, names, fyes, today)
     items = build(user_id=str(user.id), cards=cards, summaries=summaries, cwt=cwt, tasks=tasks, today=today, days=days,
                   recurring=recurring)
     states = {s.key: s for s in (await db.execute(select(AANotificationState).where(
@@ -339,7 +344,8 @@ async def list_notifications(user: User = Depends(get_current_user), db: AsyncSe
             continue
         out.append(NotificationOut(key=n.key, kind=n.kind, title=n.title, detail=n.detail,
                                    company_id=uuid.UUID(n.company_id) if n.company_id else None, due_date=n.due_date,
-                                   severity=n.severity, read=state is not None and state.read_at is not None))
+                                   severity=n.severity, read=state is not None and state.read_at is not None,
+                                   fiscal_year=n.fiscal_year))
     return NotificationsOut(items=out, unread=sum(1 for n in out if not n.read))
 
 

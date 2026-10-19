@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CheckCircle, Circle, PencilSimple, Plus, Trash } from "@phosphor-icons/react";
 import TaskForm from "@/components/work/TaskForm";
 import { workApi } from "@/lib/work-api";
+import { focusName } from "@/lib/focus";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import { useAuth } from "@/lib/auth";
 import type { Person, Task, TaskFilters, TaskInput } from "@/types/work";
@@ -108,7 +109,7 @@ export default function TaskList({ companies, people, fixed, defaults, compact, 
           {tasks.map((t) => {
             const mine = t.created_by === user?.id;
             return (
-              <li key={t.id} className="flex items-start gap-3 px-3 py-2.5">
+              <li key={t.id} data-focus={focusName.task(t.id)} className="flex items-start gap-3 px-3 py-2.5">
                 <button
                   onClick={() => toggle(t)}
                   aria-label={t.status === "done" ? `Reopen ${t.title}` : `Mark ${t.title} done`}

@@ -316,6 +316,20 @@ main textarea:focus-visible {
   transition: width 400ms var(--ease-in-out);
 }
 
+/* ── Focus flash: a notification click rings what it points at for ~2 s (lib/focus.ts) ── */
+@keyframes focusFlash {
+  0%   { outline-color: var(--accent); background-color: var(--accent-subtle); }
+  70%  { outline-color: var(--accent); background-color: var(--accent-subtle); }
+  100% { outline-color: transparent; background-color: transparent; }
+}
+.aa-focus-flash {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+  animation: focusFlash 2200ms var(--ease-in-out) both;
+}
+tr.aa-focus-flash { outline-offset: -2px; }
+
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
   .stagger-in, .page-enter, .modal-enter, .overlay-enter, .bar-grow {

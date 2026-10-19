@@ -63,3 +63,11 @@ def test_recurring_entries_due_notify_everyone_with_count_and_date_in_the_key():
     [m] = run(recurring=[{**due[0], "count": 2, "oldest": date(2026, 9, 30)}])
     assert m.key != n.key and m.title == "2 recurring entries due to post"
     assert run(recurring=[{**due[0], "count": 1}])[0].title == "1 recurring entry due to post"
+
+
+def test_recurring_notification_carries_the_books_year_it_opens():
+    [n] = run(recurring=[{"company_id": "c1", "company_name": "Bayanihan", "count": 1, "oldest": date(2026, 8, 31),
+                          "fiscal_year": 2027}])
+    assert n.fiscal_year == 2027
+    [d] = run(tasks=[{"id": "t1", "title": "Chase", "assignee_id": "me", "due_date": None, "status": "open"}])
+    assert d.fiscal_year is None

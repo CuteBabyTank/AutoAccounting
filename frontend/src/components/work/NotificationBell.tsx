@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { Bell, X } from "@phosphor-icons/react";
-import { OPEN_COMPANY_EVENT, safeId, workApi } from "@/lib/work-api";
+import { safeId, workApi } from "@/lib/work-api";
+import { WORK_TARGET_EVENT, flashFocus, focusName } from "@/lib/focus";
+import { OPEN_TARGET_EVENT } from "@/lib/search-nav";
 import type { AppNotification, Notifications } from "@/types/work";
 
 const POLL_MS = 120_000;
@@ -55,16 +57,50 @@ export default function NotificationBell({ variant, fadeStyle }: Props) {
 
   const unread = data?.unread ?? 0;
 
-  async function go(n: AppNotification) {
+  // Where a notification points: the page to open, how to open it without a reload when already there, and the
+  // element to flash once it shows (lib/focus).
+  function target(n: AppNotification): { path: string; query: string; focus: string | null } | null {
+    const company = safeId(n.company_id);
+    const q = (values: Record<string, string | number | null>) => {
+      const p = new URLSearchParams();
+      for (const [k, v] of Object.entries(values)) if (v !== null && v !== "") p.set(k, String(v));
+      return p.toString();
+    };
+    switch (n.kind) {
+      case "deadline":
+        return { path: "/accounting/work", query: q({ company }), focus: focusName.card(n.key.slice("deadline:".length)) };
+      case "task_assigned":
+      case "task_due": {
+        const id = safeId(n.key.split(":")[1]);
+        return { path: "/accounting/work", query: q({ tab: "tasks" }), focus: id ? focusName.task(id) : null };
+      }
+      case "review":
+      case "bank":
+      case "cwt":
+        return company ? { path: "/accounting", query: q({ company, view: "overview" }), focus: focusName.health(n.kind, company) } : null;
+      case "recurring":
+        if (!company) return null;
+        return n.fiscal_year
+          ? { path: "/accounting", query: q({ company, view: "books", year: n.fiscal_year }), focus: focusName.recurring(company) }
+          : { path: "/accounting", query: q({ company, view: "overview" }), focus: null };
+      default:
+        return company ? { path: "/accounting", query: q({ company, view: "overview" }), focus: null } : null;
+    }
+  }
+
+  function go(n: AppNotification) {
     setOpen(false);
     if (!n.read) workApi.readNotifications([n.key]).then(setData).catch(() => undefined);
-    const company = safeId(n.company_id);
-    if (n.kind === "deadline") router.push(company ? `/accounting/work?company=${encodeURIComponent(company)}` : "/accounting/work");
-    else if (n.kind === "task_assigned" || n.kind === "task_due") router.push("/accounting/work?tab=tasks");
-    else if (company) {
-      if (pathname === "/accounting") window.dispatchEvent(new CustomEvent(OPEN_COMPANY_EVENT, { detail: company }));
-      else router.push(`/accounting?company=${encodeURIComponent(company)}`);
+    const t = target(n);
+    if (!t) return;
+    const href = t.query ? `${t.path}?${t.query}` : t.path;
+    if (pathname === t.path) {
+      window.history.replaceState(null, "", href);
+      window.dispatchEvent(new CustomEvent(t.path === "/accounting" ? OPEN_TARGET_EVENT : WORK_TARGET_EVENT, { detail: t.query }));
+    } else {
+      router.push(href);
     }
+    if (t.focus) flashFocus(t.focus, t.path);
   }
 
   const button =

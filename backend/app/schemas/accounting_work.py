@@ -218,6 +218,7 @@ class NotificationOut(BaseModel):
     due_date: date | None
     severity: str
     read: bool
+    fiscal_year: int | None = None
 
 
 class NotificationsOut(BaseModel):

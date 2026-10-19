@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Hint from "@/components/guide/Hint";
 import { workApi } from "@/lib/work-api";
+import { focusName } from "@/lib/focus";
 import { REASON_LABELS, apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import type { CompanyHealth as Health } from "@/types/work";
 import { Chip, monthLabel, reasonName, shortDate } from "@/components/work/ui";
@@ -14,9 +15,9 @@ interface Props {
   compact?: boolean;
 }
 
-function Check({ ok, label, hint, children }: { ok: boolean; label: React.ReactNode; hint?: string; children?: React.ReactNode }) {
+function Check({ ok, label, hint, focus, children }: { ok: boolean; label: React.ReactNode; hint?: string; focus?: string; children?: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2">
+    <div data-focus={focus} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2">
       <div className="flex items-center gap-2">
         <span
           aria-hidden="true"
@@ -58,7 +59,7 @@ export default function CompanyHealth({ companyId, refreshKey = 0, compact }: Pr
         <p key={n} className="mb-2 text-xs text-[var(--text-secondary)]">{n}</p>
       ))}
       <div className={grid}>
-        <Check ok={health.open_reviews === 0} label={health.open_reviews ? `${health.open_reviews} document${health.open_reviews === 1 ? "" : "s"} to review` : "No documents waiting for review"}>
+        <Check ok={health.open_reviews === 0} focus={focusName.health("review", companyId)} label={health.open_reviews ? `${health.open_reviews} document${health.open_reviews === 1 ? "" : "s"} to review` : "No documents waiting for review"}>
           {reasons.length > 0 && (
             <ul className="space-y-0.5">
               {reasons.map(([r, n]) => (
@@ -73,6 +74,7 @@ export default function CompanyHealth({ companyId, refreshKey = 0, compact }: Pr
         <Check
           ok={health.unmatched_bank_lines === 0 && health.unassigned_statements === 0 && health.bank_accounts.every((a) => a.unreconciled_months.length === 0)}
           label="Bank"
+          focus={focusName.health("bank", companyId)}
           hint="Reconciled through is the last day of an unbroken run of reconciled months. A month counts as unreconciled once it has ended and has statement lines but no reconciliation."
         >
           {health.bank_accounts.length === 0 ? (
@@ -98,6 +100,7 @@ export default function CompanyHealth({ companyId, refreshKey = 0, compact }: Pr
         </Check>
         <Check
           ok={health.cwt_pending_count === 0}
+          focus={focusName.health("cwt", companyId)}
           label={health.cwt_pending_count ? <>{health.cwt_pending_count} 2307{health.cwt_pending_count === 1 ? "" : "s"} to receive · <span className="aa-amount">₱{formatPeso(health.cwt_pending_amount)}</span></> : "No 2307s waiting"}
           hint="Sales where the customer withheld tax and no matching 2307 for that quarter is filed yet. Without it the credit can't be claimed."
         />

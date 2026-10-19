@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Hint from "@/components/guide/Hint";
 import JournalEntryForm from "@/components/accounting/JournalEntryForm";
 import { extrasApi } from "@/lib/extras-api";
+import { focusName } from "@/lib/focus";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import type { Account, JournalEntryInput } from "@/types/accounting";
 import type { Frequency, RecurringEntry, RecurringInput } from "@/types/extras";
@@ -122,7 +123,7 @@ export default function RecurringEntries({ companyId, accounts, defaultDate, onP
   }
 
   return (
-    <section className="mb-4">
+    <section data-focus={focusName.recurring(companyId)} className="mb-4">
       <div className="mb-2 flex items-center gap-2">
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">
           Recurring entries{" "}

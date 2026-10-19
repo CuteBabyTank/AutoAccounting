@@ -12,6 +12,7 @@ import TaskList from "@/components/work/TaskList";
 import { BTN, Chip, INPUT, STATUS_META, STATUS_ORDER, addDays, dueText, shortDate, todayIso } from "@/components/work/ui";
 import { useGuide } from "@/lib/guides";
 import { firmSettings, safeId, workApi } from "@/lib/work-api";
+import { WORK_TARGET_EVENT, focusName } from "@/lib/focus";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import type { Board, BoardFilters, CompanySummary, FirmSettings, WorkCard, WorkItemInput } from "@/types/work";
 
@@ -64,11 +65,24 @@ export default function WorkBoardPage() {
   const guide = useGuide("work");
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const t = params.get("tab");
-    if (t === "clients" || t === "tasks") setTab(t);
-    setCompany(safeId(params.get("company")) ?? "");
+    const open = (params: URLSearchParams) => {
+      const t = params.get("tab");
+      setTab(t === "clients" || t === "tasks" ? t : "filings");
+      setCompany(safeId(params.get("company")) ?? "");
+    };
+    open(new URLSearchParams(window.location.search));
     firmSettings().then(setSettings).catch(() => undefined);
+    // a notification clicked while already here: show everything not yet filed so its card is on the list
+    const onTarget = (e: Event) => {
+      const detail = (e as CustomEvent<unknown>).detail;
+      if (typeof detail !== "string") return;
+      setWin("default");
+      setStatus("open");
+      setAssignee("");
+      open(new URLSearchParams(detail));
+    };
+    window.addEventListener(WORK_TARGET_EVENT, onTarget);
+    return () => window.removeEventListener(WORK_TARGET_EVENT, onTarget);
   }, []);
 
   const load = useCallback(async () => {
@@ -205,7 +219,7 @@ export default function WorkBoardPage() {
                 </thead>
                 <tbody>
                   {cards.map((c) => (
-                    <tr key={c.key} className={`border-t border-[var(--border)] align-top text-[var(--text-primary)] ${c.overdue ? "bg-[var(--badge-red-bg)]/40" : ""}`}>
+                    <tr key={c.key} data-focus={focusName.card(c.key)} className={`border-t border-[var(--border)] align-top text-[var(--text-primary)] ${c.overdue ? "bg-[var(--badge-red-bg)]/40" : ""}`}>
                       <td className="whitespace-nowrap px-4 py-3">
                         <div className={c.overdue ? "font-semibold text-[var(--badge-red-text)]" : ""}>{shortDate(c.due_date)}</div>
                         {c.status !== "filed" && (

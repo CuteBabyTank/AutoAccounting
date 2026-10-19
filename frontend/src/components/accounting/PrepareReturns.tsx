@@ -237,7 +237,8 @@ export default function PrepareReturns({ outputId, companyId, year, quarter, onP
       )}
       {error && <p className="mt-2 text-sm text-[var(--alert-error-text)]">{error}</p>}
       {preview && (() => {
-        const editable = !prep || prep.version === prep.latest_version;
+        const isLatest = !prep || prep.version === prep.latest_version;
+        const editable = isLatest && canFile;
         const v = preview.output.version;
         return (
           <PdfPreview
@@ -248,7 +249,8 @@ export default function PrepareReturns({ outputId, companyId, year, quarter, onP
                 : accountingApi.pdfs(outputId, [preview.form], true).then((r) => r.blob)}
             note={editable
               ? `Edits are saved as v${v + 1}, so filing, amendments and the books use them. Totals aren't recalculated: change them too if needed. Fields edited by hand are highlighted in the preview only.`
-              : "This is an older version. Edit the latest version instead."}
+              : isLatest ? "Your firm has managers approve filings, so only a manager can edit a return's figures."
+                : "This is an older version. Edit the latest version instead."}
             exportLabel={(edited) => (edited ? `Save as v${v + 1} & download` : "Download PDF")}
             onExport={(edits) => exportPreview(preview.form, edits[preview.form] ?? {})}
             onClose={() => setPreview(null)}

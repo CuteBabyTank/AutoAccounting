@@ -76,11 +76,37 @@ def _rewrite_options():
     return opts
 
 
+MAX_PDF_PAGES = 1000
+MAX_PDF_IMAGES = 2000
+MAX_IMAGE_PIXELS = 60_000_000  # same cap as image uploads (storage.MAX_IMAGE_PIXELS)
+
+
+def _safe_to_rewrite(doc) -> bool:
+    """Rewriting decodes every image: skip files whose declared images are huge (decompression bombs) or too many."""
+    if doc.page_count > MAX_PDF_PAGES:
+        return False
+    seen: set[int] = set()
+    for page in doc:
+        for image in page.get_images(full=True):
+            xref = image[0]
+            if xref in seen:
+                continue
+            seen.add(xref)
+            if len(seen) > MAX_PDF_IMAGES:
+                return False
+            width, height = image[2], image[3]
+            if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+                return False
+    return True
+
+
 def _pdf_bytes(data: bytes) -> bytes | None:
     with pymupdf.open(stream=data, filetype="pdf") as doc:
         if doc.needs_pass or doc.is_encrypted or doc.get_sigflags() > 0:
             return None  # signed (e-invoices) or locked: keep exactly what was uploaded
         pages = doc.page_count
+        if not _safe_to_rewrite(doc):
+            return None
         doc.rewrite_images(options=_rewrite_options())
         doc.subset_fonts()
         out = doc.tobytes(garbage=3, deflate=True, deflate_images=True, deflate_fonts=True, use_objstms=1)

@@ -84,3 +84,13 @@ def test_stream_upload_keeps_the_small_copy_but_the_original_hash(tmp_path):
     assert stored.sha256 == hashlib.sha256(data).hexdigest()
     assert stored.size < len(data) / 2
     assert len(list(tmp_path.iterdir())) == 1
+
+
+def test_a_pdf_declaring_a_huge_image_is_kept_as_is():
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_image(page.rect, stream=_photo(800, 600))
+    xref = page.get_images()[0][0]
+    doc.xref_set_key(xref, "Width", "20000")
+    doc.xref_set_key(xref, "Height", "20000")  # 400 megapixels declared
+    assert compress_bytes(doc.tobytes(), "pdf") is None

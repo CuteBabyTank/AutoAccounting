@@ -785,8 +785,11 @@ async def preview_form(output_id: uuid.UUID, body: FormEditIn, user: User = Depe
 @router.post("/outputs/{output_id}/edits", response_model=OutputOut, status_code=status.HTTP_201_CREATED)
 async def save_form_edits(output_id: uuid.UUID, body: FormEditIn, user: User = Depends(get_current_user),
                           db: AsyncSession = Depends(get_db)):
-    """Save hand edits to a form as the period's next version (so filing, amendments and the books use them)."""
+    """Save hand edits to a form as the period's next version (so filing, amendments and the books use them).
+
+    Changing a return's figures by hand is gated like filing: with approve-before-close on, managers only."""
     ent = scope_for(user)
+    await require_filing_rights(db, user, ent)
     output, period, company = await _output_context(db, user, output_id)
     values = _form_values(output, body.form)
     latest = await latest_output(db, period.id)

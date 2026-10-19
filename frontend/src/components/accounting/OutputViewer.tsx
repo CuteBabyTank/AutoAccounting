@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { DownloadSimple, FilePdf, FileZip } from "@phosphor-icons/react";
 import { accountingApi } from "@/lib/accounting-api";
+import { useCanFile } from "@/lib/use-can-file";
 import { CHANGED_STYLE, apiErrorMessage, formatAmount, saveBlob } from "@/lib/accounting-format";
 import PdfPreview, { PreviewButton, useFilePreview, type PreviewEdits } from "@/components/accounting/PdfPreview";
 import type { Certificate, Output, OutputForm, PdfField } from "@/types/accounting";
@@ -25,7 +26,10 @@ interface Props {
   onNewVersion?: (output: Output) => void;
 }
 
-export default function OutputViewer({ outputId, latest = true, onNewVersion }: Props) {
+export default function OutputViewer({ outputId, latest: isLatest = true, onNewVersion }: Props) {
+  // Hand edits are gated like filing (approve-before-close: managers only); the API enforces it too.
+  const canFile = useCanFile();
+  const latest = isLatest && canFile;
   const [output, setOutput] = useState<Output | null>(null);
   const [tab, setTab] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -260,7 +264,8 @@ export default function OutputViewer({ outputId, latest = true, onNewVersion }: 
               : accountingApi.outputFile(output.id, "pdf", { clean: true, form: previewForm.form })}
           note={latest
             ? `Edits are saved as v${output.version + 1}, so filing, amendments and the books use them. Totals aren't recalculated: change them too if needed. Fields edited by hand are highlighted in the preview only.`
-            : "This is an older version. Edit the latest version instead."}
+            : isLatest ? "Your firm has managers approve filings, so only a manager can edit a return's figures."
+              : "This is an older version. Edit the latest version instead."}
           exportLabel={(edited) => (edited ? `Save as v${output.version + 1} & download` : "Download PDF")}
           onExport={(edits) => exportForm(previewForm.form, edits)}
           onClose={() => setPreviewForm(null)}

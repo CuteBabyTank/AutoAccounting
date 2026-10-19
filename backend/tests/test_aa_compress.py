@@ -94,3 +94,10 @@ def test_a_pdf_declaring_a_huge_image_is_kept_as_is():
     doc.xref_set_key(xref, "Width", "20000")
     doc.xref_set_key(xref, "Height", "20000")  # 400 megapixels declared
     assert compress_bytes(doc.tobytes(), "pdf") is None
+
+
+def test_a_pdf_rewrite_that_runs_out_of_memory_keeps_the_original(monkeypatch):
+    import app.services.accounting.compress as compress
+
+    monkeypatch.setattr(compress, "PDF_MEMORY_BYTES", 64 * 1024 * 1024)  # far too little for MuPDF + Python
+    assert compress_bytes(_scanned_pdf(1), "pdf") is None

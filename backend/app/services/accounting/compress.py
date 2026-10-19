@@ -10,6 +10,8 @@ The upload's sha256 stays the original's, so dropping the same file again is sti
 import io
 import logging
 import os
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -116,10 +118,45 @@ def _pdf_bytes(data: bytes) -> bytes | None:
     return out
 
 
+PDF_MEMORY_BYTES = 1536 * 1024 * 1024  # address-space cap for the rewrite process
+PDF_TIMEOUT_S = 90
+_APP_ROOT = str(Path(__file__).resolve().parents[3])  # backend/, so the child can import app.*
+
+# The child caps its own memory before touching the file, then writes the result (or nothing) to stdout.
+_WORKER = """
+import resource, sys
+limit = int(sys.argv[2])
+try:
+    resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+except (ValueError, OSError):
+    pass
+sys.path.insert(0, sys.argv[1])
+from app.services.accounting.compress import _pdf_bytes
+out = _pdf_bytes(sys.stdin.buffer.read())
+if out:
+    sys.stdout.buffer.write(out)
+"""
+
+
+def _pdf_bytes_isolated(data: bytes) -> bytes | None:
+    """``_pdf_bytes`` in a separate process with a memory cap and a timeout: a PDF that would make MuPDF decode
+    something enormous (an inline or annotation image the pre-check can't see) kills only that process."""
+    try:
+        proc = subprocess.run([sys.executable, "-I", "-c", _WORKER, _APP_ROOT, str(PDF_MEMORY_BYTES)],
+                              input=data, capture_output=True, timeout=PDF_TIMEOUT_S, check=False)
+    except subprocess.TimeoutExpired:
+        logger.warning("compress_skipped type=pdf error=timeout")
+        return None
+    if proc.returncode != 0:
+        logger.warning("compress_skipped type=pdf error=worker_exit_%s", proc.returncode)
+        return None
+    return proc.stdout or None
+
+
 def compress_bytes(data: bytes, file_type: str) -> tuple[bytes, str] | None:
     """The smaller file and its type, or None to keep the original (not worth it, or it couldn't be done safely)."""
     try:
-        result = _pdf_bytes(data) if file_type == "pdf" else _image_bytes(data)
+        result = _pdf_bytes_isolated(data) if file_type == "pdf" else _image_bytes(data)
     except Exception as e:  # a file we can't rewrite is still a valid upload: keep it as it came
         logger.warning("compress_skipped type=%s error=%s", file_type, type(e).__name__)
         return None

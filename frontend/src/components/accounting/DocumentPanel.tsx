@@ -8,6 +8,7 @@ import DuplicateCompare from "@/components/accounting/DuplicateCompare";
 import { accountingApi } from "@/lib/accounting-api";
 import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, EWT_ATC_OPTIONS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, formatPeso, reasonDetail } from "@/lib/accounting-format";
 import type { AADocument, Account, AuditEvent, DocumentPatch, DuplicatePair, PaymentLinks } from "@/types/accounting";
+import PageViewer from "@/components/accounting/PageViewer";
 
 const AMOUNTS = [
   ["gross_amount", "Total"],
@@ -273,14 +274,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
   }
 
   const pages = (size: "sm" | "lg") => (
-    <div className="space-y-2">
-      {images.map((src, i) => (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img key={`${size}-${src}`} src={src} alt={`Page ${firstPage + i}`}
-          className="mx-auto w-full max-w-[60rem] rounded-lg border border-[var(--border)] bg-white" />
-      ))}
-      {images.length === 0 && <div className={`${size === "lg" ? "h-[70vh]" : "h-40"} animate-pulse rounded-lg bg-[var(--bg-secondary)]`} />}
-    </div>
+    <PageViewer images={images} firstPage={firstPage} className={size === "lg" ? "h-full" : "h-[60vh]"} />
   );
 
   return (
@@ -290,7 +284,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
         className="flex h-full w-full max-w-xl border-l border-[var(--border)] bg-[var(--bg-secondary)] lg:max-w-[min(1440px,96vw)]"
       >
         {/* Wide screens: the document on the left, so every field can be checked against it side by side. */}
-        <div className="hidden min-w-0 flex-1 overflow-y-auto border-r border-[var(--border)] bg-[var(--bg-primary)] p-5 lg:block">
+        <div className="hidden min-w-0 flex-1 border-r border-[var(--border)] bg-[var(--bg-primary)] p-5 lg:block">
           {pages("lg")}
         </div>
         <div className="w-full shrink-0 overflow-y-auto p-5 lg:w-[36rem]">

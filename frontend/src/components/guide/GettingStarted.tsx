@@ -25,7 +25,7 @@ interface Step {
 
 /** First-run checklist on Documents. Ticks itself off from the firm's real data and hides once everything is done. */
 export default function GettingStarted({ tree, canManage, memberCount, onAddCompany, onUpload, onOpenQuarter }: Props) {
-  const { open, dismiss } = useGuide("getting-started");
+  const { open, dismiss } = useGuide("getting-started", { once: false });
 
   const quarters = tree.flatMap((c) => c.years.flatMap((y) => y.quarters.map((q) => ({ q, companyId: c.id }))));
   const withDocs = quarters.find(({ q }) => q.document_count > 0);

@@ -195,6 +195,23 @@ function BillingArt() {
   );
 }
 
+function SwitchesArt() {
+  const sw = (on: boolean) => (
+    <span className={`inline-flex h-4 w-7 items-center rounded-full ${on ? "bg-[var(--lp-accent)]" : "bg-[var(--error)]"}`}>
+      <span className={`h-3 w-3 rounded-full bg-white ${on ? "translate-x-3.5" : "translate-x-0.5"}`} />
+    </span>
+  );
+  return (
+    <div className="gd-art">
+      <Card title="Books" code="Every firm" className="gd-in" style={d(0)}>
+        <div className="gd-row"><span>Books</span>{sw(true)}</div>
+        <div className="gd-row gd-row--on"><span>Month close</span>{sw(false)}</div>
+        <div className="gd-row"><span>Bank</span>{sw(true)}</div>
+      </Card>
+    </div>
+  );
+}
+
 export const ADMIN_TOUR: Slide[] = [
   {
     id: "approve",
@@ -218,5 +235,16 @@ export const ADMIN_TOUR: Slide[] = [
       "Pages this month shows each firm's usage, so you can bill or top up.",
     ],
     Art: BillingArt,
+  },
+  {
+    id: "features",
+    title: "Switch a feature off while you fix it",
+    body: "On the Features tab, turn off anything that's broken. Firms stop seeing it and the server refuses it; you still see everything to test.",
+    points: [
+      "Applies to Every firm, or pick one firm to pin a feature on or off just for them.",
+      "Turn everything back on puts every switch back and clears the per-firm pins.",
+      "Open screens catch up within a minute.",
+    ],
+    Art: SwitchesArt,
   },
 ];

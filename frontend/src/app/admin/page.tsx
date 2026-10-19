@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
 import FirmPicker from "@/components/admin/FirmPicker";
+import FeatureSwitches from "@/components/admin/FeatureSwitches";
 import Hint from "@/components/guide/Hint";
 import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
 import { ADMIN_TOUR } from "@/components/guide/tours";
@@ -11,9 +12,12 @@ import { useGuide } from "@/lib/guides";
 import { adminApi } from "@/lib/api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import { roleLabel } from "@/lib/roles";
-import type { Account, BudgetOperation, UserRole } from "@/types";
+import { markFeaturesStale } from "@/lib/features";
+import type { Account, AdminFeatures, BudgetOperation, UserRole } from "@/types";
 
 type AssignableRole = Exclude<UserRole, "admin">;
+type Tab = "accounts" | "features" | "billing";
+const TAB_KEY = "aa-admin-tab";
 
 export default function AdminPage() {
   const { user } = useAuth();
@@ -25,11 +29,33 @@ export default function AdminPage() {
   const [error, setError] = useState("");
   const guide = useGuide("admin");
   const [assigning, setAssigning] = useState<{ account: Account; role: "manager" | "employee" } | null>(null);
+  const [tab, setTabState] = useState<Tab>("accounts");
+  const [features, setFeatures] = useState<AdminFeatures | null>(null);
+  const [scope, setScope] = useState("");
+  const [switching, setSwitching] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(TAB_KEY);
+      if (saved === "features" || saved === "billing") setTabState(saved);
+    } catch {
+      // no storage: start on Accounts
+    }
+  }, []);
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    try {
+      localStorage.setItem(TAB_KEY, t);
+    } catch {
+      // ignore
+    }
+  };
 
   const load = useCallback(async () => {
     try {
-      const [a, r] = await Promise.all([adminApi.accounts(), adminApi.pageRate()]);
+      const [a, r, f] = await Promise.all([adminApi.accounts(), adminApi.pageRate(), adminApi.features()]);
       setAccounts(a);
+      setFeatures(f);
       setSavedRate(r.page_rate);
       setPageRate(r.page_rate == null ? "" : String(r.page_rate));
     } catch (e) {
@@ -104,6 +130,29 @@ export default function AdminPage() {
     run(() => adminApi.setPageRate(value), "Couldn't save the page rate");
   }
 
+  async function flip(key: string, action: () => Promise<AdminFeatures>) {
+    setError("");
+    setSwitching(key);
+    try {
+      setFeatures(await action());
+      markFeaturesStale();
+    } catch (e) {
+      setError(apiErrorMessage(e, "Couldn't change the switch"));
+    } finally {
+      setSwitching(null);
+    }
+  }
+
+  const offCount = features
+    ? features.features.filter((f) => !f.enabled).length +
+      Object.values(features.overrides).reduce((n, o) => n + Object.values(o).filter((v) => !v).length, 0)
+    : 0;
+  const tabs: { id: Tab; label: string; badge?: string; alert?: boolean }[] = [
+    { id: "accounts", label: "Accounts", badge: String(accounts.length) },
+    { id: "features", label: "Features", badge: offCount ? `${offCount} off` : undefined, alert: offCount > 0 },
+    { id: "billing", label: "Billing", badge: savedRate == null ? "off" : `₱${formatPeso(savedRate)}/page` },
+  ];
+
   const sectionLabel = (text: string) => (
     <>
       <p className="px-1 text-[11px] font-medium text-[var(--lp-muted)]">{text}</p>
@@ -114,15 +163,33 @@ export default function AdminPage() {
   return (
     <div className="lp min-h-screen">
       <div className="px-4 sm:px-10 pt-6 sm:pt-8 pb-12 max-w-6xl page-enter">
-        <header className="mb-8 flex flex-wrap items-center gap-3">
-          <div className="mr-auto">
-            <h1 className="text-[22px] font-semibold tracking-tight text-[var(--lp-text)]">Platform admin</h1>
-            <p className="mt-1 text-sm text-[var(--lp-muted)]">
-              New sign-ups wait here as unverified. Turn one into a firm, or attach them to an existing firm.
-            </p>
-          </div>
+        <header className="mb-4 flex flex-wrap items-center gap-3">
+          <h1 className="mr-auto text-[22px] font-semibold tracking-tight text-[var(--lp-text)]">Platform admin</h1>
           <GuideButton open={guide.open} onClick={guide.toggle} />
         </header>
+
+        <div role="tablist" aria-label="Admin sections" className="mb-5 flex gap-1 border-b border-[var(--lp-border)]">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+              className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 pb-2 pt-1 text-sm ${
+                tab === t.id
+                  ? "border-[var(--lp-accent)] font-medium text-[var(--lp-text)]"
+                  : "border-transparent text-[var(--lp-muted)] hover:text-[var(--lp-text)]"
+              }`}
+            >
+              {t.label}
+              {t.badge && (
+                <span className={`text-[11px] tabular-nums ${t.alert ? "font-medium text-[var(--error)]" : "text-[var(--lp-faint)]"}`}>
+                  {t.badge}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
 
         <GuideTour open={guide.open} onClose={guide.dismiss} label="Platform admin" slides={ADMIN_TOUR} />
 
@@ -132,7 +199,20 @@ export default function AdminPage() {
           </div>
         )}
 
-        <section className="mb-8">
+        {tab === "features" && (
+          <FeatureSwitches
+            data={features}
+            firms={firms}
+            scope={scope}
+            onScope={setScope}
+            busy={switching}
+            onGlobal={(key, enabled) => flip(key, () => adminApi.setFeature(key, enabled))}
+            onFirm={(firmId, key, enabled) => flip(key, () => adminApi.setFirmFeature(firmId, key, enabled))}
+            onAllOn={() => flip("all", () => adminApi.allFeaturesOn())}
+          />
+        )}
+
+        {tab === "billing" && <section>
           {sectionLabel("Billing")}
           <form onSubmit={saveRate} className="aa-card rounded-2xl p-1.5 pl-4 flex flex-wrap items-center gap-3">
             <div className="mr-auto min-w-0 py-1.5">
@@ -164,12 +244,12 @@ export default function AdminPage() {
               </button>
             </div>
           </form>
-        </section>
+        </section>}
 
-        <section>
+        {tab === "accounts" && <section>
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <p className="px-1 text-[11px] font-medium text-[var(--lp-muted)]">
-              Accounts <span className="text-[var(--lp-faint)] tabular-nums">· {accounts.length}</span>
+            <p className="px-1 text-xs text-[var(--lp-muted)]">
+              New sign-ups wait here as unverified. Make one a firm, or attach them to an existing firm.
             </p>
             <label className="relative">
               <MagnifyingGlass size={16} weight="light" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--lp-muted)]" />
@@ -264,6 +344,19 @@ export default function AdminPage() {
                               <button disabled={busy} onClick={() => adjustBudget(a, "add")} className="aa-ghost">Top up</button>
                               <button disabled={busy} onClick={() => adjustBudget(a, "subtract")} className="aa-ghost">Deduct</button>
                               <button disabled={busy} onClick={() => adjustBudget(a, "set")} className="aa-ghost">Set</button>
+                              <button
+                                onClick={() => {
+                                  setScope(a.id);
+                                  setTab("features");
+                                }}
+                                className="aa-ghost"
+                                title="Turn features on or off for this firm only"
+                              >
+                                Features
+                                {features?.overrides[a.id] && (
+                                  <span className="ml-1 text-[11px] text-[var(--lp-faint)]">{Object.keys(features.overrides[a.id]).length}</span>
+                                )}
+                              </button>
                             </>
                           )}
                           {!isSelf && a.role !== "admin" && (
@@ -279,7 +372,7 @@ export default function AdminPage() {
               </tbody>
             </table>
           </div>
-        </section>
+        </section>}
       </div>
 
       {assigning && (

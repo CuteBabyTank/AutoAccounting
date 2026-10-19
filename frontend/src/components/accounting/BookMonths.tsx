@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import { useFilePreview } from "@/components/accounting/PdfPreview";
+import { FeatureOff, useFeatures } from "@/lib/features";
 import type { BooksYear } from "@/types/accounting";
 
 interface Props {
@@ -19,7 +20,10 @@ const monthName = (iso: string) =>
 
 // Closing a month freezes its entries, gives them final numbers and prints its loose-leaf pages; binding the year
 // adds covers and the sworn declaration once every month is closed.
-export default function BookMonths({ companyId, year, canManage, onChanged }: Props) {
+export default function BookMonths({ companyId, year, canManage: canManageBooks, onChanged }: Props) {
+  // Month close can be switched off for maintenance; the books stay readable.
+  const closeOn = useFeatures().on("close");
+  const canManage = canManageBooks && closeOn;
   const [data, setData] = useState<BooksYear | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -85,6 +89,7 @@ export default function BookMonths({ companyId, year, canManage, onChanged }: Pr
         </span>
       </div>
       {error && <p className="mb-2 text-sm text-[var(--alert-error-text)]">{error}</p>}
+      {canManageBooks && !closeOn && <div className="mb-2"><FeatureOff label="Month close" compact /></div>}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] text-sm">
           <thead>

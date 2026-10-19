@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { Account, BudgetOperation, FirmUsage, Member, UserRole } from "@/types";
+import type { Account, AdminFeatures, BudgetOperation, FirmUsage, Member, UserRole } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -47,6 +47,13 @@ api.interceptors.response.use(
         // leave the Blob; callers fall back to their own message
       }
     }
+    // A feature the platform admin just switched off: re-read the switches so its screens hide.
+    if (error.response?.status === 503 && typeof window !== "undefined") {
+      const detail = (error.response.data as { detail?: unknown } | undefined)?.detail;
+      if (typeof detail === "string" && detail.includes("turned off for maintenance")) {
+        window.dispatchEvent(new Event("aa:features-stale"));
+      }
+    }
     if (error.response?.status === 401 && typeof window !== "undefined") {
       sessionStorage.removeItem(TOKEN_KEY);
       // Don't hard-redirect here — AuthGate handles routing.
@@ -82,5 +89,11 @@ export const adminApi = {
     api.put<{ page_rate: number | null }>("/admin/page-rate", { page_rate }).then((r) => r.data),
   adjustBudget: (firmId: string, operation: BudgetOperation, amount: number) =>
     api.post<{ budget: number }>(`/admin/firms/${seg(firmId)}/budget`, { operation, amount }).then((r) => r.data),
+  features: () => api.get<AdminFeatures>("/admin/features").then((r) => r.data),
+  setFeature: (key: string, enabled: boolean) =>
+    api.put<AdminFeatures>(`/admin/features/${seg(key)}`, { enabled }).then((r) => r.data),
+  setFirmFeature: (firmId: string, key: string, enabled: boolean | null) =>
+    api.put<AdminFeatures>(`/admin/firms/${seg(firmId)}/features/${seg(key)}`, { enabled }).then((r) => r.data),
+  allFeaturesOn: () => api.post<AdminFeatures>("/admin/features/all-on").then((r) => r.data),
 };
 

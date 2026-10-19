@@ -28,6 +28,7 @@ import { resetGuides } from "@/lib/guides";
 import LogoMark from "@/components/layout/LogoMark";
 import NotificationBell from "@/components/work/NotificationBell";
 import SearchPalette from "@/components/search/SearchPalette";
+import { useFeatures, type FeatureKey } from "@/lib/features";
 
 interface NavItem {
   id: string;
@@ -37,6 +38,8 @@ interface NavItem {
   roles: UserRole[];
   /** Active only on this exact path (for a parent route like /accounting). */
   exact?: boolean;
+  /** The maintenance switch that hides it. */
+  feature?: FeatureKey;
 }
 
 const FIRM: UserRole[] = ["admin", "enterprise", "manager", "employee"];
@@ -46,15 +49,15 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
     label: "Manage",
     items: [
       { id: "admin", label: "Platform admin", icon: Crown, href: "/admin", roles: ["admin"] },
-      { id: "team", label: "Team", icon: UsersThree, href: "/team", roles: ["admin", "enterprise", "manager"] },
+      { id: "team", label: "Team", icon: UsersThree, href: "/team", roles: ["admin", "enterprise", "manager"], feature: "team" },
     ],
   },
   {
     label: "Workspace",
     items: [
-      { id: "documents", label: "Documents", icon: Files, href: "/accounting", roles: FIRM, exact: true },
-      { id: "work", label: "Work", icon: Kanban, href: "/accounting/work", roles: FIRM },
-      { id: "companies", label: "Companies", icon: Buildings, href: "/accounting/companies", roles: FIRM },
+      { id: "documents", label: "Documents", icon: Files, href: "/accounting", roles: FIRM, exact: true, feature: "documents" },
+      { id: "work", label: "Work", icon: Kanban, href: "/accounting/work", roles: FIRM, feature: "work" },
+      { id: "companies", label: "Companies", icon: Buildings, href: "/accounting/companies", roles: FIRM, feature: "companies" },
     ],
   },
 ];
@@ -98,6 +101,9 @@ export default function Sidebar() {
   };
   const expanded = !hoverMuted && (hovered || focused || editingNickname);
   const firmMember = !!user && FIRM.includes(user.role);
+  const features = useFeatures();
+  const showSearch = firmMember && features.on("search");
+  const showBell = firmMember && features.on("notifications");
 
   // Close the drawer whenever the route changes (tapping a nav item navigates).
   useEffect(() => {
@@ -118,9 +124,9 @@ export default function Sidebar() {
     const role = user?.role || "unverified";
     return NAV_SECTIONS.map((section) => ({
       ...section,
-      items: section.items.filter((item) => item.roles.includes(role)),
+      items: section.items.filter((item) => item.roles.includes(role) && (!item.feature || features.on(item.feature))),
     })).filter((section) => section.items.length > 0);
-  }, [user?.role]);
+  }, [user?.role, features]);
 
   // Stagger order for the label reveal: logo, then each section heading and its
   // rows top to bottom; the account card and footer share the last step.
@@ -154,10 +160,10 @@ export default function Sidebar() {
         <LogoMark width={34} height={24} />
         <span className="lp-logo-text text-[18px] tracking-tight text-[var(--text-sidebar)]">AutoAccounting</span>
       </a>
-      {firmMember && (
+      {(showSearch || showBell) && (
         <div className="ml-auto flex items-center">
-          <SearchPalette variant="bar" />
-          <NotificationBell variant="bar" />
+          {showSearch && <SearchPalette variant="bar" />}
+          {showBell && <NotificationBell variant="bar" />}
         </div>
       )}
     </header>
@@ -245,6 +251,10 @@ export default function Sidebar() {
                 >
                   <item.icon size={20} weight={active ? "regular" : "light"} className="shrink-0" />
                   <span style={fade(rowIndex(si, ii))} className="aa-fade">{item.label}</span>
+                  {/* The admin still sees a page that's off for firms; mark it. */}
+                  {item.feature && features.off.includes(item.feature) && (
+                    <span title="Turned off for firms (maintenance)" className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--error)]" />
+                  )}
                 </Link>
               );
             })}
@@ -343,10 +353,10 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="px-[14px] pb-4">
         <div className="h-px mb-2 bg-[var(--border-sidebar)]" />
-        {firmMember && (
+        {(showSearch || showBell) && (
           <div className="hidden md:block">
-            <SearchPalette variant="rail" fadeStyle={fade(lastRow)} />
-            <NotificationBell variant="rail" fadeStyle={fade(lastRow)} />
+            {showSearch && <SearchPalette variant="rail" fadeStyle={fade(lastRow)} />}
+            {showBell && <NotificationBell variant="rail" fadeStyle={fade(lastRow)} />}
           </div>
         )}
         <button

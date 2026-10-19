@@ -7,12 +7,22 @@ import { useEffect, useState, ReactNode } from "react";
 import Sidebar from "@/components/layout/Sidebar";
 import AppFlow from "@/components/layout/AppFlow";
 import { PUBLIC_ROUTES, canAccess, roleHome } from "@/lib/roles";
+import { FeatureOff, FeaturesProvider, useFeatures, type FeatureKey } from "@/lib/features";
+
+/** Pages a maintenance switch can take down (most specific first). */
+const PAGE_FEATURES: { path: string; exact?: boolean; key: FeatureKey; label: string }[] = [
+  { path: "/accounting/work", key: "work", label: "The work board" },
+  { path: "/accounting/companies", key: "companies", label: "Companies" },
+  { path: "/accounting", exact: true, key: "documents", label: "Documents" },
+  { path: "/team", key: "team", label: "Team" },
+];
 
 function AuthGate({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const features = useFeatures();
 
   const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
 
@@ -51,6 +61,10 @@ function AuthGate({ children }: { children: ReactNode }) {
   // Wrong-role route: the effect above is redirecting; don't mount the page.
   if (user && !canAccess(user.role, pathname)) return null;
 
+  const page = PAGE_FEATURES.find((p) => (p.exact ? pathname === p.path : pathname.startsWith(p.path)));
+  // Hold a switchable page until the switches load, so a page that's off never flashes.
+  const content = !page ? children : !features.ready ? null : features.on(page.key) ? children : <FeatureOff label={page.label} />;
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
@@ -61,7 +75,7 @@ function AuthGate({ children }: { children: ReactNode }) {
       <main className="lp flex-1 min-w-0 overflow-y-auto pt-14 md:pt-0">
         <div className="relative min-h-full">
           <AppFlow />
-          {children}
+          {content}
         </div>
       </main>
     </div>
@@ -72,7 +86,9 @@ export function Providers({ children, nonce }: { children: ReactNode; nonce?: st
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="autoaccounting-theme" nonce={nonce}>
       <AuthProvider>
-        <AuthGate>{children}</AuthGate>
+        <FeaturesProvider>
+          <AuthGate>{children}</AuthGate>
+        </FeaturesProvider>
       </AuthProvider>
     </ThemeProvider>
   );

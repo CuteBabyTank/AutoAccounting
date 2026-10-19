@@ -9,6 +9,7 @@ import ChartEditor from "@/components/accounting/ChartEditor";
 import JournalEntryForm from "@/components/accounting/JournalEntryForm";
 import OpeningAssets from "@/components/accounting/OpeningAssets";
 import RecurringEntries from "@/components/accounting/RecurringEntries";
+import { useFeatures } from "@/lib/features";
 import type { Account, JournalEntry, JournalEntryInput } from "@/types/accounting";
 
 interface Props {
@@ -24,6 +25,7 @@ const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-m
 
 export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndMonth, canManage, onChanged }: Props) {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const recurringOn = useFeatures().on("recurring");
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [editing, setEditing] = useState<{ id?: string; input: JournalEntryInput } | null>(null);
   const [showChart, setShowChart] = useState(false);
@@ -151,7 +153,7 @@ export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndM
         )}
       </section>
 
-      <RecurringEntries
+      {recurringOn && <RecurringEntries
         companyId={companyId}
         accounts={accounts}
         defaultDate={manualDate}
@@ -159,7 +161,7 @@ export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndM
           load().catch(() => undefined);
           onChanged();
         }}
-      />
+      />}
 
       <section>
         <div className="mb-2 flex items-center gap-2">

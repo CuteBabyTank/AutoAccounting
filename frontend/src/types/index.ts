@@ -48,3 +48,9 @@ export interface Account {
 }
 
 export type BudgetOperation = "add" | "subtract" | "set";
+
+/** Platform admin's maintenance switches: global state per feature, and each firm's overrides. */
+export interface AdminFeatures {
+  features: { key: string; label: string; group: string; description: string; enabled: boolean }[];
+  overrides: Record<string, Record<string, boolean>>;
+}

@@ -35,6 +35,7 @@ import { teamApi } from "@/lib/api";
 import { useGuide } from "@/lib/guides";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import { useAuth } from "@/lib/auth";
+import { FeatureOff, useFeatures, type FeatureKey } from "@/lib/features";
 import type {
   AADocument,
   AffectedPeriod,
@@ -49,6 +50,20 @@ import type {
 
 const PICKER_KEY = "aa:lastPicker";
 const ACCEPT = { "application/pdf": [".pdf"], "image/png": [".png"], "image/jpeg": [".jpg", ".jpeg"] };
+
+/** Tree views a maintenance switch can turn off: [switch, name shown while it's off]. */
+const VIEW_FEATURES: Partial<Record<NonNullable<FolderRef["view"]>, [FeatureKey, string]>> = {
+  books: ["books", "Books"],
+  bank: ["bank", "Bank"],
+  employees: ["employees", "Employees"],
+  customers: ["subledgers", "Customers"],
+  suppliers: ["subledgers", "Suppliers"],
+  reports: ["reports", "Reports"],
+  reclassify: ["reclassify", "Reclassify"],
+  import: ["imports", "Import"],
+  atc: ["atc", "The ATC databank"],
+  audit: ["audit", "The audit log"],
+};
 const BUSY: Upload["status"][] = ["detecting", "confirming", "extracting"];
 
 export default function AccountingPage() {
@@ -222,6 +237,18 @@ export default function AccountingPage() {
     [target, upload],
   );
 
+  const { on } = useFeatures();
+  const uploadsOn = on("upload");
+  // A tree view whose maintenance switch is off (reached by a link or left open) shows a notice instead.
+  const offView = (() => {
+    if (!selected) return null;
+    const v = selected.view;
+    const key: FeatureKey | null =
+      selected.quarter === 0 ? "annual" : v && VIEW_FEATURES[v] ? VIEW_FEATURES[v]![0] : null;
+    if (!key || on(key)) return null;
+    return selected.quarter === 0 ? "Annual returns" : VIEW_FEATURES[v!]![1];
+  })();
+
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     onDropRejected: () => setError("Only PDF, PNG and JPG files can be dropped here."),
@@ -229,7 +256,7 @@ export default function AccountingPage() {
     noClick: true,
     noKeyboard: true,
     // Files dropped anywhere on the page upload, except over a dialog or the import screen (it takes its own file).
-    noDrag: !!openDoc || reviewOpen || !!companyForm || selected?.view === "import",
+    noDrag: !uploadsOn || !!openDoc || reviewOpen || !!companyForm || selected?.view === "import",
   });
 
   const filteredTree = useMemo(() => {
@@ -358,22 +385,28 @@ export default function AccountingPage() {
               <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-dashed border-[var(--border)] px-4 py-3">
                 <UploadSimple size={20} className="shrink-0 text-[var(--text-secondary)]" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-[var(--text-primary)]">Drop receipts, invoices or scans anywhere on this page</p>
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">
+                    {uploadsOn ? "Drop receipts, invoices or scans anywhere on this page" : "Uploads are paused for maintenance"}
+                  </p>
                   <p className="text-xs text-[var(--text-secondary)]">
-                    {targetName
+                    {!uploadsOn
+                      ? "Everything already filed is still here. Uploading will be back shortly."
+                      : targetName
                       ? `They'll be filed under ${targetName.replace(/\.$/, "")}.`
                       : "We'll detect the company from each document's TIN and name."}
                   </p>
                 </div>
-                <button
+                {uploadsOn && <button
                   type="button"
                   onClick={open}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)]"
                 >
                   <UploadSimple size={16} /> Upload files
-                </button>
+                </button>}
               </div>
             )}
+            {offView && <FeatureOff label={offView} />}
+            {!offView && (<>
             {folder && folder.year !== null && folder.quarter !== null && (
               <PeriodPanel
                 companyId={folder.company.id}
@@ -532,6 +565,7 @@ export default function AccountingPage() {
                 companyName={tree.find((c) => c.id === selected.companyId)?.registered_name ?? ""}
               />
             )}
+            </>)}
             {folder ? (
               <FileGrid
                 folder={folder}
@@ -548,7 +582,7 @@ export default function AccountingPage() {
                     ? "Nothing filed yet. Drop a client's documents anywhere on this page and they'll show up on the left, sorted by company and quarter."
                     : "Open a company on the left and pick a quarter to see its documents and returns."}
                 </p>
-                <AlphalistChecklist onOpen={(companyId, year) => setSelected({ companyId, year, quarter: null, view: "employees" })} />
+                {on("employees") && <AlphalistChecklist onOpen={(companyId, year) => setSelected({ companyId, year, quarter: null, view: "employees" })} />}
               </>
             )}
 

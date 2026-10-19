@@ -166,6 +166,12 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   and `snapshot["edited"] = {form: {key: books' figure}}`, so filing, amendments, the books and the annual credit all
   read them like any version; a later Generate drops them (and warns). Totals are not recalculated. 2307 / 2316 edits
   (`certificate_edits.py`) only change the exported files. Pure logic in `form_edits.py`.
+- **Maintenance switches** (`services/features.py`, Platform admin → Features): the admin turns a feature off for every
+  firm or pins it per firm (`feature_toggles`, `firm_feature_overrides`; no row = on). `feature_gate` on the accounting
+  and team routers answers 503 by matching the request path against `ROUTES`; the admin always passes. A new route under
+  `/api/accounting` or `/api/team` must go in `ROUTES` or `ALWAYS_ON` (`tests/test_features.py` fails otherwise). The
+  frontend reads `GET /api/features` through `useFeatures()` (`lib/features.tsx`) to hide nav items, tree leaves and
+  panels; a new switch needs its key in `FEATURES` and in `FeatureKey`.
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.
 - **Frontend token** lives in `sessionStorage` (`autoaccounting_token`). The axios interceptor attaches it, and on 401 it is cleared and AuthGate redirects.
 

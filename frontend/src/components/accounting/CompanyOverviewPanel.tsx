@@ -10,6 +10,7 @@ import PrivacyToggle from "@/components/accounting/PrivacyToggle";
 import ApplyChecklist from "@/components/work/ApplyChecklist";
 import TaskList from "@/components/work/TaskList";
 import { workApi } from "@/lib/work-api";
+import { useFeatures } from "@/lib/features";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import type { Board } from "@/types/work";
 import { BTN, Chip, STATUS_META, dueText, shortDate } from "@/components/work/ui";
@@ -26,8 +27,13 @@ export default function CompanyOverviewPanel({ companyId, companyName, companies
   const [refresh, setRefresh] = useState(0);
   const [taskKey, setTaskKey] = useState(0);
   const [error, setError] = useState("");
+  const { on } = useFeatures();
+  const reportsOn = on("reports");
+  // The filings list and tasks come from the work board; they hide while it's switched off.
+  const workOn = on("work");
 
   useEffect(() => {
+    if (!workOn) return;
     let cancelled = false;
     workApi
       .board({ company_id: companyId })
@@ -36,7 +42,7 @@ export default function CompanyOverviewPanel({ companyId, companyName, companies
     return () => {
       cancelled = true;
     };
-  }, [companyId, refresh]);
+  }, [companyId, refresh, workOn]);
 
   const open = (board?.cards ?? []).filter((c) => c.status !== "filed");
   return (
@@ -51,10 +57,10 @@ export default function CompanyOverviewPanel({ companyId, companyName, companies
             </Hint>
           </h2>
           <PrivacyToggle className="ml-auto" />
-          <Link href={`/accounting/work?company=${encodeURIComponent(companyId)}`} className={BTN}>Open on the work board</Link>
+          {workOn && <Link href={`/accounting/work?company=${encodeURIComponent(companyId)}`} className={BTN}>Open on the work board</Link>}
         </div>
         {error && <p className="text-sm text-[var(--alert-error-text)]">{error}</p>}
-        {board && (open.length === 0 ? (
+        {workOn && board && (open.length === 0 ? (
           <p className="text-sm text-[var(--text-secondary)]">No returns open in the last 90 days or due in the next 45.</p>
         ) : (
           <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]">
@@ -72,19 +78,23 @@ export default function CompanyOverviewPanel({ companyId, companyName, companies
           </ul>
         ))}
       </div>
-      <div>
-        <h3 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">Key figures this quarter</h3>
-        <KpiTiles companyId={companyId} />
-      </div>
-      <div>
-        <h3 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">Cash flow, next 8 weeks</h3>
-        <CashFlowTile companyId={companyId} />
-      </div>
+      {reportsOn && (
+        <>
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">Key figures this quarter</h3>
+            <KpiTiles companyId={companyId} />
+          </div>
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">Cash flow, next 8 weeks</h3>
+            <CashFlowTile companyId={companyId} />
+          </div>
+        </>
+      )}
       <div>
         <h3 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">Health check</h3>
         <CompanyHealth companyId={companyId} refreshKey={refresh} />
       </div>
-      <div>
+      {workOn && <div>
         <h3 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">Tasks</h3>
         <ApplyChecklist companyId={companyId} people={board?.people ?? []} onApplied={() => setTaskKey((n) => n + 1)} />
         <TaskList
@@ -94,7 +104,7 @@ export default function CompanyOverviewPanel({ companyId, companyName, companies
           fixed={{ company_id: companyId }}
           onChanged={() => setRefresh((n) => n + 1)}
         />
-      </div>
+      </div>}
     </div>
   );
 }

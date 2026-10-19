@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Bank, Buildings, CaretDown, CaretRight, Plus } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
+import { useFeatures } from "@/lib/features";
 import type { FolderRef, TreeAnnual, TreeBankAccount, TreeCompany } from "@/types/accounting";
 
 interface Props {
@@ -17,6 +18,7 @@ const ROW = "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left t
 
 export default function FolderTree({ tree, selected, onSelect, canManage, onAddCompany }: Props) {
   const [open, setOpen] = useState<Set<string>>(new Set());
+  const { on } = useFeatures();
 
   useEffect(() => {
     if (!selected) return;
@@ -142,12 +144,12 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
             <li key={y.year}>
               <div className="px-2 pt-1.5 text-xs font-semibold text-[var(--text-secondary)]">{y.year}</div>
               <ul>
-                {c.books_start && (
+                {c.books_start && on("books") && (
                   <li>{leaf({ companyId: c.id, year: y.year, quarter: null, view: "books" }, "Books", null, 0)}</li>
                 )}
-                {y.bank && y.bank.length > 0 && bank(c.id, y.year, y.bank)}
-                <li>{leaf({ companyId: c.id, year: y.year, quarter: 0 }, "Annual return", null, 0, y.annual)}</li>
-                {c.has_employees && (
+                {y.bank && y.bank.length > 0 && on("bank") && bank(c.id, y.year, y.bank)}
+                {on("annual") && <li>{leaf({ companyId: c.id, year: y.year, quarter: 0 }, "Annual return", null, 0, y.annual)}</li>}
+                {c.has_employees && on("employees") && (
                   <li>{leaf({ companyId: c.id, year: y.year, quarter: null, view: "employees" }, "Employees (1604-C)", null, 0)}</li>
                 )}
                 {y.quarters.map((q) => (
@@ -158,19 +160,23 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
               </ul>
             </li>
           ))}
-          {c.books_start && (
+          {c.books_start && on("reports") && (
             <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "reports" }, "Reports", null, 0)}</li>
           )}
-          {c.books_start && (
+          {c.books_start && on("reclassify") && (
             <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "reclassify" }, "Reclassify", null, 0)}</li>
           )}
-          {c.books_start && (
+          {c.books_start && on("imports") && (
             <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "import" }, "Import", null, 0)}</li>
           )}
-          <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "customers" }, "Customers", null, 0)}</li>
-          <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "suppliers" }, "Suppliers", null, 0)}</li>
-          <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "atc" }, "ATC databank", null, 0)}</li>
-          <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "audit" }, "Audit log", null, 0)}</li>
+          {on("subledgers") && (
+            <>
+              <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "customers" }, "Customers", null, 0)}</li>
+              <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "suppliers" }, "Suppliers", null, 0)}</li>
+            </>
+          )}
+          {on("atc") && <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "atc" }, "ATC databank", null, 0)}</li>}
+          {on("audit") && <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "audit" }, "Audit log", null, 0)}</li>}
           {c.undated_count > 0 && (
             <li>{leaf({ companyId: c.id, year: null, quarter: null }, "Undated", c.undated_count, c.undated_count)}</li>
           )}

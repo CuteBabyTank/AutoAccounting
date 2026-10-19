@@ -8,6 +8,7 @@ import Hint from "@/components/guide/Hint";
 import GuideTour from "@/components/guide/GuideTour";
 import { QUARTER_TOUR } from "@/components/guide/tours";
 import { useGuide } from "@/lib/guides";
+import { FeatureOff, useFeatures } from "@/lib/features";
 import { FILING_LOCKED_TITLE, useCanFile } from "@/lib/use-can-file";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
@@ -85,6 +86,7 @@ interface Props {
 }
 
 export default function PeriodPanel({ companyId, year, quarter, refreshKey, onChanged, onEditCompany }: Props) {
+  const filingOn = useFeatures().on("filing");
   const canFile = useCanFile();
   const [period, setPeriod] = useState<Period | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -162,6 +164,7 @@ export default function PeriodPanel({ companyId, year, quarter, refreshKey, onCh
       onChanged();
     }, "Couldn't update the filed status");
 
+  if (!filingOn) return <div className="mb-5"><FeatureOff label="Quarterly returns" compact /></div>;
   if (!period) return error ? <p className="mb-4 text-sm text-[var(--alert-error-text)]">{error}</p> : null;
 
   const next = (period.latest_version ?? 0) + 1;

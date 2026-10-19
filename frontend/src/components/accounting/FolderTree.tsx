@@ -118,7 +118,16 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
 
   const company = (c: TreeCompany) => (
     <li key={c.id}>
-      <button onClick={() => toggle(c.id)} className={`${ROW} text-[var(--text-primary)]`}>
+      <button
+        onClick={() => {
+          // Opening a company shows its overview (unless something in it is already open); clicking again folds it.
+          if (!open.has(c.id) && selected?.companyId !== c.id) {
+            onSelect({ companyId: c.id, year: null, quarter: null, view: "overview" });
+          }
+          toggle(c.id);
+        }}
+        className={`${ROW} text-[var(--text-primary)]`}
+      >
         {open.has(c.id) ? <CaretDown size={12} /> : <CaretRight size={12} />}
         <Buildings size={15} className="shrink-0 text-[var(--text-secondary)]" />
         <span className="truncate font-medium">{c.registered_name}</span>

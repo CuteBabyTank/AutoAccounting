@@ -228,6 +228,8 @@ export default function AccountingPage() {
     accept: ACCEPT,
     noClick: true,
     noKeyboard: true,
+    // Files dropped anywhere on the page upload, except over a dialog or the import screen (it takes its own file).
+    noDrag: !!openDoc || reviewOpen || !!companyForm || selected?.view === "import",
   });
 
   const filteredTree = useMemo(() => {
@@ -262,7 +264,15 @@ export default function AccountingPage() {
   };
 
   return (
-    <div className="lp relative min-h-screen">
+    <div {...getRootProps({ className: "lp relative min-h-screen" })}>
+      <input {...getInputProps()} />
+      {isDragActive && (
+        <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center bg-[var(--accent-subtle)]/80 p-6">
+          <div className="rounded-xl border-2 border-dashed border-[var(--accent)] bg-[var(--bg-secondary)] px-8 py-6 text-center text-sm font-semibold text-[var(--text-primary)] shadow-lg">
+            {targetName ? `Drop to file under ${targetName}` : "Drop to auto-detect the company"}
+          </div>
+        </div>
+      )}
       <div className="p-4 sm:p-8 page-enter">
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <div className="mr-auto min-w-[16rem] flex-1">
@@ -342,12 +352,28 @@ export default function AccountingPage() {
             />
           </aside>
 
-          <section
-            {...getRootProps()}
-            className={`relative min-h-[420px] rounded-xl border bg-[var(--bg-secondary)] p-4 ${isDragActive ? "border-[var(--accent)] ring-2 ring-[var(--accent)]" : "border-[var(--border)]"}`}
-          >
-            <input {...getInputProps()} />
+          <section className="relative min-h-[420px] rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
             {folder && <DuplicateBanner folder={folder} onResolved={refreshAfterDocChange} />}
+            {selected?.view !== "import" && (
+              <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-dashed border-[var(--border)] px-4 py-3">
+                <UploadSimple size={20} className="shrink-0 text-[var(--text-secondary)]" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">Drop receipts, invoices or scans anywhere on this page</p>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    {targetName
+                      ? `They'll be filed under ${targetName.replace(/\.$/, "")}.`
+                      : "We'll detect the company from each document's TIN and name."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={open}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)]"
+                >
+                  <UploadSimple size={16} /> Upload files
+                </button>
+              </div>
+            )}
             {folder && folder.year !== null && folder.quarter !== null && (
               <PeriodPanel
                 companyId={folder.company.id}
@@ -519,36 +545,13 @@ export default function AccountingPage() {
               <>
                 <p className="py-10 text-center text-sm text-[var(--text-secondary)]">
                   {tree.length === 0
-                    ? "Nothing filed yet. Drop a client's documents below and they'll show up on the left, sorted by company and quarter."
+                    ? "Nothing filed yet. Drop a client's documents anywhere on this page and they'll show up on the left, sorted by company and quarter."
                     : "Open a company on the left and pick a quarter to see its documents and returns."}
                 </p>
                 <AlphalistChecklist onOpen={(companyId, year) => setSelected({ companyId, year, quarter: null, view: "employees" })} />
               </>
             )}
 
-            {selected?.view !== "import" && (
-            <div className="mt-6 rounded-xl border border-dashed border-[var(--border)] p-6 text-center">
-              <p className="text-sm font-semibold text-[var(--text-primary)]">Drop receipts, invoices or scans here</p>
-              <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                {targetName
-                  ? `They'll be filed under ${targetName}.`
-                  : "We'll detect the company from each document's TIN and name."}
-              </p>
-              <button
-                type="button"
-                onClick={open}
-                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)]"
-              >
-                <UploadSimple size={16} /> Upload files
-              </button>
-            </div>
-            )}
-
-            {isDragActive && (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-[var(--accent-subtle)]/80 text-sm font-semibold text-[var(--text-primary)]">
-                {targetName ? `Drop to file under ${targetName}` : "Drop to auto-detect the company"}
-              </div>
-            )}
           </section>
         </div>
       </div>

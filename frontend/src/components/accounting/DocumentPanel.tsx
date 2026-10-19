@@ -272,12 +272,28 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
     accountingApi.getDocument(doc.id).then(onChanged).catch(() => undefined);
   }
 
+  const pages = (size: "sm" | "lg") => (
+    <div className="space-y-2">
+      {images.map((src, i) => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img key={`${size}-${src}`} src={src} alt={`Page ${firstPage + i}`}
+          className="mx-auto w-full max-w-[60rem] rounded-lg border border-[var(--border)] bg-white" />
+      ))}
+      {images.length === 0 && <div className={`${size === "lg" ? "h-[70vh]" : "h-40"} animate-pulse rounded-lg bg-[var(--bg-secondary)]`} />}
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={onClose}>
       <aside
         onClick={(e) => e.stopPropagation()}
-        className="h-full w-full max-w-xl overflow-y-auto border-l border-[var(--border)] bg-[var(--bg-secondary)] p-5"
+        className="flex h-full w-full max-w-xl border-l border-[var(--border)] bg-[var(--bg-secondary)] lg:max-w-[min(1440px,96vw)]"
       >
+        {/* Wide screens: the document on the left, so every field can be checked against it side by side. */}
+        <div className="hidden min-w-0 flex-1 overflow-y-auto border-r border-[var(--border)] bg-[var(--bg-primary)] p-5 lg:block">
+          {pages("lg")}
+        </div>
+        <div className="w-full shrink-0 overflow-y-auto p-5 lg:w-[36rem]">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-[var(--text-primary)]">
@@ -355,13 +371,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
           </ul>
         )}
 
-        <div className="mb-4 space-y-2">
-          {images.map((src, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={src} src={src} alt={`Page ${firstPage + i}`} className="w-full rounded-lg border border-[var(--border)]" />
-          ))}
-          {images.length === 0 && <div className="h-40 animate-pulse rounded-lg bg-[var(--bg-primary)]" />}
-        </div>
+        <div className="mb-4 lg:hidden">{pages("sm")}</div>
 
         <div className="grid grid-cols-2 gap-3">
           {field("doc_date", "Document date", "date")}
@@ -587,6 +597,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
         )}
         </>
         )}
+        </div>
       </aside>
     </div>
   );

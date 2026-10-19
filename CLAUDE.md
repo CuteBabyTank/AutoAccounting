@@ -82,6 +82,10 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
 
 - **aa_* tables have FORCE RLS** keyed on `app.current_user_id` → the user's firm. Every DB session that touches them must `bind_session_user` (`get_current_user` does it; background jobs like `pipeline.run_extraction` do it themselves). The app's DB role must be **NOBYPASSRLS** or RLS silently does nothing.
 - **Firm scope:** every accounting row carries `enterprise_id` = the firm owner's user id (`routers/accounting_scope.scope_for`). Always filter by it, even with RLS on.
+- **Upload compression:** `storage.stream_upload` compresses every accepted file before it is kept
+  (`services/accounting/compress.py`: photos ≤ 2400 px JPEG q80, PDF images > 240 dpi resampled to 200, fonts subset).
+  The stored `sha256` is the **original** upload's (duplicate drops still match); `file_size`, `stored_path` and
+  `file_type` are the kept copy's (a PNG may become a JPG). Signed / encrypted PDFs are kept byte-for-byte.
 - **Storage:** documents go to `ACCOUNTING_DIR` (falls back to `backend/uploads/` in dev, gitignored). Tax records must be kept ≥5 years, so prod needs a long-retention volume. In production the upload endpoint returns 503 until `ACCOUNTING_DIR` is set.
 - **Schema changes:** add aa_* columns to the model *and* `services/accounting/schema.py` (for existing DBs). Destructive changes go in `alembic/` (empty so far; `start.sh` runs `alembic upgrade head`).
 - **Transaction pooler (port 6543):** statement caches are off. No session state across transactions (`SET LOCAL`/`set_config(..., true)` only), no advisory locks, temp tables or LISTEN/NOTIFY.

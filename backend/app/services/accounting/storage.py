@@ -12,6 +12,7 @@ from fastapi import UploadFile
 from PIL import Image, UnidentifiedImageError
 
 from app.config import settings
+from app.services.accounting.compress import compress_file
 from app.services.file_service import validate_file
 from app.services.gemini_service import get_pdf_page_count_safe, render_pdf_page_webp
 
@@ -103,7 +104,9 @@ async def stream_upload(f: UploadFile, dest_dir: Path) -> StoredUpload:
     except UploadRejected:
         dest.unlink(missing_ok=True)
         raise
-    return StoredUpload(filename, str(dest), total, digest.hexdigest(), file_type, page_count)
+    # Keep a smaller copy (same pages, ~200 dpi). The hash stays the original's so re-drops are still duplicates.
+    kept = await loop.run_in_executor(None, compress_file, str(dest), file_type)
+    return StoredUpload(filename, kept.path, kept.size, digest.hexdigest(), kept.file_type, page_count)
 
 
 def is_stored_path_safe(stored_path: str, root: str | None = None) -> bool:

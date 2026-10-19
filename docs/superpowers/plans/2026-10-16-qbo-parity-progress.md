@@ -396,3 +396,43 @@ this row). Not done: the bank matcher can still offer a written-off invoice as a
 recurring entries; no tour slides (Hints on each new section).
 
 10 review: fixed write-off JE lines carrying the formatted contact TIN (failed JournalLineIn, 500 on the write-off and the Books journal list), backdated write-offs of invoices paid / written off later (double A/R credit; refused), concurrent write-offs (company row lock), undo of a write-off limited to owners / managers, reclassify moving a write-off's A/R lines (blocked), the bank matcher offering written-off invoices (written-off amounts count as paid), and a recurring template's anchor day resetting to 28/30 when edited on a clamped next date (anchor_day); 940 tests pass.
+
+## Bug fixes (2026-10-19):
+
+Fixed (one commit each, TDD with pure tests):
+1. **Legacy write-off JEs with a formatted TIN** (0f4911d): `JournalEntryOut` reads lines through a tolerant
+   `JournalLineOut` (TIN cut to its 9 digits, name to 255, missing keys default), so the Books journal list can't 500
+   on write-offs saved before 822df08. No startup UPDATE: under FORCE RLS an unbound startup session sees no rows with a
+   NOBYPASSRLS role, so it would be a no-op in production; the read path heals instead.
+2. **Payment received after a write-off** (b50a209): the subledger resolves open-ended payments like the books
+   (`compute/subledger.payment_amounts`: a write-off is a JE, not a payment, so it never shrinks a later "whatever is
+   left" payment). Books and aging now both show the written-off amount as a credit on the customer; the health check
+   lists "Payment received on written-off invoice" (`writeoff.recovered`) and the contact page marks the item "Paid
+   after write-off". No automatic recovery JE (CPA question; decision 14 in the QBO 10 plan).
+3. **Books vs aging A/R / A/P** (f9f04c1): the difference is by design (books keep customer CWT in A/R until the 2307
+   posts and leave counter-paid documents open until a payment is recorded), so the live aging (JSON, XLSX, PDF,
+   Customers / Suppliers page) ends with a "Tie to the books" block: open items + CWT still in A/R + paid at the
+   counter + other = the control account (`compute/subledger.control_tie`, `books/subledger.control_ties`; decision
+   added to the QBO 04 plan). The dev company ties with no differences.
+4. **Due recurring entries notify** (3d27a10): `notifications.build(recurring=…)`, kind `recurring`, key
+   `recurring:<company>:<count>:<earliest due>`, to everyone in the firm; bell label "Recurring".
+5. **Bank line page numbers** (1bdfb66): optional `page` per statement line in the extraction prompt (old replies
+   parse, page None), mapped from the reply's chunk to the file page (`bank_statement.file_page`), stored on the new
+   nullable `aa_bank_lines.page` (model + schema.py). Report drill-down opens the statement at that page
+   (`DocumentPanel` `focusPage`); lines extracted before this open the statement's first page as before.
+6. **Older VAT-mismatch documents** (486d856): idempotent backfill from `load_periods`
+   (`books/vat_backfill.backfill_vat_difference`, pure `review_rules.legacy_vat_fix`): a purchase / expense whose only
+   input-VAT issue is `vat_math_mismatch` claims 12% with the excess in 1310, audited as "AutoAccounting (VAT
+   difference rule)", books touched, the quarter's versions go stale; closed months correct through `apply_closes`. In
+   a filed quarter the document keeps the disallowed VAT (the filed return didn't claim it) and gets a note in the
+   document panel. Verified in a rolled-back session on the dev DB.
+7. **Work board loaded every year of the firm** (2a8f84b; flagged, not fixed, in the 05 review): periods, versions,
+   work items, employee and document counts are limited to `compute/work.year_bounds(start, end)`; test over all fiscal
+   year ends; the dev board returns the same cards as before.
+
+Skipped: the 05 review's other flag (the bell's 2307 count) is already narrowed to 2307s and sales with withholding,
+so left as is. Not bugs, so not touched: cash-basis reports, 1604-E, QBO / Xero export, report email scheduling,
+import undo (another agent), unmerge, credit-memo auto-apply, cheques outstanding before the first statement, bank
+line page in the search palette (it opens the bank month). `acf55ae` not type-checking alone is history (no rewrite).
+
+Tests: 940 → 950 passing. Gates: pytest, ruff, lint, tsc, build all green.

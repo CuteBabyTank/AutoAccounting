@@ -542,6 +542,21 @@ async def download_workbook(output_id: uuid.UUID, clean: bool = Query(default=Fa
     return Response(content=data, media_type=_XLSX, headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
+@router.get("/outputs/{output_id}/xlsx/preview")
+async def preview_workbook(output_id: uuid.UUID, user: User = Depends(get_current_user),
+                           db: AsyncSession = Depends(get_db)):
+    """The version's workbook (changes highlighted) as sheets of cells, for the in-app preview."""
+    from app.services.accounting.xlsx_preview import workbook_preview
+
+    output, _, _ = await _output_context(db, user, output_id)
+    path = Path(output.xlsx_path)
+    if not is_stored_path_safe(str(path)) or not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workbook file not found")
+    loop = asyncio.get_running_loop()
+    sheets = await loop.run_in_executor(None, lambda: workbook_preview(path.read_bytes()))
+    return {"sheets": sheets}
+
+
 async def _render_pdf(db: AsyncSession, output: AAOutput, period: AAPeriod, company: AACompany, form: str,
                       clean: bool, *, values: dict[str, str] | None = None,
                       highlights: frozenset[str] | None = None) -> bytes:

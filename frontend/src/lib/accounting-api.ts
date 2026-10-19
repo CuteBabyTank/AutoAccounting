@@ -5,6 +5,7 @@ import type {
   BulkResolveResult,
   Certificate,
   CertificateEdits,
+  WorkbookSheet,
   ImportKind,
   ImportOptions,
   ImportPreview,
@@ -311,6 +312,9 @@ export const accountingApi = {
     api.get<PaymentLinks>(`/accounting/documents/${seg(docId)}/payments`).then((r) => r.data),
   outgoing2307s: (id: string, edits: CertificateEdits = {}) =>
     api.post<Blob>(`/accounting/outputs/${seg(id)}/2307s`, { edits }, { responseType: "blob" }).then((r) => r.data),
+  /** The version's workbook (changes highlighted) as sheets of cells. */
+  workbookPreview: (id: string) =>
+    api.get<{ sheets: WorkbookSheet[] }>(`/accounting/outputs/${seg(id)}/xlsx/preview`).then((r) => r.data.sheets),
   certificates2307: (id: string) =>
     api.get<Certificate[]>(`/accounting/outputs/${seg(id)}/2307s/certificates`).then((r) => r.data),
   preview2307: (id: string, certificate: string, values: Record<string, string>) =>

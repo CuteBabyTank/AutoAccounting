@@ -6,6 +6,7 @@ import { accountingApi } from "@/lib/accounting-api";
 import { useCanFile } from "@/lib/use-can-file";
 import { CHANGED_STYLE, apiErrorMessage, formatAmount, saveBlob } from "@/lib/accounting-format";
 import PdfPreview, { useFilePreview, type PreviewEdits } from "@/components/accounting/PdfPreview";
+import WorkbookPreview from "@/components/accounting/WorkbookPreview";
 import type { Certificate, Output, OutputForm, PdfField } from "@/types/accounting";
 
 const BTN = "inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-60";
@@ -36,6 +37,7 @@ export default function OutputViewer({ outputId, latest: isLatest = true, onNewV
   const [error, setError] = useState("");
   const [previewForm, setPreviewForm] = useState<OutputForm | null>(null);
   const [certificates, setCertificates] = useState<Certificate[] | null>(null);
+  const [workbookOpen, setWorkbookOpen] = useState(false);
   const file = useFilePreview();
 
   useEffect(() => {
@@ -56,21 +58,6 @@ export default function OutputViewer({ outputId, latest: isLatest = true, onNewV
       cancelled = true;
     };
   }, [outputId]);
-
-  async function download(kind: "xlsx" | "pdf", clean: boolean, form?: string) {
-    if (!output) return;
-    const id = `${kind}-${clean}-${form ?? ""}`;
-    setBusy(id);
-    setError("");
-    try {
-      const blob = await accountingApi.outputFile(output.id, kind, { clean, form });
-      saveBlob(blob, `${output.label} ${form ?? "workbook"} v${output.version}.${kind}`);
-    } catch (e) {
-      setError(apiErrorMessage(e, "Download failed"));
-    } finally {
-      setBusy(null);
-    }
-  }
 
   async function open2307s() {
     if (!output) return;
@@ -125,7 +112,7 @@ export default function OutputViewer({ outputId, latest: isLatest = true, onNewV
           <span className="rounded-full bg-[var(--badge-blue-bg)] px-2 py-0.5 text-xs font-medium text-[var(--badge-blue-text)]">Amended</span>
         )}
         <div className="ml-auto flex flex-wrap gap-2">
-          <button className={BTN} disabled={busy !== null} onClick={() => download("xlsx", false)} title="Changes since the last version are highlighted">
+          <button className={BTN} disabled={busy !== null} onClick={() => setWorkbookOpen(true)} title="Changes since the last version are highlighted">
             <DownloadSimple size={16} /> Workbook
           </button>
           {(output.ledgers.ARAging ?? 0) > 0 && (
@@ -248,6 +235,16 @@ export default function OutputViewer({ outputId, latest: isLatest = true, onNewV
         />
       )}
       {file.node}
+      {workbookOpen && (
+        <WorkbookPreview
+          title={`Workbook · ${output.label} v${output.version}`}
+          note={output.parent_version ? `Cells highlighted yellow changed since v${output.parent_version}.` : undefined}
+          load={() => accountingApi.workbookPreview(output.id)}
+          onDownload={async () =>
+            saveBlob(await accountingApi.outputFile(output.id, "xlsx"), `${output.label} workbook v${output.version}.xlsx`)}
+          onClose={() => setWorkbookOpen(false)}
+        />
+      )}
     </div>
   );
 }

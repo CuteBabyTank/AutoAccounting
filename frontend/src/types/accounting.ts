@@ -350,6 +350,21 @@ export interface Certificate {
   fields: PdfField[];
 }
 
+/** One cell of a workbook preview: displayed text and style. */
+export interface WorkbookCell {
+  v: string;
+  fill?: string;
+  bold?: boolean;
+  num?: boolean;
+  strike?: boolean;
+}
+
+export interface WorkbookSheet {
+  name: string;
+  rows: WorkbookCell[][];
+  truncated: boolean;
+}
+
 /** Edits per certificate id → field key → value. */
 export type CertificateEdits = Record<string, Record<string, string>>;
 

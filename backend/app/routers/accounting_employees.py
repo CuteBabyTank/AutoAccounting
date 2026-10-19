@@ -30,7 +30,9 @@ from app.services.accounting.compute.money import ZERO, c2
 from app.services.spreadsheet_safe import csv_safe as _safe  # imported sheet text is untrusted: never a formula
 from app.services.accounting.filing import credited_output_id
 from app.services.accounting.payroll_import import IMPORT_FIELDS, apply_mapping, parse_sheet, suggest_mapping
-from app.services.accounting.pdf_2316 import build_2316_zip
+from app.schemas.accounting import CertificateOut, CertificatePreviewIn, CertificatesIn, PdfFieldOut
+from app.services.accounting.certificate_edits import apply_2316, fields_2316
+from app.services.accounting.pdf_2316 import build_2316_zip, fill_2316
 
 router = APIRouter()
 MAX_SHEET_BYTES = 10 * 1024 * 1024
@@ -419,18 +421,79 @@ async def download_alphalist(company_id: uuid.UUID, year: int, user: User = Depe
                     headers={"Content-Disposition": f'attachment; filename="{_filename(company, "1604-C alphalist", year, "xlsx")}"'})
 
 
-@router.get("/companies/{company_id}/employees/{year}/2316.zip")
-async def download_2316s(company_id: uuid.UUID, year: int, user: User = Depends(get_current_user),
-                         db: AsyncSession = Depends(get_db)):
+async def _computed_2316(db: AsyncSession, user: User, company_id: uuid.UUID, year: int):
     company = await company_or_404(db, scope_for(user), company_id)
     _, _, computed, _ = await _build(db, company, year)
     if not computed:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No employees for that year")
     employer = {"tin": company.tin + company.branch_code, "name": company.registered_name,
                 "address": company.address, "zip": company.zip_code}
+    return company, computed, employer
+
+
+def _2316_label(c) -> str:
+    return f"{c.employee.last_name}, {c.employee.first_name}".strip(", ") or "(no name)"
+
+
+def _edited_2316(c, values: dict[str, str]):
+    try:
+        return apply_2316(c, values)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+
+
+async def _2316_zip(db: AsyncSession, user: User, company_id: uuid.UUID, year: int,
+                    edits: dict[str, dict[str, str]]) -> Response:
+    company, computed, employer = await _computed_2316(db, user, company_id, year)
+    ids = {c.employee.id for c in computed}
+    if any(key not in ids for key in edits):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Some edited employees are no longer in this year")
+    computed = [_edited_2316(c, edits[c.employee.id]) if c.employee.id in edits else c for c in computed]
     data = await asyncio.get_running_loop().run_in_executor(None, build_2316_zip, computed, employer, year)
     return Response(data, media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{_filename(company, "2316s", year, "zip")}"'})
+
+
+@router.get("/companies/{company_id}/employees/{year}/2316.zip")
+async def download_2316s(company_id: uuid.UUID, year: int, user: User = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)):
+    return await _2316_zip(db, user, company_id, year, {})
+
+
+@router.post("/companies/{company_id}/employees/{year}/2316.zip")
+async def download_edited_2316s(company_id: uuid.UUID, year: int, body: CertificatesIn,
+                                user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """The zip with the preview's edits (they only change these files, not the employee records)."""
+    return await _2316_zip(db, user, company_id, year, body.edits)
+
+
+@router.get("/companies/{company_id}/employees/{year}/2316/certificates", response_model=list[CertificateOut])
+async def list_2316s(company_id: uuid.UUID, year: int, user: User = Depends(get_current_user),
+                     db: AsyncSession = Depends(get_db)):
+    _, computed, _ = await _computed_2316(db, user, company_id, year)
+    return [CertificateOut(id=c.employee.id, label=_2316_label(c), fields=[PdfFieldOut(**f) for f in fields_2316(c)])
+            for c in computed]
+
+
+@router.post("/companies/{company_id}/employees/{year}/2316/preview")
+async def preview_2316(company_id: uuid.UUID, year: int, body: CertificatePreviewIn,
+                       user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    import fitz
+
+    _, computed, employer = await _computed_2316(db, user, company_id, year)
+    c = next((c for c in computed if c.employee.id == body.id), None)
+    if c is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
+    c = _edited_2316(c, body.values)
+
+    def render() -> bytes:
+        doc = fitz.open()
+        fill_2316(doc, c, employer)
+        return doc.tobytes(garbage=3, deflate=True)
+
+    data = await asyncio.get_running_loop().run_in_executor(None, render)
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="2316 preview.pdf"', "Cache-Control": "no-store"})
 
 
 @router.get("/alphalist-status", response_model=list[StatusRow])

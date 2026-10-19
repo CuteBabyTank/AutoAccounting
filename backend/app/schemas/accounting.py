@@ -484,6 +484,35 @@ class PdfsIn(BaseModel):
     clean: bool = False
 
 
+class FormEditIn(BaseModel):
+    """Hand edits to one form of a version: item key → new value (preview, or saved as a new version)."""
+    form: str = Field(max_length=20)
+    values: dict[str, str] = Field(default_factory=dict, max_length=400)
+
+
+class PdfFieldOut(BaseModel):
+    key: str
+    label: str
+    value: str
+    kind: Literal["amount", "text"]
+
+
+class CertificateOut(BaseModel):
+    id: str
+    label: str
+    fields: list[PdfFieldOut]
+
+
+class CertificatePreviewIn(BaseModel):
+    id: str = Field(max_length=64)
+    values: dict[str, str] = Field(default_factory=dict, max_length=200)
+
+
+class CertificatesIn(BaseModel):
+    """Edits per certificate id for the exported zip."""
+    edits: dict[str, dict[str, str]] = Field(default_factory=dict, max_length=2000)
+
+
 class PeriodOut(BaseModel):
     company: CompanyBrief
     year: int
@@ -508,6 +537,7 @@ class ItemOut(BaseModel):
     value: str
     changed: bool
     before: str | None
+    engine: str | None = None  # the figure from the books, when this one was edited by hand
 
 
 class FormOut(BaseModel):

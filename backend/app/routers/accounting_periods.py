@@ -1,6 +1,7 @@
 """AutoAccounting phase 2: quarter inputs, generating output versions, workbook and PDF downloads."""
 
 import asyncio
+import copy
 import re
 import uuid
 from datetime import date, datetime, timezone
@@ -22,12 +23,15 @@ from app.models.accounting import AAAsset, AAAtcDefault, AACompany, AADocument, 
 from app.models.user import User
 from app.routers.accounting_scope import company_or_404, require_filing_rights, scope_for
 from app.schemas.accounting import (
-    CompanyBrief, FiledFormOut, FiledIn, FormFiledIn, FormOut, ItemOut, OutputBrief, OutputOut, PdfsIn,
+    CertificateOut, CertificatePreviewIn, CertificatesIn, CompanyBrief, FiledFormOut, FiledIn, FormEditIn,
+    FormFiledIn, FormOut, ItemOut, OutputBrief, OutputOut, PdfFieldOut, PdfsIn,
     PeriodInputsModel, PeriodOut, PrepareFormOut, PrepareOut, manila_today,
 )
+from app.schemas.form_filler import FilledForm
 from app.services.accounting import audit
 from app.services.accounting.compute.annual import annual_form
-from app.services.accounting.compute.due_dates import due_dates, quarter_end, quarter_start
+from app.services.accounting.certificate_edits import apply_2307, fields_2307
+from app.services.accounting.compute.due_dates import annual_due_date, due_dates, quarter_end, quarter_start
 from app.services.accounting.compute.engine import AMENDED_WARNING, build_quarter, expected_forms
 from app.services.accounting.compute.ewt import effective_atc
 from app.services.accounting.compute.inputs import (
@@ -43,7 +47,8 @@ from app.services.accounting.filing import (
     amended_forms, amends_payment, backfill, derive, file_all, form_amended, set_form, unfile_all, unset_form,
 )
 from app.services.accounting.filing_guide import guide, scope_forms, scope_label, scope_note, source_line
-from app.services.accounting.outgoing_2307 import build_zip
+from app.services.accounting.form_edits import apply_edits, dropped_edits_warning, edits_warning, merge_edited
+from app.services.accounting.outgoing_2307 import payee_forms, zip_forms
 from app.services.accounting.pdf_2550q import Header2550Q, render_2550q
 from app.services.accounting.pdf_bundle import validate_requested, zip_pdfs
 from app.services.accounting.pdf_returns import header_from_snapshot, render_return
@@ -51,6 +56,7 @@ from app.services.accounting.periods import quarter_label
 from app.services.accounting.render_xlsx import write_workbook
 from app.services.accounting.required_fields import missing_fields
 from app.services.accounting.storage import is_stored_path_safe
+from app.services.form_filler_service import generate_merged_pdf
 
 router = APIRouter()
 
@@ -272,14 +278,16 @@ async def _period_out(db: AsyncSession, company: AACompany, year: int, quarter: 
 
 def output_out(output: AAOutput, period: AAPeriod, company: AACompany) -> OutputOut:
     changes = (output.diff or {}).get("forms", {})
+    edited_all = output.snapshot.get("edited") or {}
     forms: list[FormOut] = []
     for form in FORM_ORDER:
         values = output.snapshot["forms"].get(form)
         if values is None:
             continue
         changed = changes.get(form, {})
+        edited = edited_all.get(form, {})
         items = [ItemOut(key=key, label=label, value=values[key], changed=key in changed,
-                         before=changed[key][0] if key in changed else None)
+                         before=changed[key][0] if key in changed else None, engine=edited.get(key))
                  for key, label in form_items(form, values)]
         forms.append(FormOut(form=form, title=FORM_TITLES[form], items=items, pdf=form in PDF_FORMS,
                              payable_item=PAYABLE_ITEM.get(form)))
@@ -444,9 +452,13 @@ def _audit_period(period: AAPeriod) -> str:
 
 async def store_output(db: AsyncSession, ent: uuid.UUID, user: User, company: AACompany, period: AAPeriod,
                        snap: dict, warnings: list[str], review_open: int, due: dict[str, str], *,
-                       folder: str, amended: bool) -> AAOutput:
+                       folder: str, amended: bool, audit_action: str = "generate",
+                       audit_extra: dict | None = None) -> AAOutput:
     """Save a new version of a period: diff against the previous one, write both workbooks, insert the row."""
     previous = await latest_output(db, period.id)
+    if previous is not None and previous.snapshot.get("edited") and not snap.get("edited"):
+        note = dropped_edits_warning(previous.version, previous.snapshot["edited"])
+        warnings = [*warnings, note] if note else warnings
     diff = diff_snapshots(previous.snapshot, snap) if previous else None
     version = previous.version + 1 if previous else 1
     parent = previous.version if previous else None
@@ -481,7 +493,8 @@ async def store_output(db: AsyncSession, ent: uuid.UUID, user: User, company: AA
     db.add(output)
     audit.record(db, label=f"{_audit_period(period)} v{version}",
                  ent=ent, company_id=company.id, user=user, entity="output", entity_id=output.id,
-                 action="generate", after={"period": _audit_period(period), "version": version, "amended": amended})
+                 action=audit_action, after={"period": _audit_period(period), "version": version, "amended": amended,
+                                             **(audit_extra or {})})
     try:
         await db.commit()
     except IntegrityError:
@@ -530,15 +543,18 @@ async def download_workbook(output_id: uuid.UUID, clean: bool = Query(default=Fa
 
 
 async def _render_pdf(db: AsyncSession, output: AAOutput, period: AAPeriod, company: AACompany, form: str,
-                      clean: bool) -> bytes:
-    values = output.snapshot["forms"][form]
+                      clean: bool, *, values: dict[str, str] | None = None,
+                      highlights: frozenset[str] | None = None) -> bytes:
+    """The form's PDF. ``values`` (unsaved hand edits) and ``highlights`` override the version's own."""
+    values = output.snapshot["forms"][form] if values is None else values
     c = output.snapshot["company"]
-    highlights = frozenset() if clean else frozenset((output.diff or {}).get("forms", {}).get(form, {}))
+    if highlights is None:
+        highlights = frozenset() if clean else frozenset((output.diff or {}).get("forms", {}).get(form, {}))
     expected = ([annual_form(company_facts(company))] if period.quarter == 0
                 else await _expected(db, company, period.year, period.quarter))
     filed = await _filed_forms(db, period, expected)
     amended = form_amended(filed, form, output.version, values, (await filed_values(db, filed)).get(form))
-    missing = missing_fields(c, [form], output.snapshot["forms"])
+    missing = missing_fields(c, [form], {**output.snapshot["forms"], form: values})
     if form == "2550Q":
         fye = c["fiscal_year_end_month"]
         header = Header2550Q(
@@ -661,17 +677,150 @@ async def download_aging(output_id: uuid.UUID, kind: Literal["ar", "ap"] = Query
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
-@router.get("/outputs/{output_id}/2307s")
-async def download_2307s(output_id: uuid.UUID, user: User = Depends(get_current_user),
-                         db: AsyncSession = Depends(get_db)):
-    output, period, company = await _output_context(db, user, output_id)
+def _certificates_2307(output: AAOutput, period: AAPeriod) -> list[tuple[str, FilledForm]]:
     rows = output.snapshot["ledgers"].get("QAP")
     if not rows:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This version has no payments with expanded withholding")
     c = output.snapshot["company"]
     fye = int(c.get("fiscal_year_end_month") or 12)
-    start, end = quarter_start(period.year, period.quarter, fye), quarter_end(period.year, period.quarter, fye)
-    data = await asyncio.get_running_loop().run_in_executor(None, lambda: build_zip(rows, c, start, end))
+    return payee_forms(rows, c, quarter_start(period.year, period.quarter, fye),
+                       quarter_end(period.year, period.quarter, fye))
+
+
+def _cert_or_400(apply, cert, values: dict[str, str]):
+    try:
+        return apply(cert, values)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+
+
+def _inline_pdf(data: bytes, name: str) -> Response:
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{name}"', "Cache-Control": "no-store"})
+
+
+@router.get("/outputs/{output_id}/2307s/certificates", response_model=list[CertificateOut])
+async def list_2307s(output_id: uuid.UUID, user: User = Depends(get_current_user),
+                     db: AsyncSession = Depends(get_db)):
+    """The version's outgoing 2307s with their editable fields (the preview's list)."""
+    output, period, _ = await _output_context(db, user, output_id)
+    return [CertificateOut(id=str(i), label=name, fields=[PdfFieldOut(**f) for f in fields_2307(form)])
+            for i, (name, form) in enumerate(_certificates_2307(output, period))]
+
+
+@router.post("/outputs/{output_id}/2307s/preview")
+async def preview_2307(output_id: uuid.UUID, body: CertificatePreviewIn, user: User = Depends(get_current_user),
+                       db: AsyncSession = Depends(get_db)):
+    output, period, _ = await _output_context(db, user, output_id)
+    certs = _certificates_2307(output, period)
+    if not body.id.isdigit() or int(body.id) >= len(certs):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Certificate not found")
+    name, form = certs[int(body.id)]
+    form = _cert_or_400(apply_2307, form, body.values)
+    data = await asyncio.get_running_loop().run_in_executor(None, lambda: generate_merged_pdf([form]))
+    return _inline_pdf(data, "2307 preview.pdf")
+
+
+async def _2307_zip(db: AsyncSession, user: User, output_id: uuid.UUID, edits: dict[str, dict[str, str]]):
+    output, period, company = await _output_context(db, user, output_id)
+    certs = _certificates_2307(output, period)
+    unknown = [key for key in edits if not key.isdigit() or int(key) >= len(certs)]
+    if unknown:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Some edited certificates are no longer in this version")
+    certs = [(name, _cert_or_400(apply_2307, form, edits[str(i)]) if str(i) in edits else form)
+             for i, (name, form) in enumerate(certs)]
+    data = await asyncio.get_running_loop().run_in_executor(None, lambda: zip_forms(certs))
     name = _file_name(company, period, output, "2307s", False, "zip")
     return Response(content=data, media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.get("/outputs/{output_id}/2307s")
+async def download_2307s(output_id: uuid.UUID, user: User = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)):
+    return await _2307_zip(db, user, output_id, {})
+
+
+@router.post("/outputs/{output_id}/2307s")
+async def download_edited_2307s(output_id: uuid.UUID, body: CertificatesIn, user: User = Depends(get_current_user),
+                                db: AsyncSession = Depends(get_db)):
+    """The zip with the preview's edits (they only change these files)."""
+    return await _2307_zip(db, user, output_id, body.edits)
+
+
+# --- Hand edits to a return -------------------------------------------------------------------------
+
+def _form_values(output: AAOutput, form: str) -> dict[str, str]:
+    if form not in PDF_FORMS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "There is no PDF for this form")
+    if form not in output.snapshot["forms"]:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"This version has no {form}")
+    return output.snapshot["forms"][form]
+
+
+def _edits_or_400(values: dict[str, str], edits: dict[str, str]) -> dict[str, str]:
+    try:
+        return apply_edits(values, edits)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+
+
+def _is_edit_warning(text: str) -> bool:
+    return text.startswith("Edited by hand in v") or " had hand edits (" in text
+
+
+@router.post("/outputs/{output_id}/preview")
+async def preview_form(output_id: uuid.UUID, body: FormEditIn, user: User = Depends(get_current_user),
+                       db: AsyncSession = Depends(get_db)):
+    """The form's PDF with unsaved hand edits; items that differ from the books are highlighted."""
+    output, period, company = await _output_context(db, user, output_id)
+    values = _form_values(output, body.form)
+    changed = _edits_or_400(values, body.values)
+    edited = merge_edited((output.snapshot.get("edited") or {}).get(body.form, {}), values, changed)
+    data = await _render_pdf(db, output, period, company, body.form, True, values={**values, **changed},
+                             highlights=frozenset(edited))
+    return _inline_pdf(data, _file_name(company, period, output, body.form, False, "pdf"))
+
+
+@router.post("/outputs/{output_id}/edits", response_model=OutputOut, status_code=status.HTTP_201_CREATED)
+async def save_form_edits(output_id: uuid.UUID, body: FormEditIn, user: User = Depends(get_current_user),
+                          db: AsyncSession = Depends(get_db)):
+    """Save hand edits to a form as the period's next version (so filing, amendments and the books use them)."""
+    ent = scope_for(user)
+    output, period, company = await _output_context(db, user, output_id)
+    values = _form_values(output, body.form)
+    latest = await latest_output(db, period.id)
+    if latest is not None and latest.id != output.id:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"v{latest.version} is newer. Edit that version instead.")
+    changed = _edits_or_400(values, body.values)
+    if not changed:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nothing changed")
+    snap = copy.deepcopy(output.snapshot)
+    snap["forms"][body.form] = {**values, **changed}
+    edited = dict(snap.get("edited") or {})
+    edited[body.form] = merge_edited(edited.get(body.form, {}), values, changed)
+    snap["edited"] = {form: keys for form, keys in edited.items() if keys}
+    warnings = [w for w in output.warnings or [] if not _is_edit_warning(w)]
+    note = edits_warning(output.version + 1, snap["edited"])
+    if note:
+        warnings.append(note)
+    fye = company.fiscal_year_end_month
+    if period.quarter == 0:
+        expected = [annual_form(company_facts(company))]
+        due = {form: annual_due_date(form, period.year, fye).isoformat() for form in expected}
+        folder = f"{period.year}A"
+        touch_books(company)  # Q4's income tax in the books comes from the annual return
+    else:
+        expected = await _expected(db, company, period.year, period.quarter)
+        due = {form: day.isoformat() for form, day in
+               due_dates(list(snap["forms"]), period.year, period.quarter, fye).items()}
+        folder = f"{period.year}Q{period.quarter}"
+    filed = await _filed_forms(db, period, expected)
+    amended = amended_forms(filed, snap["forms"], await filed_values(db, filed))
+    new = await store_output(
+        db, ent, user, company, period, snap, warnings, output.review_open, due, folder=folder,
+        amended=bool(amended), audit_action="edit",
+        audit_extra={"form": body.form, "edits": {key: {"from": values[key], "to": value}
+                                                  for key, value in changed.items()}},
+    )
+    return output_out(new, period, company)

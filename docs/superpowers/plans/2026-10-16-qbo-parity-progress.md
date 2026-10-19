@@ -394,3 +394,5 @@ Skipped: QBO / Xero export (COA and contacts are trivial, but QBO's import layou
 transaction-list XLSX already export the entries), report email scheduling (no mail infra), prepaid schedules (not in
 this row). Not done: the bank matcher can still offer a written-off invoice as a candidate; no notification for due
 recurring entries; no tour slides (Hints on each new section).
+
+10 review: fixed write-off JE lines carrying the formatted contact TIN (failed JournalLineIn, 500 on the write-off and the Books journal list), backdated write-offs of invoices paid / written off later (double A/R credit; refused), concurrent write-offs (company row lock), undo of a write-off limited to owners / managers, reclassify moving a write-off's A/R lines (blocked), the bank matcher offering written-off invoices (written-off amounts count as paid), and a recurring template's anchor day resetting to 28/30 when edited on a clamped next date (anchor_day); 940 tests pass.

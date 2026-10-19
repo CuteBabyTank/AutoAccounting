@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, type CSSProperties } from "react";
+import { useState, useMemo, useEffect, useRef, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -60,7 +60,6 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
 ];
 
 const fade = (i: number) => ({ "--i": i }) as CSSProperties;
-const OPEN_KEY = "aa_sidebar_open";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -72,28 +71,32 @@ export default function Sidebar() {
   const [showSignOut, setShowSignOut] = useState(false);
   // Mobile off-canvas drawer. Desktop (md+) ignores this and renders the sidebar statically.
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // Desktop rail: opened and closed by hand with the toggle (top-right when open, the logo when collapsed), and
-  // remembered per browser. Keyboard focus inside it also opens it so the labels are readable while tabbing.
-  const [railOpen, setRailOpen] = useState(false);
+  // Desktop rail: expands on hover or when keyboard focus moves inside it. Opening
+  // pushes the page over, so hover needs a short rest first; brushing past the
+  // rail on the way to something else shouldn't re-flow the whole page.
+  const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  useEffect(() => {
-    try {
-      setRailOpen(localStorage.getItem(OPEN_KEY) === "1");
-    } catch {
-      // storage unavailable (private mode): starts collapsed
-    }
-  }, []);
-  const toggleRail = () => {
-    const next = !(railOpen || focused);
-    setRailOpen(next);
-    if (!next) setFocused(false);
-    try {
-      localStorage.setItem(OPEN_KEY, next ? "1" : "0");
-    } catch {
-      // not remembered; still works for this visit
-    }
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queueOpen = (next: boolean) => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => setHovered(next), next ? 140 : 220);
   };
-  const expanded = railOpen || focused || editingNickname;
+  useEffect(() => () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+  }, []);
+  // The close button in the open rail's top-right, for when it stays open (focus left inside it, a missed
+  // mouseleave). It drops every reason to be open, and ignores hover until the pointer leaves so the rail
+  // doesn't spring straight back.
+  const [hoverMuted, setHoverMuted] = useState(false);
+  const closeRail = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    setHovered(false);
+    setFocused(false);
+    setEditingNickname(false);
+    setHoverMuted(true);
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  };
+  const expanded = !hoverMuted && (hovered || focused || editingNickname);
   const firmMember = !!user && FIRM.includes(user.role);
 
   // Close the drawer whenever the route changes (tapping a nav item navigates).
@@ -168,12 +171,17 @@ export default function Sidebar() {
       />
     )}
 
-    {/* Desktop: a 72px icon rail that is itself the layout column; opened with the
-        toggle (or keyboard focus) it widens to 248px and pushes the page over with it.
+    {/* Desktop: a 72px icon rail that is itself the layout column; on hover (or
+        keyboard focus) it widens to 248px and pushes the page over with it.
         Mobile: the panel is an off-canvas drawer at full width. */}
     <div
       className="aa-rail lp-skin w-0 shrink-0 h-screen"
       data-open={expanded}
+      onMouseEnter={() => queueOpen(true)}
+      onMouseLeave={() => {
+        queueOpen(false);
+        setHoverMuted(false);
+      }}
       onFocus={(e) => {
         if (e.target.matches(":focus-visible")) setFocused(true);
       }}
@@ -188,29 +196,14 @@ export default function Sidebar() {
     >
       {/* Logo */}
       <div className="relative px-[19px] pt-5 pb-4 flex items-center justify-between gap-2">
-        {/* Plain <a>: the homepage is static HTML. Collapsed on desktop, the logo is the "open sidebar" button
-            instead (it shows the sidebar icon on hover). */}
-        <a
-          href={HOMEPAGE}
-          aria-label="AutoAccounting homepage"
-          className={`${expanded ? "" : "md:hidden"} flex items-center gap-2.5 min-w-0 hover:opacity-80 transition-opacity`}
-        >
+        <a href={HOMEPAGE} aria-label="AutoAccounting homepage" className="flex items-center gap-2.5 min-w-0 hover:opacity-80 transition-opacity">
           <LogoMark width={34} height={24} className="shrink-0" />
           <span style={fade(0)} className="aa-fade lp-logo-text text-[17px] tracking-tight whitespace-nowrap">AutoAccounting</span>
         </a>
+        {/* Close the rail (desktop; shows once it is open) */}
         <button
           type="button"
-          onClick={toggleRail}
-          aria-label="Open sidebar"
-          title="Open sidebar"
-          className={`${expanded ? "hidden" : "hidden md:grid"} group place-items-center w-[34px] h-8 -my-1 rounded-lg hover:bg-[var(--bg-sidebar-hover)] transition-colors`}
-        >
-          <LogoMark width={34} height={24} className="col-start-1 row-start-1 group-hover:opacity-0 group-focus-visible:opacity-0 transition-opacity" />
-          <SidebarSimple size={18} className="col-start-1 row-start-1 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 text-[var(--text-sidebar)] transition-opacity" />
-        </button>
-        <button
-          type="button"
-          onClick={toggleRail}
+          onClick={closeRail}
           aria-label="Close sidebar"
           title="Close sidebar"
           style={fade(0)}

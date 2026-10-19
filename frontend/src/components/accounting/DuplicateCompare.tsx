@@ -6,6 +6,7 @@ import { Trash, X } from "@phosphor-icons/react";
 import { accountingApi } from "@/lib/accounting-api";
 import { CATEGORY_LABELS, apiErrorMessage, counterpartyName, formatPeso, formatTin } from "@/lib/accounting-format";
 import type { AADocument, DuplicatePair } from "@/types/accounting";
+import PageViewer from "@/components/accounting/PageViewer";
 
 const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-50";
 
@@ -30,7 +31,7 @@ function useFirstPages(doc: AADocument): string[] {
     let cancelled = false;
     const urls: string[] = [];
     setImages([]);
-    const last = Math.min(doc.page_end, doc.page_start + 1);
+    const last = Math.min(doc.page_end, doc.page_start + 9);
     (async () => {
       for (let p = doc.page_start; p <= last; p++) {
         try {
@@ -99,12 +100,13 @@ function Copy({ doc, other, file, label, selected, onSelect }: {
       <p className="mb-2 truncate text-xs text-[var(--text-secondary)]" title={file}>
         {file || "Uploaded file"} · page{doc.page_end > doc.page_start ? `s ${doc.page_start}–${doc.page_end}` : ` ${doc.page_start}`}
       </p>
-      <div className={`mb-3 max-h-[42vh] space-y-2 overflow-y-auto rounded-lg bg-[var(--bg-primary)] ${selected ? "opacity-70" : ""}`}>
-        {images.map((src, i) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={src} src={src} alt={`${label}, page ${doc.page_start + i}`} className="w-full rounded-lg" />
-        ))}
-        {images.length === 0 && <div className="h-56 animate-pulse rounded-lg" />}
+      {/* Zooming and panning the page must not pick this copy for deletion. */}
+      <div
+        className={`mb-3 ${selected ? "opacity-70" : ""}`}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        <PageViewer images={images} firstPage={doc.page_start} className="h-[42vh]" />
       </div>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
         {ROWS.map(([name, value]) => {

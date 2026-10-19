@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CaretLeft, CaretRight, CornersIn, MagnifyingGlassMinus, MagnifyingGlassPlus } from "@phosphor-icons/react";
 
 const MIN = 1; // 1 = the whole page fits
-const MAX = 4;
+const MAX = 5;
 const STEP = 0.25;
 const CLICK_ZOOM = 2.5;
 const ICON_BTN = "rounded-md p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40";
@@ -19,7 +19,7 @@ interface Props {
 }
 
 /** A document's pages, one at a time, fitted to the box. Click to zoom in on a spot (click again to fit), or use the
- *  slider / buttons / Ctrl-scroll; drag or scroll to move around when zoomed. */
+ *  slider / buttons / Ctrl-scroll (up to 500%); drag or scroll to move around when zoomed. */
 export default function PageViewer({ images, firstPage, className = "" }: Props) {
   const [page, setPage] = useState(0);
   const [zoom, setZoom] = useState(MIN);

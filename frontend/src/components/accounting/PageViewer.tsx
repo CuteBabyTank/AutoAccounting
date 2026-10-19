@@ -16,11 +16,13 @@ interface Props {
   /** The document's first page number in the file (for the page label). */
   firstPage: number;
   className?: string;
+  /** The shown page's width ÷ height once it loads, so a parent can size the box to hug the page. */
+  onAspect?: (ratio: number) => void;
 }
 
 /** A document's pages, one at a time, fitted to the box. Click to zoom in on a spot (click again to fit), or use the
  *  slider / buttons / trackpad pinch or Ctrl-scroll, always around the pointer (up to 500%); drag or scroll to move around when zoomed. */
-export default function PageViewer({ images, firstPage, className = "" }: Props) {
+export default function PageViewer({ images, firstPage, className = "", onAspect }: Props) {
   const [page, setPage] = useState(0);
   const [zoom, setZoomState] = useState(MIN);
   const box = useRef<HTMLDivElement>(null);
@@ -140,6 +142,10 @@ export default function PageViewer({ images, firstPage, className = "" }: Props)
           <div style={{ width: `${zoom * 100}%`, height: `${zoom * 100}%` }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={src} alt={`Page ${firstPage + page}`} draggable={false}
+              onLoad={(e) => {
+                const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+                if (w && h) onAspect?.(w / h);
+              }}
               className="h-full w-full select-none object-contain" />
           </div>
         ) : (

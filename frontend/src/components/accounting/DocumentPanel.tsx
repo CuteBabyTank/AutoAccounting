@@ -274,18 +274,25 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
     accountingApi.getDocument(doc.id).then(onChanged).catch(() => undefined);
   }
 
+  const [aspect, setAspect] = useState(0.77);   // a Letter page until the first page loads
+
   const pages = (size: "sm" | "lg") => (
-    <PageViewer images={images} firstPage={firstPage} className={size === "lg" ? "h-full" : "h-[60vh]"} />
+    <PageViewer images={images} firstPage={firstPage} className={size === "lg" ? "h-full" : "h-[60vh]"}
+      onAspect={size === "lg" ? setAspect : undefined} />
   );
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={onClose}>
       <aside
         onClick={(e) => e.stopPropagation()}
-        className="flex h-full w-full max-w-xl border-l border-[var(--border)] bg-[var(--bg-secondary)] lg:max-w-[min(1440px,96vw)]"
+        className="flex h-full w-full max-w-xl border-l border-[var(--border)] bg-[var(--bg-secondary)] lg:w-auto lg:max-w-[96vw]"
       >
-        {/* Wide screens: the document on the left, so every field can be checked against it side by side. */}
-        <div className="hidden min-w-0 flex-1 border-r border-[var(--border)] bg-[var(--bg-primary)] p-5 lg:block">
+        {/* Wide screens: the document on the left, so every field can be checked against it side by side. The column
+            is as wide as the page is at full height (5rem = padding + zoom bar), so the page fills it, never floats. */}
+        <div
+          className="hidden min-w-[22rem] shrink border-r border-[var(--border)] bg-[var(--bg-primary)] p-5 lg:block"
+          style={{ width: `min(calc((100vh - 5rem) * ${aspect} + 2.5rem), calc(96vw - 36rem))` }}
+        >
           {pages("lg")}
         </div>
         <div className="w-full shrink-0 overflow-y-auto p-5 lg:w-[36rem]">

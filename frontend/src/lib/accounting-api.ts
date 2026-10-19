@@ -162,7 +162,8 @@ export const accountingApi = {
   deleteDocument: (id: string) => api.delete(`/accounting/documents/${seg(id)}`).then(() => undefined),
   pageImage: (fileId: string, page: number) =>
     api
-      .get<Blob>(`/accounting/files/${seg(fileId)}/pages/${seg(page)}`, { responseType: "blob" })
+      // v: bumped when the server's page rendering changes (2 = blank margins trimmed), so cached pages refresh
+      .get<Blob>(`/accounting/files/${seg(fileId)}/pages/${seg(page)}`, { responseType: "blob", params: { v: 2 } })
       .then((r) => r.data),
   period: (companyId: string, year: number, quarter: number) =>
     api.get<Period>(`/accounting/periods/${seg(companyId)}/${seg(year)}/${seg(quarter)}`).then((r) => r.data),

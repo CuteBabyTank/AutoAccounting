@@ -88,6 +88,8 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   `file_type` are the kept copy's (a PNG may become a JPG). Signed / encrypted PDFs are kept byte-for-byte. The PDF
   rewrite runs in a memory-capped subprocess. Files stored before 2026-10-19: `python -m
   app.services.accounting.compress_backfill [--dry-run]` (per firm under RLS, re-runnable).
+  The page viewer's images (`GET /files/{id}/pages/{n}`) have blank margins trimmed (`page_trim.py`; PDF pages are
+  re-rendered from the clip, sharper); bump `v` in `accountingApi.pageImage` when that rendering changes (browser cache).
 - **Storage:** documents go to `ACCOUNTING_DIR` (falls back to `backend/uploads/` in dev, gitignored). Tax records must be kept ≥5 years, so prod needs a long-retention volume. In production the upload endpoint returns 503 until `ACCOUNTING_DIR` is set.
 - **Schema changes:** add aa_* columns to the model *and* `services/accounting/schema.py` (for existing DBs). Destructive changes go in `alembic/` (empty so far; `start.sh` runs `alembic upgrade head`).
 - **Transaction pooler (port 6543):** statement caches are off. No session state across transactions (`SET LOCAL`/`set_config(..., true)` only), no advisory locks, temp tables or LISTEN/NOTIFY.

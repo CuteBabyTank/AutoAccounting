@@ -1172,9 +1172,37 @@ export interface ImportPreview {
 
 export interface ImportResult {
   kind: ImportKind;
+  batch_id: string | null;
   created: number;
   updated: number;
   skipped: number;
+  warnings: string[];
+}
+
+export type ImportBatchStatus = "active" | "undone" | "replaced" | "emptied";
+
+/** A confirmed import (Import page → Recent imports); undoing it removes what it wrote. */
+export interface ImportBatch {
+  id: string;
+  kind: ImportKind;
+  filename: string;
+  row_count: number;
+  created_by: string;
+  created_at: string;
+  undone_at: string | null;
+  undone_by: string;
+  status: ImportBatchStatus;
+}
+
+export interface ImportBatches {
+  batches: ImportBatch[];
+  can_undo: boolean;
+}
+
+export interface ImportUndo {
+  batch: ImportBatch;
+  removed: number;
+  restored: boolean;
   warnings: string[];
 }
 

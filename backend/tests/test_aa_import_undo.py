@@ -140,3 +140,6 @@ def test_batch_status():
     assert batch_status("opening-tb", "b1", False, "b2") == "replaced"
     assert batch_status("opening-tb", "b1", False, None) == "replaced"   # deleted or typed over by a person
     assert batch_status("opening-tb", "b1", True, "b2") == "undone"
+    assert batch_status("journal-entries", "b1", False, None, live=0) == "emptied"
+    assert batch_status("open-items", "b1", False, None, live=3) == "active"
+    assert batch_status("open-items", "b1", True, None, live=0) == "undone"

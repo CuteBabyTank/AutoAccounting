@@ -21,7 +21,7 @@ from fastapi.responses import Response
 from openpyxl import Workbook
 from openpyxl.styles import Font
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
@@ -357,11 +357,12 @@ async def _emails(db: AsyncSession, ids: set) -> dict:
     return dict((await db.execute(select(User.id, User.email).where(User.id.in_(ids)))).all())
 
 
-def _batch_out(batch: AAImportBatch, emails: dict, opening_tag: str | None) -> ImportBatchOut:
+def _batch_out(batch: AAImportBatch, emails: dict, opening_tag: str | None, live: int | None = None) -> ImportBatchOut:
     return ImportBatchOut(id=batch.id, kind=batch.kind, filename=batch.filename, row_count=batch.row_count,
                           created_by=emails.get(batch.created_by, ""), created_at=batch.created_at,
                           undone_at=batch.undone_at, undone_by=emails.get(batch.undone_by, ""),
-                          status=batch_status(batch.kind, str(batch.id), batch.undone_at is not None, opening_tag))
+                          status=batch_status(batch.kind, str(batch.id), batch.undone_at is not None, opening_tag,
+                                              live))
 
 
 async def _opening_tag(db: AsyncSession, company: AACompany) -> str | None:
@@ -379,7 +380,15 @@ async def list_import_batches(company_id: uuid.UUID, user: User = Depends(get_cu
         .order_by(AAImportBatch.created_at.desc()).limit(BATCH_LIST_LIMIT))).scalars().all()
     emails = await _emails(db, {r.created_by for r in rows} | {r.undone_by for r in rows})
     tag = await _opening_tag(db, company)
-    return ImportBatchesOut(batches=[_batch_out(r, emails, tag) for r in rows], can_undo=user.role in MANAGER_ROLES)
+    live: dict = {}
+    ids = [r.id for r in rows]
+    for model in (AAJournalEntry, AAOpeningItem):   # rows each batch still has (a person may have deleted them)
+        if ids:
+            live.update(dict((await db.execute(select(model.import_batch_id, func.count()).where(
+                model.enterprise_id == ent, model.company_id == company.id, model.import_batch_id.in_(ids),
+                model.deleted_at.is_(None)).group_by(model.import_batch_id))).all()))
+    return ImportBatchesOut(batches=[_batch_out(r, emails, tag, live.get(r.id, 0)) for r in rows],
+                            can_undo=user.role in MANAGER_ROLES)
 
 
 async def _batch_or_404(db: AsyncSession, ent: uuid.UUID, batch_id: uuid.UUID, lock: bool = False) -> AAImportBatch:

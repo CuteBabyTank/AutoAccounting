@@ -6,7 +6,9 @@ import type {
   ImportKind,
   ImportOptions,
   ImportPreview,
+  ImportBatches,
   ImportResult,
+  ImportUndo,
   OpeningItems,
   OpeningItem,
   CoaTemplate,
@@ -376,6 +378,10 @@ export const accountingApi = {
     fd.append("options", JSON.stringify(options));
     return api.post<ImportResult>(`/accounting/companies/${seg(companyId)}/imports/${seg(kind)}`, fd).then((r) => r.data);
   },
+  importBatches: (companyId: string) =>
+    api.get<ImportBatches>(`/accounting/companies/${seg(companyId)}/imports/batches`).then((r) => r.data),
+  undoImport: (batchId: string) =>
+    api.post<ImportUndo>(`/accounting/import-batches/${seg(batchId)}/undo`).then((r) => r.data),
   importTemplate: (kind: ImportKind, format: "csv" | "xlsx") =>
     api.get<Blob>(`/accounting/imports/templates/${seg(kind)}`, { params: { format }, responseType: "blob" }).then((r) => r.data),
   openingItems: (companyId: string) =>

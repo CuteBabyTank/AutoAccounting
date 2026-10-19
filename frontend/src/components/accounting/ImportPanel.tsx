@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Hint from "@/components/guide/Hint";
+import ImportHistory from "@/components/accounting/ImportHistory";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
 import { BTN, BTN_PRIMARY, Chip, INPUT } from "@/components/work/ui";
@@ -50,6 +51,7 @@ export default function ImportPanel({ companyId, companyName, onChanged }: Props
   const [pay, setPay] = useState<Record<string, { on: string; via: string; account: string }>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [imported, setImported] = useState(0);
 
   useEffect(() => {
     accountingApi.accounts(companyId).then(setAccounts).catch((e) => setError(apiErrorMessage(e, "Couldn't load the chart")));
@@ -87,6 +89,7 @@ export default function ImportPanel({ companyId, companyName, onChanged }: Props
       setPreview(null);
       setFile(null);
       setOpts({});
+      setImported((n) => n + 1);
       onChanged();
       if (kind === "open-items") loadItems();
     } catch (e) {
@@ -141,7 +144,9 @@ export default function ImportPanel({ companyId, companyName, onChanged }: Props
           Bring a client&apos;s starting position and bulk journals in from Excel or CSV. Upload, check how the columns and accounts were read
           (code first, then the account name, then the closest name, which you confirm; fix any row), then confirm. Negative amounts are fine (a negative debit is
           a credit), and the date format is detected from the values: you&apos;re asked only when it could be read two ways. Nothing posts until it
-          balances. Every import is in the audit log.
+          balances. Every import is in the audit log and listed under Recent imports, where an owner or manager can undo a whole import in
+          one step (the opening balances go back to what they were). An undo is refused while the import sits in a closed month, a filed quarter
+          or a bank reconciliation, or after later work used it (a confirmed bank match, a payment, a write-off, an edit).
         </Hint>
       </h2>
 
@@ -456,6 +461,16 @@ export default function ImportPanel({ companyId, companyName, onChanged }: Props
           </div>
         </section>
       )}
+
+      <ImportHistory
+        companyId={companyId}
+        version={imported}
+        onUndone={(undone) => {
+          setResult(null);
+          onChanged();
+          if (undone === "open-items" && kind === "open-items") loadItems();
+        }}
+      />
     </div>
   );
 }

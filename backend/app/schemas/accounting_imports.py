@@ -162,7 +162,7 @@ class ImportBatchOut(BaseModel):
     created_at: datetime
     undone_at: datetime | None
     undone_by: str
-    status: Literal["active", "undone", "replaced"]
+    status: Literal["active", "undone", "replaced", "emptied"]
 
 
 class ImportBatchesOut(BaseModel):

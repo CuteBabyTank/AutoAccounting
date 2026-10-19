@@ -27,6 +27,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   opening_item: "Opening open item",
   recurring_entry: "Recurring entry",
   checklist_template: "Checklist template",
+  import_batch: "Import",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -58,6 +59,7 @@ const ACTION_LABELS: Record<string, string> = {
   form_unfiled: "Form marked not filed",
   generate: "Version generated",
   import: "Imported from a sheet",
+  undo_import: "Import undone",
   supplier: "Supplier ATC set",
   use_suggestions: "Suggested ATCs adopted",
   account: "Default ATC set",

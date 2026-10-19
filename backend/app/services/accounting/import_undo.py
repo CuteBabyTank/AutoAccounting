@@ -73,13 +73,14 @@ def opening_plan(batch_id: str, restore: dict, written: dict[str, str], current)
     return OpeningPlan(action, prior)
 
 
-def batch_status(kind: str, batch_id: str, undone: bool, opening_tag: str | None) -> str:
-    """``undone``, ``replaced`` (an opening TB import a later import or edit took over) or ``active``."""
+def batch_status(kind: str, batch_id: str, undone: bool, opening_tag: str | None, live: int | None = None) -> str:
+    """``undone``, ``replaced`` (an opening TB import a later import or edit took over), ``emptied`` (every row it
+    wrote was deleted by hand since) or ``active``."""
     if undone:
         return "undone"
-    if kind == "opening-tb" and (opening_tag or "") != str(batch_id):
-        return "replaced"
-    return "active"
+    if kind == "opening-tb":
+        return "active" if (opening_tag or "") == str(batch_id) else "replaced"
+    return "emptied" if live == 0 else "active"
 
 
 def closed_hits(dates: Iterable[date], closes: list[tuple[date, date]]) -> list[tuple[date, date]]:

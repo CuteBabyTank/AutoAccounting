@@ -229,10 +229,12 @@ async def report_source(company_id: str, entry_id: str = Query(..., max_length=2
         if line is not None:
             out["bank_line"] = {"date": line.line_date, "narration": line.narration, "amount": line.amount,
                                 "check_no": line.check_no, "account_code": line.account_code,
-                                "line_no": line.line_no}
+                                "line_no": line.line_no, "page": line.page}
             statement = await db.get(AABankStatement, line.statement_id)
             if statement is not None and statement.enterprise_id == ent:
                 out["document"] = await document(statement.document_id)
+                if out["document"] is not None and line.page:  # open the statement at the line's page
+                    out["document"]["page"] = line.page
     elif ref["kind"] == "journal_entry" and rid:
         je = (await db.execute(select(AAJournalEntry).where(
             AAJournalEntry.id == rid, AAJournalEntry.enterprise_id == ent, AAJournalEntry.company_id == company.id))

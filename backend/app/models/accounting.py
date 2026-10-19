@@ -570,6 +570,7 @@ class AABankLine(Base):
     balance: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     narration: Mapped[str] = mapped_column(Text, nullable=False, default="")
     check_no: Mapped[str] = mapped_column(String(30), nullable=False, default="")
+    page: Mapped[int | None] = mapped_column(Integer, nullable=True)   # file page it is printed on (drill-down)
     # unmatched | ambiguous | suggested | matched (by the matcher) | confirmed (by a person) | excluded
     match_status: Mapped[str] = mapped_column(String(12), nullable=False, default="unmatched")
     match_kind: Mapped[str] = mapped_column(String(12), nullable=False, default="")   # document | posting | tax | journal

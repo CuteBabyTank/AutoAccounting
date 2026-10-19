@@ -63,6 +63,8 @@ export default function AccountingPage() {
   const [folder, setFolder] = useState<Folder | null>(null);
   const [category, setCategory] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<AADocument | null>(null);
+  // the page to show first (a bank line's statement page from a report drill-down)
+  const [openDocFocus, setOpenDocFocus] = useState<{ id: string; page: number } | null>(null);
   const [upload, setUpload] = useState<Upload | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [companyForm, setCompanyForm] = useState<{ initial?: Partial<CompanyInput>; id?: string } | null>(null);
@@ -436,10 +438,13 @@ export default function AccountingPage() {
                   companyId={selected.companyId}
                   companyName={company.registered_name}
                   fiscalYearEndMonth={company.fiscal_year_end_month}
-                  onOpenDocument={(id) =>
+                  onOpenDocument={(id, page) =>
                     accountingApi
                       .getDocument(id)
-                      .then(setOpenDoc)
+                      .then((d) => {
+                        setOpenDocFocus(page ? { id: d.id, page } : null);
+                        setOpenDoc(d);
+                      })
                       .catch((e) => setError(apiErrorMessage(e, "Couldn't open the document")))
                   }
                 />
@@ -574,6 +579,7 @@ export default function AccountingPage() {
       {openDoc && (
         <DocumentPanel
           doc={openDoc}
+          focusPage={openDocFocus?.id === openDoc.id ? openDocFocus.page : undefined}
           onClose={() => setOpenDoc(null)}
           onChanged={(d) => {
             setOpenDoc(d);

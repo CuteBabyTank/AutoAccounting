@@ -50,6 +50,7 @@ def column_statements() -> list[str]:
         "REFERENCES aa_recurring_entries(id) ON DELETE SET NULL",
         "CREATE INDEX IF NOT EXISTS ix_aa_journal_entries_recurring_id ON aa_journal_entries (recurring_id)",
         "ALTER TABLE aa_journal_entries ADD COLUMN IF NOT EXISTS writeoff_items JSONB NOT NULL DEFAULT '[]'::jsonb",
+        "ALTER TABLE aa_bank_lines ADD COLUMN IF NOT EXISTS page INTEGER",
     ] + search_index_statements()
 
 

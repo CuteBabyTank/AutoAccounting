@@ -1014,7 +1014,7 @@ export interface ReportSource {
   kind: SourceRef["kind"];
   entry_id: string;
   document?: { document_id: string; page: number; title: string; doc_number: string; doc_date: string | null } | null;
-  bank_line?: { date: string; narration: string; amount: string; check_no: string; account_code: string; line_no: number };
+  bank_line?: { date: string; narration: string; amount: string; check_no: string; account_code: string; line_no: number; page?: number | null };
   journal_entry?: {
     id: string; kind: string; book: string; entry_date: string; reference: string; particulars: string;
     lines: JournalLine[]; is_adjusting: boolean; deleted: boolean;

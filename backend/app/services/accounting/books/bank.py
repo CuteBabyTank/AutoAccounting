@@ -23,7 +23,7 @@ from app.services.accounting.bank_match import (
     BankLineFact, Candidate, Match, Rule, learn_rule, match_all, open_items,
 )
 from app.services.accounting.bank_report_pdf import reconciliation_pdf
-from app.services.accounting.bank_statement import parse_statement, resolve_account, tie_out
+from app.services.accounting.bank_statement import file_page, parse_statement, resolve_account, tie_out
 from app.services.accounting.compute.bank_books import POSTING_STATUSES, MatchedLine, tax_key
 from app.services.accounting.compute.bank_reconcile import (
     Reconciliation, cleared_entry_ids, opening_gap, reconcile, statement_balance,
@@ -87,7 +87,9 @@ async def store_statement(db: AsyncSession, doc: AADocument) -> AABankStatement 
     for l in data.lines:
         db.add(AABankLine(enterprise_id=doc.enterprise_id, company_id=doc.company_id, statement_id=statement.id,
                           account_code=code, line_no=l.line_no, line_date=l.on, amount=l.amount, balance=l.balance,
-                          narration=l.narration, check_no=l.check_no, match_status="unmatched"))
+                          narration=l.narration, check_no=l.check_no, match_status="unmatched",
+                          page=file_page(l.page, doc.raw if isinstance(doc.raw, dict) else None, doc.page_start,
+                                         doc.page_end)))
     await db.flush()
     return statement
 

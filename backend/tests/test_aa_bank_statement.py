@@ -79,3 +79,22 @@ def test_last4_and_resolve_account():
     assert resolve_account("5555", accounts) is None
     assert resolve_account("7710", accounts + [("1022", "1111-7710")]) is None
     assert resolve_account("", accounts) is None
+
+
+def test_line_pages_are_optional_and_map_to_file_pages():
+    from app.services.accounting.bank_statement import file_page
+
+    assert "\"page\"" in EXTRACT_PROMPT
+    raw = {"page_start": 2, "statement": {"lines": [
+        {"date": "2026-12-01", "description": "Check 000818", "debit": 50000, "credit": 0, "page": 2},
+        {"date": "2026-12-20", "description": "Deposit", "debit": 0, "credit": 1000, "page": "3"},
+        {"date": "2026-12-21", "description": "POS", "debit": 10, "credit": 0, "page": "x"},
+        {"date": "2026-12-22", "description": "Fee", "debit": 150, "credit": 0}]}}
+    s = parse_statement(raw)
+    assert [l.page for l in s.lines] == [2, 3, None, None]       # older replies have no page: None
+    # the reply's pages are within the chunk sent to Gemini; the document's pages are file pages (chunk + offset)
+    assert file_page(3, raw, 12, 14) == 13
+    assert file_page(2, raw, 12, 14) == 12
+    assert file_page(9, raw, 12, 14) is None                     # outside the document: unknown
+    assert file_page(None, raw, 12, 14) is None
+    assert file_page(1, {}, 1, 3) == 1                           # no page_start in the reply: offset 0

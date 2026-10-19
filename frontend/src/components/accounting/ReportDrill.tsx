@@ -16,7 +16,7 @@ interface Props {
   companyId: string;
   target: DrillTarget;
   onClose: () => void;
-  onOpenDocument: (id: string) => void;
+  onOpenDocument: (id: string, page?: number) => void;
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -125,7 +125,7 @@ export default function ReportDrill({ companyId, target, onClose, onOpenDocument
 function SourceView({ source, line, onOpenDocument }: {
   source: ReportSource | null;
   line: PostingLine | null;
-  onOpenDocument: (id: string) => void;
+  onOpenDocument: (id: string, page?: number) => void;
 }) {
   if (!source) return <p className="text-[var(--text-secondary)]">Finding the source…</p>;
   const doc = source.document;
@@ -186,7 +186,7 @@ function SourceView({ source, line, onOpenDocument }: {
       )}
       {doc && (
         <div>
-          <button className={BTN} onClick={() => onOpenDocument(doc.document_id)}>
+          <button className={BTN} onClick={() => onOpenDocument(doc.document_id, doc.page)}>
             Open {source.kind === "bank_line" ? "the statement" : "the document"}, page {doc.page}
             {doc.doc_number && ` · ${doc.doc_number}`}
           </button>

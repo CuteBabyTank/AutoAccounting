@@ -66,7 +66,7 @@ Reply with ONLY valid JSON, no markdown fences, no explanation:
     "closing_balance": <ending balance>,
     "lines": [{"date": "<YYYY-MM-DD>", "description": "<narration exactly as printed>", "debit": <withdrawal / money out, 0 if none>,
                "credit": <deposit / money in, 0 if none>, "balance": <running balance as printed, or "" if not shown>,
-               "ref": "<check or reference number, or "">"}]}>
+               "ref": "<check or reference number, or "">", "page": <page of this file the line is printed on, 1-based>}]}>
 }]}
 
 Rules:

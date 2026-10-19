@@ -17,7 +17,7 @@ interface Props {
   companyId: string;
   companyName: string;
   fiscalYearEndMonth: number;
-  onOpenDocument: (id: string) => void;
+  onOpenDocument: (id: string, page?: number) => void;
 }
 
 const REPORTS: { kind: ReportKind; label: string }[] = [

@@ -56,6 +56,8 @@ const ATC_SOURCE: Record<string, string> = {
 
 interface Props {
   doc: AADocument;
+  /** Show the pages from this one (e.g. the statement page of a bank line); ignored outside the document. */
+  focusPage?: number;
   onClose: () => void;
   onChanged: (doc: AADocument) => void;
   onDeleted: (id: string) => void;
@@ -70,7 +72,8 @@ function bookableAccounts(accounts: Account[], docAccount: string, current: stri
   );
 }
 
-export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Props) {
+export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDeleted }: Props) {
+  const firstPage = focusPage && focusPage >= doc.page_start && focusPage <= doc.page_end ? focusPage : doc.page_start;
   const [draft, setDraft] = useState<Draft>(() => toDraft(doc));
   const [images, setImages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -155,9 +158,9 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
     let cancelled = false;
     const urls: string[] = [];
     setImages([]);
-    const last = Math.min(doc.page_end, doc.page_start + 4);
+    const last = Math.min(doc.page_end, firstPage + 4);
     (async () => {
-      for (let p = doc.page_start; p <= last; p++) {
+      for (let p = firstPage; p <= last; p++) {
         try {
           const blob = await accountingApi.pageImage(doc.file_id, p);
           if (cancelled) return;
@@ -173,7 +176,7 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
       cancelled = true;
       urls.forEach((u) => URL.revokeObjectURL(u));
     };
-  }, [doc.file_id, doc.page_start, doc.page_end]);
+  }, [doc.file_id, doc.page_end, firstPage]);
 
   async function save(extra: DocumentPatch = {}, { onlyExtra = false }: { onlyExtra?: boolean } = {}) {
     const initial = toDraft(doc);
@@ -280,7 +283,8 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
               {doc.period_year
                 ? `Filed in ${doc.period_year} Q${doc.period_quarter}${doc.period_locked ? " (moved by hand)" : ""}`
                 : "Undated"}
-              {" · "}pages {doc.page_start}–{doc.page_end} · confidence {Math.round(doc.confidence)}%
+              {" · "}pages {doc.page_start}–{doc.page_end}
+              {firstPage !== doc.page_start && ` · showing from page ${firstPage}`} · confidence {Math.round(doc.confidence)}%
             </p>
           </div>
           <button onClick={onClose} className="rounded p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]" aria-label="Close">
@@ -350,7 +354,7 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
         <div className="mb-4 space-y-2">
           {images.map((src, i) => (
             // eslint-disable-next-line @next/next/no-img-element
-            <img key={src} src={src} alt={`Page ${doc.page_start + i}`} className="w-full rounded-lg border border-[var(--border)]" />
+            <img key={src} src={src} alt={`Page ${firstPage + i}`} className="w-full rounded-lg border border-[var(--border)]" />
           ))}
           {images.length === 0 && <div className="h-40 animate-pulse rounded-lg bg-[var(--bg-primary)]" />}
         </div>

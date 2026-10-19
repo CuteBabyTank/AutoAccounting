@@ -21,6 +21,7 @@ class StatementLine:
     amount: Decimal              # signed: + money into the account (credit on the bank's side), − out
     balance: Decimal | None      # running balance as printed
     check_no: str = ""
+    page: int | None = None      # page of the reply's chunk the line is printed on (None in older replies)
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,25 @@ def check_number(ref, narration: str) -> str:
     return (found.group(1) or found.group(2)) if found else ""
 
 
+def _page(value) -> int | None:
+    try:
+        n = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return n if 0 < n < 100000 else None
+
+
+def file_page(line_page: int | None, raw: dict | None, doc_start: int, doc_end: int) -> int | None:
+    """The file page of a statement line: the reply counts pages within the chunk sent to Gemini (its ``page_start``
+    is chunk-relative too), the document's ``page_start`` is the file page. None when unknown or outside the
+    document."""
+    if line_page is None:
+        return None
+    raw_start = _page((raw or {}).get("page_start")) or 1
+    page = line_page + doc_start - raw_start
+    return page if doc_start <= page <= doc_end else None
+
+
 def parse_statement(raw: dict | None) -> StatementData | None:
     """The ``statement`` object of one extracted document; None when it has no lines that move money. Never raises."""
     obj = raw.get("statement") if isinstance(raw, dict) else None
@@ -66,7 +86,8 @@ def parse_statement(raw: dict | None) -> StatementData | None:
         if amount == 0:  # "Balance forward" and other rows that move no money: nothing to match or post
             continue
         lines.append(StatementLine(len(lines) + 1, on, narration, amount.quantize(_CENT),
-                                   _opt_money(item.get("balance")), check_number(item.get("ref"), narration)))
+                                   _opt_money(item.get("balance")), check_number(item.get("ref"), narration),
+                                   _page(item.get("page"))))
     if not lines:
         return None
     return StatementData(

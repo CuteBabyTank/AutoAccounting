@@ -324,6 +324,7 @@ class DocumentPatch(BaseModel):
     period_quarter: int | None = Field(default=None, ge=1, le=4)
     seller_name: str | None = Field(default=None, max_length=255)
     seller_tin: str | None = None
+    seller_address: str | None = Field(default=None, max_length=500)
     buyer_name: str | None = Field(default=None, max_length=255)
     buyer_tin: str | None = None
     gross_amount: Decimal | None = _money_field()

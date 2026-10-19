@@ -100,6 +100,10 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
 - **Review reasons:** set `needs_review` with `review_rules.needs_review_for(reasons)`, never `bool(reasons)`: soft reasons (`payment_unverified`) show but don't queue or block close. Per-reason details go in `aa_documents.review_notes`. Payment flags (`payment_source_unknown`, `payment_unverified`) are cleared by `review_rules.sync_payment_flags(docs, paid_ids)` (called from `relink_receipts`); bank matching passes its matched document ids as `paid_ids`. A VAT mismatch claims 12% and posts the excess to `vat_difference` (1310); documents stored before that rule are
   switched by `books/vat_backfill.backfill_vat_difference` (run from `load_periods`, idempotent, audited as a system
   event), except in filed quarters, which keep the disallowed VAT and get `review_notes.vat_math_mismatch.legacy`.
+  Supplier invoices / receipts get `receipt_incomplete` (`review_rules.receipt_problems`: no seller name / TIN /
+  address / serial number, or a non-BIR paper like an acknowledgement receipt; government ORs need only a number),
+  with `review_notes.receipt_incomplete = {missing, not_bir}`; `sync_receipt_flag` re-checks it on every document
+  PATCH. Documents stored before 2026-10-19: `python -m app.services.accounting.books.receipt_flags [--dry-run]`.
 - **Work board (`routers/accounting_work.py`, `accounting_tasks.py`):** filings owed, their due dates and status are
   derived on read (`compute/work.obligations` reuses `engine.expected_forms`, `annual_form`, `due_dates`); only the
   assignee, a status override and a board "filed" date live in `aa_work_items`. A board filing does **not** post a

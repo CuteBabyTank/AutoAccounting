@@ -26,7 +26,7 @@ const SHORT_REASON: Record<string, string> = {
   other_company_tin: "Other company's TIN", nothing_extracted: "Nothing read", possible_payment: "Possible payment",
   supplier_rule_mismatch: "Supplier rule mismatch", tendered_less_than_total: "Tendered short", ewt_expected: "EWT expected",
   payment_source_unknown: "Payment source unknown", duplicate_invoice_number: "Duplicate number", personal_purchase: "Personal",
-  account_locked: "Locked account", needs_review: "Needs review",
+  account_locked: "Locked account", receipt_incomplete: "Invalid receipt", needs_review: "Needs review",
 };
 
 const DUPLICATE = new Set(["possible_duplicate", "duplicate_invoice_number"]);

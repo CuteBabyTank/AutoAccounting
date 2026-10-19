@@ -6,6 +6,7 @@ cleared once there is payment evidence: ``paid_on`` on the document, a receipt l
 the caller passes in ``paid_ids`` (bank-statement matches plug in there).
 """
 
+import re
 from collections.abc import Iterable
 from decimal import Decimal
 
@@ -144,4 +145,74 @@ def apply_legacy_vat_fix(doc, filed: bool) -> bool:
             doc.vat_treatment = "vatable"
     notes["vat_math_mismatch"] = note
     doc.review_notes = notes
+    return True
+
+
+# --- Receipt validity: what the BIR requires printed on a supplier's invoice / receipt -----------------------------
+
+RECEIPT_REASON = "receipt_incomplete"
+_RECEIPT_KINDS = frozenset({"invoice", "receipt"})
+# Papers that aren't BIR-registered invoices or receipts, so they don't support the expense (RR 7-2024).
+_NOT_BIR = (
+    ("ACKNOWLEDG", "Acknowledgement receipt"), ("PROVISIONAL", "Provisional receipt"),
+    ("TEMPORARY", "Temporary receipt"), ("ORDER SLIP", "Order slip"), ("CHARGE SLIP", "Charge slip"),
+    ("DELIVERY", "Delivery receipt"), ("QUOTATION", "Quotation"), ("VOUCHER", "Voucher"),
+    ("CLAIM STUB", "Claim stub"), ("BILLING STATEMENT", "Billing statement"), ("STATEMENT OF ACCOUNT", "Statement of account"),
+)
+
+# Government offices issue their own official receipts (Accountable Form 51 etc.) without a TIN.
+_GOVERNMENT = re.compile(
+    r"\b(GOVERNMENT|GOV'?T|CITY OF|MUNICIPALITY|MUNICIPAL|PROVINCE OF|PROVINCIAL|BARANGAY|BUREAU|DEPARTMENT OF|"
+    r"TREASURER|REPUBLIC OF THE PHILIPPINES|SOCIAL SECURITY SYSTEM|SSS|PHILHEALTH|PAG-?IBIG|HDMF|LAND TRANSPORTATION|"
+    r"LTO|LTFRB|BIR)\b")
+
+
+def is_government(seller_name: str) -> bool:
+    return bool(_GOVERNMENT.search(str(seller_name or "").upper()))
+
+
+def receipt_problems(category: str, client_role: str, kind: str, title: str, seller_name: str, seller_tin: str,
+                     seller_address: str, doc_number: str) -> dict | None:
+    """What makes a supplier's invoice / receipt fall short of a valid BIR one, or None when it looks valid (or isn't
+    a supplier's invoice / receipt at all): ``{"missing": [labels], "not_bir": label}`` (either key may be absent)."""
+    if client_role != "buyer" or category not in _BILLS or kind not in _RECEIPT_KINDS:
+        return None
+    checks = [(seller_name, "seller name"), (seller_tin, "seller TIN"), (seller_address, "seller address"),
+              (doc_number, "serial number")]
+    if is_government(seller_name):
+        checks = [(doc_number, "serial number")]
+    missing = [label for value, label in checks if not str(value or "").strip()]
+    upper = str(title or "").upper()
+    not_bir = next((label for word, label in _NOT_BIR if word in upper), None)
+    out: dict = {}
+    if missing:
+        out["missing"] = missing
+    if not_bir:
+        out["not_bir"] = not_bir
+    return out or None
+
+
+def sync_receipt_flag(doc) -> bool:
+    """Add, update or drop ``receipt_incomplete`` on a stored document to match its fields (mutates it); True when
+    something changed. Never added back to a document a person already reviewed."""
+    problems = receipt_problems(doc.category, doc.client_role, doc.doc_type, doc.document_title, doc.seller_name,
+                                doc.seller_tin, doc.seller_address, doc.doc_number)
+    reasons = list(doc.review_reasons or [])
+    notes = dict(doc.review_notes or {})
+    has = RECEIPT_REASON in reasons
+    if problems is None:
+        if not has and RECEIPT_REASON not in notes:
+            return False
+        reasons = [r for r in reasons if r != RECEIPT_REASON]
+        notes.pop(RECEIPT_REASON, None)
+    else:
+        if notes.get(RECEIPT_REASON) == problems and has:
+            return False
+        if not has and doc.reviewed:
+            return False
+        if not has:
+            reasons.append(RECEIPT_REASON)
+        notes[RECEIPT_REASON] = problems
+    doc.review_reasons, doc.review_notes = reasons, notes
+    doc.needs_review = needs_review_for(reasons)
     return True

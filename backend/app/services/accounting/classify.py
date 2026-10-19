@@ -7,7 +7,9 @@ from app.services.accounting.compute.ewt import atc_info, expected_atc, rate_per
 from app.services.accounting.extraction import EXPENSE_ACCOUNTS, ExtractedDoc
 from app.services.accounting.matching import NAME_MATCH_THRESHOLD, name_similarity, normalize_name
 from app.services.accounting.periods import period_for
-from app.services.accounting.review_rules import SOFT_REASONS, needs_review_for, payment_reasons  # noqa: F401
+from app.services.accounting.review_rules import (  # noqa: F401
+    RECEIPT_REASON, SOFT_REASONS, needs_review_for, payment_reasons, receipt_problems,
+)
 
 CATEGORIES = ("sales", "purchases", "expenses", "payroll", "2307", "support", "unsorted")
 DOCUMENT_ACCOUNTS = EXPENSE_ACCOUNTS + ("sales", "2307_received", "2307_issued")
@@ -16,7 +18,7 @@ REVIEW_REASONS = (
     "seller_not_vat_registered", "not_an_invoice", "vat_math_mismatch", "possible_duplicate",
     "other_company_tin", "nothing_extracted", "possible_payment", "amounts_dont_add_up", "supplier_rule_mismatch",
     "tendered_less_than_total", "ewt_expected", "payment_source_unknown", "payment_unverified",
-    "duplicate_invoice_number", "personal_purchase", "account_locked",
+    "duplicate_invoice_number", "personal_purchase", "account_locked", "receipt_incomplete",
 )
 _EWT_ACCOUNTS = frozenset({"rent", "professional_fees"})
 
@@ -272,6 +274,11 @@ def classify_document(
     reasons += payment_reasons(category, role, {"marked_paid": ext.marked_paid, "payment_terms": ext.payment_terms})
     if _amounts_dont_add_up(ext, vatable):
         reasons.append("amounts_dont_add_up")
+    receipt = receipt_problems(category, role, ext.kind, ext.document_title, ext.seller.name, ext.seller.tin,
+                               ext.seller.address, ext.doc_number)
+    if receipt:
+        reasons.append(RECEIPT_REASON)
+        notes[RECEIPT_REASON] = receipt
 
     party_tins = {t for t in (ext.seller.tin, ext.buyer.tin) if t}
     on_neither_side = company.tin not in party_tins and bool(party_tins & other_company_tins)

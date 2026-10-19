@@ -13,7 +13,7 @@ from app.services.accounting.extraction import ExtractedDoc, Party
 
 JUAN = CompanyProfile("123456789", "Juan's Cloth Trading", (), True, 12)
 CLIENT = Party(name="Juan's Cloth Trading", tin="123456789")
-SUPPLIER = Party(name="Cebu Fabric Supply", tin="111222333")
+SUPPLIER = Party(name="Cebu Fabric Supply", tin="111222333", address="Cebu City")
 
 
 def _ext(**kw) -> ExtractedDoc:

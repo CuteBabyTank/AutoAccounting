@@ -55,6 +55,7 @@ export const REASON_LABELS: Record<string, string> = {
   payment_unverified: "On credit terms and no payment is linked yet.",
   duplicate_invoice_number: "This supplier used the same invoice number on another document with a different date.",
   account_locked: "Its account is locked in the chart of accounts. Choose another account, or unlock the account if this posting is right.",
+  receipt_incomplete: "May not be a valid BIR invoice or receipt, so the expense could be disallowed. Ask the supplier for a proper invoice, or type in what's printed if it was misread.",
   personal_purchase: "Made out to the owner personally, so it was excluded from the books. If the company paid for it, record it as drawings.",
 };
 
@@ -70,6 +71,11 @@ export function reasonDetail(reason: string, notes?: Record<string, Record<strin
     return `12% is ₱${formatPeso(n.expected)}; difference ₱${formatPeso(n.difference)}.${
       n.legacy === "filed" ? " Input VAT stays disallowed on this one: its quarter's return was filed before the VAT-difference rule." : ""
     }`;
+  if (reason === "receipt_incomplete") {
+    const r = n as unknown as { missing?: string[]; not_bir?: string };
+    const parts = [r?.not_bir ? `${r.not_bir}, not an invoice.` : "", r?.missing?.length ? `No ${r.missing.join(", ")}.` : ""];
+    return parts.filter(Boolean).join(" ");
+  }
   if (reason === "tendered_less_than_total") return `Tendered ₱${formatPeso(n.tendered)} on a total of ₱${formatPeso(n.total)}.`;
   return "";
 }

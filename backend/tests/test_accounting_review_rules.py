@@ -20,7 +20,7 @@ CLIENT = Party(name="Bayanihan Hardware Trading Corp.", tin="009876543")
 def _ext(**kw) -> ExtractedDoc:
     base = dict(
         document_title="SALES INVOICE", kind="invoice", doc_number="1", doc_date=date(2026, 11, 3),
-        seller=Party(name="Luzon Paint Supply", tin="111222333"), buyer=CLIENT, seller_vat_registered=True,
+        seller=Party(name="Luzon Paint Supply", tin="111222333", address="Pasig City"), buyer=CLIENT, seller_vat_registered=True,
         gross_amount=Decimal("11200.00"), vatable_amount=Decimal("10000.00"), vat_amount=Decimal("1200.00"),
         nature="goods_for_resale", expense_account="purchases", confidence=95.0,
     )
@@ -101,7 +101,7 @@ def test_payment_source_unknown_on_released_payroll():
 
 def test_payment_unverified_is_soft():
     # Pacific Steel on credit terms: no payment evidence yet, shown but never blocking
-    f = _classify(_ext(seller=Party(name="Pacific Steel Corp.", tin="555666777"), payment_terms="credit"))
+    f = _classify(_ext(seller=Party(name="Pacific Steel Corp.", tin="555666777", address="Valenzuela"), payment_terms="credit"))
     assert f["review_reasons"] == ["payment_unverified"] and f["needs_review"] is False
     cash = _classify(_ext(payment_terms="cash"))
     assert "payment_unverified" not in cash["review_reasons"]

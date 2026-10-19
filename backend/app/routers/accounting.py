@@ -46,7 +46,7 @@ from app.services.accounting.books.links import relink_receipts
 from app.services.accounting.books.chart import locked_message
 from app.services.accounting.books.loader import ensure_chart, touch_books
 from app.services.accounting.compute.reclassify import document_main_account
-from app.services.accounting.review_rules import BULK_MAX, LOCKED_REASON, bulk_targets
+from app.services.accounting.review_rules import BULK_MAX, LOCKED_REASON, bulk_targets, sync_receipt_flag
 from app.services.accounting import duplicates
 from app.services.accounting.classify import document_nature, needs_review_for, rule_conflicts
 from app.services.accounting.matching import file_detection_from_json, suggest_groups
@@ -488,7 +488,7 @@ async def retry_upload(
 # --- Tree, folders, documents --------------------------------------------------
 
 _PLAIN_FIELDS = (
-    "category", "account", "doc_number", "doc_date", "seller_name", "seller_tin", "buyer_name",
+    "category", "account", "doc_number", "doc_date", "seller_name", "seller_tin", "seller_address", "buyer_name",
     "buyer_tin", "gross_amount", "vatable_amount", "vat_amount", "exempt_amount",
     "zero_rated_amount", "withholding_amount", "vat_treatment", "reviewed", "excluded", "ewt_atc",
     "paid_on", "paid_via", "payment_ref",
@@ -810,6 +810,8 @@ async def patch_document(
         if "possible_payment" in (doc.review_reasons or []):
             doc.review_reasons = [r for r in doc.review_reasons if r != "possible_payment"]
             doc.needs_review = needs_review_for(doc.review_reasons)
+
+    sync_receipt_flag(doc)   # a seller TIN / number typed in clears the flag; reclassifying may raise it
 
     if "period_year" in sent:
         if body.period_year is None:

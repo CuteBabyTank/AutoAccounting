@@ -34,6 +34,7 @@ function toDraft(doc: AADocument): Draft {
     account: doc.account,
     seller_name: doc.seller_name,
     seller_tin: doc.seller_tin,
+    seller_address: doc.seller_address,
     buyer_name: doc.buyer_name,
     buyer_tin: doc.buyer_tin,
     gross_amount: doc.gross_amount,
@@ -418,6 +419,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
           )}
           {field("seller_name", "Seller")}
           {field("seller_tin", "Seller TIN")}
+          <div className="col-span-2">{field("seller_address", "Seller address")}</div>
           {field("buyer_name", "Buyer")}
           {field("buyer_tin", "Buyer TIN")}
           {AMOUNTS.map(([key, label]) => (

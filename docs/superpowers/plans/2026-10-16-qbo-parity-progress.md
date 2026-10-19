@@ -436,3 +436,26 @@ import undo (another agent), unmerge, credit-memo auto-apply, cheques outstandin
 line page in the search palette (it opens the bank month). `acf55ae` not type-checking alone is history (no rewrite).
 
 Tests: 940 → 950 passing. Gates: pytest, ruff, lint, tsc, build all green.
+
+## Import undo (2026-10-19):
+
+Shipped "undo import" for the three importers (opening TB, opening open items, JE CSV). Each confirmed import is an
+`aa_import_batches` row (FORCE RLS, in `_FIRM_TABLES`); the JEs / opening items it writes carry `import_batch_id`
+(model + `schema.py`), and the batch keeps the rows' fingerprints and, for the opening TB, the opening entry it
+replaced. `POST /import-batches/{id}/undo` (owners / managers, 403 otherwise) removes the batch's rows or restores the
+prior opening entry in one transaction under the company lock, refusing with a 409 reason for: already undone, a later
+TB import / an edit / a deletion of the opening entry, closed months, filed quarters or annual returns, live bank
+reconciliations, confirmed bank matches, payments and write-offs on opening items, and edited journal entries. After
+an undo: `touch_books`, `void_reconciliations`, `rematch`, `refresh_opening_flag`. Audited as the new `import_batch`
+entity (confirm + undo) plus per-entry events. Import page: "Recent imports" (kind, file, rows, who, when, status)
+with an in-page confirm, the 409 reason shown in the row, the pre-batch caveat, updated hint and tour line. Pure logic
+in `services/accounting/import_undo.py`; decisions in the QBO 08 plan, "Undo".
+
+Verified live on the dev stack (smoke company removed afterwards): JE import → undo → undo again (409); edited entry
+blocks; closed month blocks; TB import chain (undo the older one refused, undo the newer one restores the older lines,
+then the older one deletes the opening entry); a typed opening entry restored after a TB import's undo; open items
+blocked by a recorded payment and undone after clearing it. Not live-tested: filed-quarter, reconciliation and
+confirmed-match refusals and the 403 (covered by pure tests / a one-line role check).
+
+Tests: 950 → 962 passing. Gates: pytest, ruff, lint, tsc, build all green.
+

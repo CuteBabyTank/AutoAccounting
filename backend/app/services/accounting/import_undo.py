@@ -90,13 +90,14 @@ def closed_hits(dates: Iterable[date], closes: list[tuple[date, date]]) -> list[
 
 
 def filed_hits(dates: Iterable[date], filed: set[tuple[int, int]], fye: int) -> list[tuple[int, int]]:
-    """The filed (fiscal year, quarter) pairs that hold any of the dates."""
+    """The filed (fiscal year, quarter) pairs that hold any of the dates; quarter 0 is the annual return, which holds
+    the whole fiscal year."""
     out = []
     for d in sorted(set(dates)):
         p = period_for(d, fye)
-        key = (p.fiscal_year, p.quarter)
-        if key in filed and key not in out:
-            out.append(key)
+        for key in ((p.fiscal_year, p.quarter), (p.fiscal_year, 0)):
+            if key in filed and key not in out:
+                out.append(key)
     return out
 
 
@@ -174,7 +175,7 @@ def undo_problem(f: UndoFacts) -> str:
         return (f"{months} {'is' if len(f.closed) == 1 else 'are'} closed and this import posts there. Reopen the "
                 "month first, or correct it with a journal entry")
     if f.filed:
-        quarters = ", ".join(f"Q{q} {y}" for y, q in f.filed)
+        quarters = ", ".join(f"Q{q} {y}" if q else f"the FY {y} annual return" for y, q in f.filed)
         return (f"{quarters} {'is' if len(f.filed) == 1 else 'are'} marked filed and this import is in "
                 f"{'its' if len(f.filed) == 1 else 'their'} books. Correct it with a journal entry instead")
     if f.reconciled:

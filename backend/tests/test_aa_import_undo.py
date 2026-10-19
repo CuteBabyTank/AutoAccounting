@@ -80,6 +80,9 @@ def test_closed_and_filed_hits():
     assert filed_hits([date(2026, 2, 3)], {(2026, 1)}, 12) == [(2026, 1)]
     assert filed_hits([date(2026, 2, 3)], {(2026, 1)}, 6) == []
     assert filed_hits([date(2026, 2, 3)], {(2026, 3)}, 6) == [(2026, 3)]
+    # a filed annual return (quarter 0) holds its whole fiscal year
+    assert filed_hits([date(2026, 11, 3)], {(2026, 0)}, 12) == [(2026, 0)]
+    assert filed_hits([date(2027, 1, 3)], {(2026, 0)}, 12) == []
 
 
 def test_bank_touches_and_reconciled_hits():

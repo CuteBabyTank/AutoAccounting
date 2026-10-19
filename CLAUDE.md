@@ -133,6 +133,14 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   `aa_opening_items` and enter the engine via `opening_items.opening_doc_line` (dated the day before `books_start`,
   so only their payments post — never give them a document entry or the opening A/R / A/P doubles); anything that
   loads documents for open items / payments (loader, subledger, bank candidates) must add them too.
+  **Undo:** every confirm writes an `aa_import_batches` row and tags what it wrote with `import_batch_id` (JEs, opening
+  items); `written` keeps each row's `import_undo.fingerprint`, and the opening TB batch keeps the opening entry it
+  replaced in `restore` (`{"opening": null}` if none). `POST /import-batches/{id}/undo` (managers) soft-deletes the
+  batch's rows or restores the prior opening entry under the company row lock, refusing (409, `import_undo.undo_problem`)
+  for closed months, filed quarters / annual returns, live bank reconciliations, confirmed bank matches, payments,
+  write-offs and edits. A new import kind, or anything else that writes rows from an import, must tag them and keep
+  fingerprints; a new way for later work to depend on imported rows needs a guard in `UndoFacts`. Imports before
+  2026-10-19 have no batch and can't be undone.
 - **PDF templates** are calibrated comb-cell layouts (`forms/overlay.py`); re-calibrate when BIR revises a form.
 - **Global search** (`routers/accounting_search.py`, parser `services/accounting/search.py`): one firm-scoped SELECT per group; add a new searchable table there (and its index to `schema.search_index_statements`, pg_trgm GIN only when the extension exists). Results open through `lib/search-nav.ts`: `/accounting?company=&view=&year=&quarter=&account=&month=&contact=&doc=` is parsed by `parseTarget` (UUIDs via `safeId`, shapes checked); on `/accounting` it's the `aa:open-target` event instead of a reload. The palette (`components/search/SearchPalette.tsx`, "/" or Cmd/Ctrl-K) lives in the Sidebar.
 - **Recurring entries / write-offs / checklists** (`routers/accounting_recurring.py`, `accounting_writeoff.py`, `accounting_checklists.py`; pure logic in `compute/recurring.py`, `writeoff.py`, `checklists.py`): recurring templates never post on their own (no scheduler; "Post due entries" is a user action, row-locked, one JE per template per date via `aa_journal_entries.recurring_id`). A write-off is one JE whose `writeoff_items` the subledger reads back as payments (`books/subledger.writeoff_rows`), so it can't be edited, only deleted (which reopens the invoices). Anything new that computes A/R open balances must include those payments. Frontend calls for these and the cash forecast live in `lib/extras-api.ts` / `types/extras.ts`.

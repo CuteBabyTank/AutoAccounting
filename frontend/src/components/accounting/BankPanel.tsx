@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
-import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
-import { PreviewButton, useFilePreview } from "@/components/accounting/PdfPreview";
+import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
+import { useFilePreview } from "@/components/accounting/PdfPreview";
 import type { Account, BankAccountInfo, BankLine, BankMonth, BankRule, ReconcileResult } from "@/types/accounting";
 
 interface Props {
@@ -117,14 +117,6 @@ export default function BankPanel({ companyId, account, month, canManage, onChan
     }
   }
 
-  async function download(id: string) {
-    try {
-      saveBlob(await accountingApi.reconciliationFile(id), `Bank reconciliation ${account} ${month}.pdf`);
-    } catch (e) {
-      setError(apiErrorMessage(e, "Couldn't download the report"));
-    }
-  }
-
   if (!data) return error ? <p className="mb-3 text-sm text-[var(--alert-error-text)]">{error}</p> : null;
   const info = data.account;
   const open = data.lines.filter((l) => ["unmatched", "ambiguous", "suggested"].includes(l.match_status)).length;
@@ -204,14 +196,11 @@ export default function BankPanel({ companyId, account, month, canManage, onChan
             {open > 0 && ` · ${open} line${open === 1 ? "" : "s"} to settle`}
           </span>
           {data.reconciliation && (
-            <span className="inline-flex gap-1">
-              <PreviewButton compact label="Preview reconciliation report" onClick={() => {
-                const id = data.reconciliation!.id;
-                file.open(`Bank reconciliation · ${account} ${month}`, () => accountingApi.reconciliationFile(id),
-                  `Bank reconciliation ${account} ${month}.pdf`);
-              }} />
-              <button className={BTN} onClick={() => download(data.reconciliation!.id)}>Reconciliation report</button>
-            </span>
+            <button className={BTN} onClick={() => {
+              const id = data.reconciliation!.id;
+              file.open(`Bank reconciliation · ${account} ${month}`, () => accountingApi.reconciliationFile(id),
+                `Bank reconciliation ${account} ${month}.pdf`);
+            }}>Reconciliation report</button>
           )}
           {file.node}
           <button className={`${BTN} ml-auto`} onClick={() => (rules ? setRules(null) : accountingApi.bankRules(companyId).then(setRules).catch(() => setRules([])))}>

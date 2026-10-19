@@ -5,7 +5,7 @@ import { DownloadSimple, FilePdf, FileZip } from "@phosphor-icons/react";
 import { accountingApi } from "@/lib/accounting-api";
 import { useCanFile } from "@/lib/use-can-file";
 import { CHANGED_STYLE, apiErrorMessage, formatAmount, saveBlob } from "@/lib/accounting-format";
-import PdfPreview, { PreviewButton, useFilePreview, type PreviewEdits } from "@/components/accounting/PdfPreview";
+import PdfPreview, { useFilePreview, type PreviewEdits } from "@/components/accounting/PdfPreview";
 import type { Certificate, Output, OutputForm, PdfField } from "@/types/accounting";
 
 const BTN = "inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-60";
@@ -72,32 +72,6 @@ export default function OutputViewer({ outputId, latest: isLatest = true, onNewV
     }
   }
 
-  async function downloadAging(kind: "ar" | "ap") {
-    if (!output) return;
-    setBusy(`aging-${kind}`);
-    setError("");
-    try {
-      saveBlob(await accountingApi.outputAging(output.id, kind), `${output.label} ${kind === "ar" ? "AR" : "AP"} aging v${output.version}.pdf`);
-    } catch (e) {
-      setError(apiErrorMessage(e, "Download failed"));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function download2307s() {
-    if (!output) return;
-    setBusy("2307s");
-    setError("");
-    try {
-      saveBlob(await accountingApi.outgoing2307s(output.id), `${output.label} 2307s v${output.version}.zip`);
-    } catch (e) {
-      setError(apiErrorMessage(e, "Download failed"));
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function open2307s() {
     if (!output) return;
     setBusy("2307s");
@@ -155,28 +129,19 @@ export default function OutputViewer({ outputId, latest: isLatest = true, onNewV
             <DownloadSimple size={16} /> Workbook
           </button>
           {(output.ledgers.ARAging ?? 0) > 0 && (
-            <span className="inline-flex gap-1">
-              <PreviewButton compact label="Preview A/R aging" disabled={busy !== null} onClick={() => previewAging("ar")} />
-              <button className={BTN} disabled={busy !== null} onClick={() => downloadAging("ar")}>
-                <FilePdf size={16} /> A/R aging
-              </button>
-            </span>
+            <button className={BTN} disabled={busy !== null} onClick={() => previewAging("ar")}>
+              <FilePdf size={16} /> A/R aging
+            </button>
           )}
           {(output.ledgers.APAging ?? 0) > 0 && (
-            <span className="inline-flex gap-1">
-              <PreviewButton compact label="Preview A/P aging" disabled={busy !== null} onClick={() => previewAging("ap")} />
-              <button className={BTN} disabled={busy !== null} onClick={() => downloadAging("ap")}>
-                <FilePdf size={16} /> A/P aging
-              </button>
-            </span>
+            <button className={BTN} disabled={busy !== null} onClick={() => previewAging("ap")}>
+              <FilePdf size={16} /> A/P aging
+            </button>
           )}
           {(output.ledgers.QAP ?? 0) > 0 && (
-            <span className="inline-flex gap-1">
-              <PreviewButton compact label="Preview and edit the 2307s" disabled={busy !== null} onClick={open2307s} />
-              <button className={BTN} disabled={busy !== null} onClick={() => download2307s()}>
-                <FileZip size={16} /> Outgoing 2307s
-              </button>
-            </span>
+            <button className={BTN} disabled={busy !== null} onClick={open2307s}>
+              <FileZip size={16} /> Outgoing 2307s
+            </button>
           )}
         </div>
       </div>
@@ -208,9 +173,8 @@ export default function OutputViewer({ outputId, latest: isLatest = true, onNewV
             <p className="text-sm font-medium text-[var(--text-primary)]">{current.title}</p>
             {current.pdf && (
               <div className="ml-auto flex gap-2">
-                <PreviewButton label={latest ? "Preview & edit" : "Preview"} disabled={busy !== null} onClick={() => setPreviewForm(current)} />
-                <button className={BTN} disabled={busy !== null} onClick={() => download("pdf", true, current.form)}>
-                  <FilePdf size={16} /> Download PDF
+                <button className={BTN} disabled={busy !== null} onClick={() => setPreviewForm(current)}>
+                  <FilePdf size={16} /> PDF
                 </button>
               </div>
             )}

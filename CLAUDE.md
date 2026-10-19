@@ -152,8 +152,8 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
 - **Recurring entries / write-offs / checklists** (`routers/accounting_recurring.py`, `accounting_writeoff.py`, `accounting_checklists.py`; pure logic in `compute/recurring.py`, `writeoff.py`, `checklists.py`): recurring templates never post on their own (no scheduler; "Post due entries" is a user action, row-locked, one JE per template per date via `aa_journal_entries.recurring_id`). A write-off is one JE whose `writeoff_items` the subledger reads back as payments (`books/subledger.writeoff_rows`), so it can't be edited, only deleted (which reopens the invoices). Anything new that computes A/R open balances must include those payments. Frontend calls for these and the cash forecast live in `lib/extras-api.ts` / `types/extras.ts`.
 - **Privacy toggle** (`lib/privacy.ts`, `PrivacyToggle`): give any dashboard amount the class `aa-amount` and it blurs while "Hide amounts" is on.
 - **Notification jumps:** a bell click opens its target (`NotificationBell.target`) and rings the element marked `data-focus` for ~2 s (`lib/focus.ts` `flashFocus`, names from `focusName`; CSS `.aa-focus-flash`). A new notification kind needs a branch in `target` and a `data-focus` on what it points at.
-- **PDF preview / hand edits:** every PDF export has a Preview (`components/accounting/PdfPreview.tsx`; read-only
-  files use `useFilePreview`). Return downloads are always clean (no highlights). Editing a return's fields saves the
+- **PDF preview / hand edits:** every PDF button opens the preview first and downloads from there (one button, no
+  separate preview/eye button; `components/accounting/PdfPreview.tsx`, read-only files use `useFilePreview`). Return downloads are always clean (no highlights). Editing a return's fields saves the
   period's **next version** (`POST /outputs/{id}/edits`, latest version only) with the edited figures in its snapshot
   and `snapshot["edited"] = {form: {key: books' figure}}`, so filing, amendments, the books and the annual credit all
   read them like any version; a later Generate drops them (and warns). Totals are not recalculated. 2307 / 2316 edits

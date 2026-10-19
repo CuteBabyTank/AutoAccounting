@@ -353,7 +353,7 @@ export const GENERATE_SLIDE: Slide = {
     "Business tax: 2550-Q for VAT-registered clients, 2551-Q for non-VAT (individuals on the 8% rate skip it).",
     "Income tax in Q1–Q3: 1701-Q for individuals, 1702-Q for corporations and partnerships. Q4 goes on the annual return.",
     "Clients who withhold from suppliers add the 0619-E, 1601-EQ and the 2307s to give those suppliers. Employers add the monthly 1601-C.",
-    "Preview a form's PDF and fix a figure there if you need to (that saves a new version), then download it to file. The workbook highlights what changed since the last version.",
+    "Click PDF to see the form, fix a figure there if you need to (that saves a new version), then download it to file. The workbook highlights what changed since the last version.",
   ],
   Art: GenerateArt,
 };

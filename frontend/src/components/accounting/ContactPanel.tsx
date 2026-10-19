@@ -5,7 +5,7 @@ import { ArrowLeft, FilePdf, FileZip } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { EWT_ATC_OPTIONS, apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
-import { PreviewButton, useFilePreview } from "@/components/accounting/PdfPreview";
+import { useFilePreview } from "@/components/accounting/PdfPreview";
 import type { StatementType } from "@/types/extras";
 import type { Account, ContactDetail, ContactPatch, ContactRow } from "@/types/accounting";
 
@@ -138,21 +138,14 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
                   From <input type="date" className={SMALL_INPUT} value={stmtStart} max={asOf} onChange={(e) => setStmtStart(e.target.value)} />
                 </label>
               )}
-              <PreviewButton compact label="Preview customer statement"
-                disabled={busy !== "" || (stmtType !== "open_item" && !(stmtStart && stmtStart <= asOf))}
-                onClick={() => file.open(`${data.registered_name} statement · ${asOf}`,
-                  () => accountingApi.customerStatement(contactId, asOf, stmtType, stmtStart),
-                  `${data.registered_name} statement ${asOf}.pdf`)} />
               {file.node}
               <button
                 className={BTN}
                 disabled={busy !== "" || (stmtType !== "open_item" && !(stmtStart && stmtStart <= asOf))}
                 title="Open items: what is unpaid on the date. Balance forward: the balance at the start date, then the invoices, payments and write-offs since. Transactions: only the period's invoices, payments and write-offs. Every type ends with the aging."
-                onClick={() =>
-                  run("statement", async () =>
-                    saveBlob(await accountingApi.customerStatement(contactId, asOf, stmtType, stmtStart), `${data.registered_name} statement ${asOf}.pdf`),
-                  )
-                }
+                onClick={() => file.open(`${data.registered_name} statement · ${asOf}`,
+                  () => accountingApi.customerStatement(contactId, asOf, stmtType, stmtStart),
+                  `${data.registered_name} statement ${asOf}.pdf`)}
               >
                 <FilePdf size={14} /> Customer statement
               </button>

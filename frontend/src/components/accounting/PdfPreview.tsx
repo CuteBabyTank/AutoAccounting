@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowCounterClockwise, ArrowSquareOut, DownloadSimple, Eye, X } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, ArrowSquareOut, DownloadSimple, X } from "@phosphor-icons/react";
 import { apiErrorMessage, saveBlob } from "@/lib/accounting-format";
 import type { PdfField } from "@/types/accounting";
 
@@ -216,21 +216,6 @@ export default function PdfPreview({ title, docs, render, onExport, exportLabel,
       </div>
     </div>,
     document.body,
-  );
-}
-
-/** The "Preview" button that sits next to a download. ``compact`` shows just the eye (for crowded toolbars). */
-export function PreviewButton({ onClick, disabled, compact, label = "Preview" }: {
-  onClick: () => void;
-  disabled?: boolean;
-  compact?: boolean;
-  label?: string;
-}) {
-  return (
-    <button className={BTN} disabled={disabled} onClick={onClick} title={label} aria-label={label}>
-      <Eye size={16} />
-      {!compact && label}
-    </button>
   );
 }
 

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle, FilePdf, Warning } from "@phosphor-icons/react";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, saveBlob } from "@/lib/accounting-format";
-import PdfPreview, { PreviewButton } from "@/components/accounting/PdfPreview";
+import PdfPreview from "@/components/accounting/PdfPreview";
 import type { Output, Period, PdfField, Prepare, Scope } from "@/types/accounting";
 
 const FIGURE = /^-?\d+(\.\d+)?$/;
@@ -188,7 +188,9 @@ export default function PrepareReturns({ outputId, companyId, year, quarter, onP
                   {f.due && <span className="text-xs text-[var(--text-secondary)]">Due {new Date(f.due).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}</span>}
                   {f.amended && <span className="rounded-full bg-[var(--badge-blue-bg)] px-2 py-0.5 text-xs text-[var(--badge-blue-text)]">Amended</span>}
                   <div className="ml-auto flex items-center gap-2">
-                    <PreviewButton compact={false} label="Preview" disabled={busy} onClick={() => openPreview(f.form, f.title)} />
+                    <button className={BTN} disabled={busy} onClick={() => openPreview(f.form, f.title)}>
+                      <FilePdf size={16} /> PDF
+                    </button>
                     {f.filed && (
                       <span className="flex items-center gap-1 text-xs text-[var(--badge-green-text)]">
                         <CheckCircle size={14} /> Filed {shortDate(f.filed.paid_on ?? f.filed.filed_at)} from v{f.filed.version}

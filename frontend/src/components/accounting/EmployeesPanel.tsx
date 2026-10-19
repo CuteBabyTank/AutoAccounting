@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
-import PdfPreview, { PreviewButton } from "@/components/accounting/PdfPreview";
+import PdfPreview from "@/components/accounting/PdfPreview";
 import type { Certificate, Employee, EmployeeData, EmployeesYear, PayrollPreview } from "@/types/accounting";
 
 interface Props {
@@ -138,8 +138,7 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
           <button className={BTN} disabled={!data.employees.length || Boolean(busy)} onClick={() => download("xlsx")}>
             {busy === "xlsx" ? "Preparing…" : "Alphalist (Excel)"}
           </button>
-          <PreviewButton compact label="Preview and edit the 2316s" disabled={!data.employees.length || Boolean(busy)} onClick={open2316s} />
-          <button className={BTN} disabled={!data.employees.length || Boolean(busy)} onClick={() => download("zip")}>
+          <button className={BTN} disabled={!data.employees.length || Boolean(busy)} onClick={open2316s}>
             {busy === "zip" ? "Preparing…" : "2316s (PDF)"}
           </button>
         </div>

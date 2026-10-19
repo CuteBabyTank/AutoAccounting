@@ -5,7 +5,7 @@ import { DownloadSimple } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, saveBlob } from "@/lib/accounting-format";
-import { PreviewButton, useFilePreview } from "@/components/accounting/PdfPreview";
+import { useFilePreview } from "@/components/accounting/PdfPreview";
 import { fiscalQuarter } from "@/lib/report-periods";
 import { BTN, BTN_PRIMARY, INPUT } from "@/components/work/ui";
 import type { ManagementPack } from "@/types/accounting";
@@ -112,11 +112,12 @@ export default function ManagementPackSection({ companyId, companyName, fiscalYe
           {busy ? "Working…" : "Generate pack"}
         </button>
         {pack?.pdf && (
-          <PreviewButton compact label="Preview management pack" onClick={() =>
+          <button className={BTN} onClick={() =>
             file.open(`Management pack · ${year} Q${quarter}`, () => accountingApi.packFile(companyId, year, quarter, "pdf"),
-              `${companyName} ${year} Q${quarter} management report.pdf`)} />
+              `${companyName} ${year} Q${quarter} management report.pdf`)}>
+            <DownloadSimple size={14} /> PDF
+          </button>
         )}
-        {pack?.pdf && <button className={BTN} onClick={() => download("pdf")}><DownloadSimple size={14} /> PDF</button>}
         {file.node}
         {pack?.docx && <button className={BTN} onClick={() => download("docx")}><DownloadSimple size={14} /> Word</button>}
         {pack?.generated_at && (

@@ -25,20 +25,28 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
-from app.models.accounting import AABankLine, AACompany, AAJournalEntry, AAOpeningItem
+from app.models.accounting import (
+    AABankLine, AABankReconciliation, AACompany, AAImportBatch, AAJournalEntry, AAOpeningItem, AAPeriod,
+)
 from app.models.user import User
 from app.routers.accounting_books import ENTRY_FIELDS, entry_label, entry_problem, lines_json, new_entry_row
 from app.routers.accounting_scope import MANAGER_ROLES, company_or_404, scope_for
 from app.schemas.accounting_books import JournalEntryIn
 from app.schemas.accounting_imports import (
-    AccountChoiceOut, DateFormatOut, ImportKind, ImportOptions, ImportPreviewOut, ImportResultOut, JePreviewOut,
+    AccountChoiceOut, DateFormatOut, ImportBatchesOut, ImportBatchOut, ImportKind, ImportOptions, ImportPreviewOut,
+    ImportResultOut, ImportUndoOut, JePreviewOut,
     OpeningItemOut, OpeningItemPatch, OpeningItemsOut, OpenItemPreviewOut, RowIssueOut, TbLineOut,
 )
 from app.services.accounting import audit
 from app.services.accounting.books import bank
 from app.services.accounting.books.chart import Chart
 from app.services.accounting.books.loader import active_closes, ensure_chart, opening_items, touch_books
+from app.services.accounting.compute.bank_books import POSTING_STATUSES
 from app.services.accounting.compute.money import ZERO, c2
+from app.services.accounting.import_undo import (
+    KIND_LABELS, UndoFacts, bank_touches, batch_status, closed_hits, entries_plan, entry_state, filed_hits,
+    fingerprint, opening_bank_delta, opening_plan, reconciled_hits, undo_problem,
+)
 from app.services.accounting.import_rows import (
     JE_FIELDS, JE_SYNONYMS, OPEN_FIELDS, OPEN_SYNONYMS, TB_FIELDS, TB_SYNONYMS, TEMPLATES, AccountChoice,
     build_journals, build_open_items, build_tb, control_tie, document_keys, item_key,
@@ -237,12 +245,18 @@ async def confirm_import(company_id: uuid.UUID, kind: ImportKind, file: UploadFi
     _require_manager(user)
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
+    await _lock_company(db, company)   # an import and an undo of the same company don't interleave
     built = await _build(db, company, kind, file, parse_options(options))
     if not built.preview.ready:
         first = built.preview.errors[0].message if built.preview.errors else "Fix the problems shown first"
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Not ready to import: {first}")
     name = built.preview.filename
     out = ImportResultOut(kind=kind, warnings=built.preview.warnings)
+    batch = AAImportBatch(id=uuid.uuid4(), enterprise_id=ent, company_id=company.id, kind=kind, filename=name,
+                          created_by=user.id)
+    db.add(batch)
+    await db.flush()   # the rows below reference it
+    written: dict[str, str] = {}
     if kind == "opening-tb":
         body = _entry_body(kind="opening", book="GJ", entry_date=company.books_start, reference="",
                            particulars=f"Opening balances (imported from {name})"[:255] if name else "Opening balances",
@@ -252,8 +266,10 @@ async def confirm_import(company_id: uuid.UUID, kind: ImportKind, file: UploadFi
         problem = entry_problem(built.chart, body, company.books_start, kept)
         if problem:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, problem)
+        batch.restore = {"opening": entry_state(row) if row is not None else None}
         if row is None:
             row = new_entry_row(ent, company, body, user)
+            row.import_batch_id = batch.id
             db.add(row)
             audit.record(db, label=entry_label(row), ent=ent, company_id=company.id, user=user,
                          entity="journal_entry", entity_id=row.id, action="import",
@@ -262,10 +278,13 @@ async def confirm_import(company_id: uuid.UUID, kind: ImportKind, file: UploadFi
         else:
             before = audit.snapshot(row, ENTRY_FIELDS)
             row.lines, row.particulars = lines_json(body), body.particulars
+            row.import_batch_id = batch.id
             audit.record(db, label=entry_label(row), ent=ent, company_id=company.id, user=user,
                          entity="journal_entry", entity_id=row.id, action="import", before=before,
                          after=audit.snapshot(row, ENTRY_FIELDS), reason=f"Imported from {name}"[:500], always=True)
             out.updated = 1
+        written[str(row.id)] = fingerprint(entry_state(row))
+        batch.row_count = len(row.lines or [])
         touch_books(company)
         await db.flush()
         await bank.refresh_opening_flag(db, company)
@@ -276,13 +295,15 @@ async def confirm_import(company_id: uuid.UUID, kind: ImportKind, file: UploadFi
         for i in built.result.items:
             db.add(AAOpeningItem(enterprise_id=ent, company_id=company.id, kind=i.kind, contact_name=i.contact_name,
                                  contact_tin=i.contact_tin, doc_number=i.doc_number, doc_date=i.doc_date,
-                                 due_date=i.due_date, terms_days=i.terms_days, amount=i.amount, created_by=user.id))
+                                 due_date=i.due_date, terms_days=i.terms_days, amount=i.amount, created_by=user.id,
+                                 import_batch_id=batch.id))
         totals = built.result.totals
         audit.record(db, label=f"Opening open items · {name}"[:200], ent=ent, company_id=company.id, user=user,
                      entity="opening_item", entity_id=str(company.id), action="import", before={},
                      after={"items": len(built.result.items), "receivables": totals.get("ar", ZERO),
                             "payables": totals.get("ap", ZERO), "file": name}, always=True)
         out.created, out.skipped = len(built.result.items), built.result.skipped + built.result.documented
+        batch.row_count = out.created
         await db.flush()
         await bank.rematch(db, company)
     else:
@@ -293,12 +314,234 @@ async def confirm_import(company_id: uuid.UUID, kind: ImportKind, file: UploadFi
             if problem:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Row {draft.row}: {problem}")
             row = new_entry_row(ent, company, body, user)
+            row.import_batch_id = batch.id
             db.add(row)
             audit.record(db, label=entry_label(row), ent=ent, company_id=company.id, user=user,
                          entity="journal_entry", entity_id=row.id, action="import",
                          after=audit.snapshot(row, ENTRY_FIELDS), reason=f"Imported from {name}"[:500])
+            written[str(row.id)] = fingerprint(entry_state(row))
             out.created += 1
+        batch.row_count = out.created
         touch_books(company)
+    if batch.row_count or kind == "opening-tb":
+        batch.written = written
+        out.batch_id = batch.id
+        audit.record(db, label=_batch_label(batch), ent=ent, company_id=company.id, user=user, entity="import_batch",
+                     entity_id=batch.id, action="import", before=None,
+                     after={"kind": kind, "file": name, "rows": batch.row_count}, reason=f"Imported from {name}"[:500])
+    else:   # nothing written (every open item was already there): nothing to undo
+        await db.delete(batch)
+    await db.commit()
+    return out
+
+
+async def _lock_company(db: AsyncSession, company: AACompany) -> None:
+    await db.execute(select(AACompany.id).where(AACompany.id == company.id,
+                                                AACompany.enterprise_id == company.enterprise_id).with_for_update())
+
+
+def _batch_label(batch: AAImportBatch) -> str:
+    what = KIND_LABELS.get(batch.kind, batch.kind).capitalize()
+    return " · ".join(p for p in (f"{what} import", batch.filename) if p)[:200]
+
+
+# --- import batches (recent imports, undo) --------------------------------------------------------------------------
+
+BATCH_LIST_LIMIT = 50
+
+
+async def _emails(db: AsyncSession, ids: set) -> dict:
+    ids = {i for i in ids if i is not None}
+    if not ids:
+        return {}
+    return dict((await db.execute(select(User.id, User.email).where(User.id.in_(ids)))).all())
+
+
+def _batch_out(batch: AAImportBatch, emails: dict, opening_tag: str | None) -> ImportBatchOut:
+    return ImportBatchOut(id=batch.id, kind=batch.kind, filename=batch.filename, row_count=batch.row_count,
+                          created_by=emails.get(batch.created_by, ""), created_at=batch.created_at,
+                          undone_at=batch.undone_at, undone_by=emails.get(batch.undone_by, ""),
+                          status=batch_status(batch.kind, str(batch.id), batch.undone_at is not None, opening_tag))
+
+
+async def _opening_tag(db: AsyncSession, company: AACompany) -> str | None:
+    entry = await _opening_entry(db, company)
+    return str(entry.import_batch_id) if entry is not None and entry.import_batch_id else None
+
+
+@router.get("/companies/{company_id}/imports/batches", response_model=ImportBatchesOut)
+async def list_import_batches(company_id: uuid.UUID, user: User = Depends(get_current_user),
+                              db: AsyncSession = Depends(get_db)):
+    ent = scope_for(user)
+    company = await company_or_404(db, ent, company_id)
+    rows = (await db.execute(select(AAImportBatch).where(
+        AAImportBatch.enterprise_id == ent, AAImportBatch.company_id == company.id)
+        .order_by(AAImportBatch.created_at.desc()).limit(BATCH_LIST_LIMIT))).scalars().all()
+    emails = await _emails(db, {r.created_by for r in rows} | {r.undone_by for r in rows})
+    tag = await _opening_tag(db, company)
+    return ImportBatchesOut(batches=[_batch_out(r, emails, tag) for r in rows], can_undo=user.role in MANAGER_ROLES)
+
+
+async def _batch_or_404(db: AsyncSession, ent: uuid.UUID, batch_id: uuid.UUID, lock: bool = False) -> AAImportBatch:
+    q = select(AAImportBatch).where(AAImportBatch.id == batch_id, AAImportBatch.enterprise_id == ent)
+    if lock:
+        q = q.with_for_update().execution_options(populate_existing=True)
+    row = (await db.execute(q)).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Import not found")
+    return row
+
+
+async def _common_facts(db: AsyncSession, company: AACompany):
+    """(closed months, filed quarters, live reconciliations, bank account codes) of the company."""
+    closes = [(c.month_start, c.month_end) for c in await active_closes(db, company.id)]
+    periods = (await db.execute(select(AAPeriod.year, AAPeriod.quarter, AAPeriod.filed_at, AAPeriod.filed_forms).where(
+        AAPeriod.enterprise_id == company.enterprise_id, AAPeriod.company_id == company.id))).all()
+    filed = {(y, q) for y, q, at, forms in periods if at is not None or forms}
+    recs = [tuple(r) for r in (await db.execute(select(
+        AABankReconciliation.account_code, AABankReconciliation.month_start, AABankReconciliation.month_end).where(
+        AABankReconciliation.enterprise_id == company.enterprise_id, AABankReconciliation.company_id == company.id,
+        AABankReconciliation.voided_at.is_(None)))).all()]
+    codes = {a.code for a in await bank.bank_accounts(db, company.id)}
+    return closes, filed, recs, codes
+
+
+async def _lines_matched_to(db: AsyncSession, company: AACompany, kind: str, refs: list[str]) -> list[AABankLine]:
+    """Live statement lines whose posting match (auto or confirmed) points at these rows."""
+    if not refs:
+        return []
+    return list((await db.execute(select(AABankLine).where(
+        AABankLine.enterprise_id == company.enterprise_id, AABankLine.company_id == company.id,
+        AABankLine.match_kind == kind, AABankLine.matched_ref.in_(refs),
+        AABankLine.match_status.in_(POSTING_STATUSES), bank.live_line()))).scalars().all())
+
+
+@router.post("/import-batches/{batch_id}/undo", response_model=ImportUndoOut)
+async def undo_import(batch_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Undo a whole import: remove the rows it wrote (the opening TB puts back the opening entry it replaced).
+
+    Refused (409) when the import is already undone, posts into a closed month or filed quarter, is inside a bank
+    reconciliation, or later work depends on its rows (a confirmed bank match, a payment, a write-off, an edit).
+    """
+    if user.role not in MANAGER_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and managers can undo an import")
+    ent = scope_for(user)
+    batch = await _batch_or_404(db, ent, batch_id)
+    company = await company_or_404(db, ent, batch.company_id)
+    await _lock_company(db, company)
+    batch = await _batch_or_404(db, ent, batch_id, lock=True)   # re-read under the lock: undone by someone else?
+    closes, filed, recs, codes = await _common_facts(db, company)
+    now = datetime.now(timezone.utc)
+    reason = f"Undo of the import of {batch.filename}"[:500] if batch.filename else "Undo of an import"
+    out_removed, restored = 0, False
+    dates: list[date] = []
+    touches: list[tuple[str, date]] = []
+    extra: dict = {}
+
+    if batch.kind == "opening-tb":
+        current = await _opening_entry(db, company)
+        plan = opening_plan(str(batch.id), batch.restore or {}, batch.written or {}, current)
+        prior_lines = (plan.restore or {}).get("lines") or []
+        if current is not None and company.books_start is not None:
+            dates = [company.books_start]
+            touches = [(c, company.books_start) for c in opening_bank_delta(current.lines or [], prior_lines, codes)]
+        facts = UndoFacts(kind=batch.kind, undone=batch.undone_at is not None, fye=company.fiscal_year_end_month,
+                          opening=plan.problem)
+        extra = dict(current=current, plan=plan)
+    elif batch.kind == "journal-entries":
+        live = list((await db.execute(select(AAJournalEntry).where(
+            AAJournalEntry.enterprise_id == ent, AAJournalEntry.company_id == company.id,
+            AAJournalEntry.import_batch_id == batch.id, AAJournalEntry.deleted_at.is_(None))
+            .order_by(AAJournalEntry.entry_date))).scalars().all())
+        _, edited = entries_plan(batch.written or {}, live)
+        by_id = {str(e.id): e for e in live}
+        lines = await _lines_matched_to(db, company, "journal", list(by_id))
+        dates = [e.entry_date for e in live]
+        touches = bank_touches(live, codes) + [(l.account_code, l.line_date) for l in lines]
+        facts = UndoFacts(kind=batch.kind, undone=batch.undone_at is not None, fye=company.fiscal_year_end_month,
+                          confirmed=[entry_label(by_id[l.matched_ref]) for l in lines if l.match_status == "confirmed"],
+                          edited=[entry_label(by_id[i]) for i in edited])
+        extra = dict(live=live)
+    else:
+        from app.services.accounting.books.subledger import writeoff_rows
+
+        items = list((await db.execute(select(AAOpeningItem).where(
+            AAOpeningItem.enterprise_id == ent, AAOpeningItem.company_id == company.id,
+            AAOpeningItem.import_batch_id == batch.id, AAOpeningItem.deleted_at.is_(None)))).scalars().all())
+        by_id = {str(i.id): i for i in items}
+        lines = await _lines_matched_to(db, company, "document", list(by_id))
+        off = {str(x.get("id")) for _, _, xs in await writeoff_rows(db, company) for x in xs}
+        dates = [l.line_date for l in lines]   # the items post nothing themselves; their matched payments do
+        touches = [(l.account_code, l.line_date) for l in lines]
+        facts = UndoFacts(kind=batch.kind, undone=batch.undone_at is not None, fye=company.fiscal_year_end_month,
+                          confirmed=[_item_label(by_id[l.matched_ref]) for l in lines if l.match_status == "confirmed"],
+                          paid=[_item_label(i) for i in items if i.paid_on is not None],
+                          written_off=[_item_label(i) for k, i in by_id.items() if k in off])
+        extra = dict(items=items)
+
+    if not facts.undone:
+        facts = UndoFacts(**{**vars(facts), "closed": closed_hits(dates, closes),
+                             "filed": filed_hits(dates, filed, company.fiscal_year_end_month),
+                             "reconciled": reconciled_hits(touches, recs)})
+    problem = undo_problem(facts)
+    if problem:
+        raise HTTPException(status.HTTP_409_CONFLICT, problem)
+
+    if batch.kind == "opening-tb":
+        current, plan = extra["current"], extra["plan"]
+        before = audit.snapshot(current, ENTRY_FIELDS)
+        if plan.action == "delete":
+            current.deleted_at = now
+            after = None
+        else:
+            prior = plan.restore
+            current.kind, current.book = prior["kind"], prior["book"]
+            current.entry_date = date.fromisoformat(prior["entry_date"])
+            current.reference, current.particulars = prior["reference"], prior["particulars"]
+            current.lines, current.is_adjusting = prior["lines"], bool(prior["is_adjusting"])
+            current.import_batch_id = uuid.UUID(prior["import_batch_id"]) if prior.get("import_batch_id") else None
+            after = audit.snapshot(current, ENTRY_FIELDS)
+            restored = True
+        audit.record(db, label=entry_label(current), ent=ent, company_id=company.id, user=user,
+                     entity="journal_entry", entity_id=current.id, action="undo_import", before=before, after=after,
+                     reason=reason, always=True)
+        out_removed = 0 if restored else 1
+    elif batch.kind == "journal-entries":
+        for e in extra["live"]:
+            e.deleted_at = now
+            audit.record(db, label=entry_label(e), ent=ent, company_id=company.id, user=user, entity="journal_entry",
+                         entity_id=e.id, action="undo_import", before=audit.snapshot(e, ENTRY_FIELDS), after=None,
+                         reason=reason)
+        out_removed = len(extra["live"])
+    else:
+        items = extra["items"]
+        for i in items:
+            i.deleted_at = now
+        totals = _totals(items)
+        if items:
+            audit.record(db, label=f"Opening open items · {batch.filename}"[:200], ent=ent, company_id=company.id,
+                         user=user, entity="opening_item", entity_id=str(company.id), action="undo_import",
+                         before={"items": len(items), "receivables": totals.get("ar", ZERO),
+                                 "payables": totals.get("ap", ZERO), "file": batch.filename}, after=None,
+                         reason=reason)
+        out_removed = len(items)
+
+    batch.undone_at, batch.undone_by = now, user.id
+    audit.record(db, label=_batch_label(batch), ent=ent, company_id=company.id, user=user, entity="import_batch",
+                 entity_id=batch.id, action="undo_import", before={"status": "active"},
+                 after={"status": "undone", "removed": out_removed, "restored": restored}, reason=reason)
+    touch_books(company)
+    await db.flush()
+    for account, on in touches:   # none hold today (the guard refuses), kept so a changed line never leaves one
+        await bank.void_reconciliations(db, company.id, account, on)
+    await bank.rematch(db, company)
+    await bank.refresh_opening_flag(db, company)
+    warnings = []
+    if (company.review_flags or {}).get("opening_balance_missing"):
+        warnings.append("The opening cash in bank doesn't match the first bank statement's opening balance (see Bank).")
+    emails = await _emails(db, {batch.created_by, batch.undone_by})
+    out = ImportUndoOut(batch=_batch_out(batch, emails, await _opening_tag(db, company)), removed=out_removed,
+                        restored=restored, warnings=warnings)
     await db.commit()
     return out
 

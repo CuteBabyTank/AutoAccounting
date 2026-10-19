@@ -51,6 +51,12 @@ def column_statements() -> list[str]:
         "CREATE INDEX IF NOT EXISTS ix_aa_journal_entries_recurring_id ON aa_journal_entries (recurring_id)",
         "ALTER TABLE aa_journal_entries ADD COLUMN IF NOT EXISTS writeoff_items JSONB NOT NULL DEFAULT '[]'::jsonb",
         "ALTER TABLE aa_bank_lines ADD COLUMN IF NOT EXISTS page INTEGER",
+        "ALTER TABLE aa_journal_entries ADD COLUMN IF NOT EXISTS import_batch_id UUID "
+        "REFERENCES aa_import_batches(id) ON DELETE SET NULL",
+        "CREATE INDEX IF NOT EXISTS ix_aa_journal_entries_import_batch_id ON aa_journal_entries (import_batch_id)",
+        "ALTER TABLE aa_opening_items ADD COLUMN IF NOT EXISTS import_batch_id UUID "
+        "REFERENCES aa_import_batches(id) ON DELETE SET NULL",
+        "CREATE INDEX IF NOT EXISTS ix_aa_opening_items_import_batch_id ON aa_opening_items (import_batch_id)",
     ] + search_index_statements()
 
 

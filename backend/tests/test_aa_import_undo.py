@@ -4,7 +4,7 @@ from datetime import date
 from types import SimpleNamespace
 
 from app.services.accounting.import_undo import (
-    UndoFacts, bank_touches, closed_hits, entries_plan, entry_state, filed_hits, fingerprint, opening_bank_delta,
+    UndoFacts, bank_touches, batch_status, closed_hits, entries_plan, entry_state, filed_hits, fingerprint, opening_bank_delta,
     opening_plan, reconciled_hits, undo_problem,
 )
 
@@ -131,3 +131,12 @@ def test_undo_problem_messages_in_priority_order():
 def test_undo_problem_lists_at_most_a_few_names():
     msg = undo_problem(_facts(kind="open-items", confirmed=[f"INV-{i}" for i in range(12)]))
     assert "INV-0" in msg and "INV-11" not in msg and "and 7 more" in msg
+
+
+def test_batch_status():
+    assert batch_status("journal-entries", "b1", False, None) == "active"
+    assert batch_status("journal-entries", "b1", True, None) == "undone"
+    assert batch_status("opening-tb", "b1", False, "b1") == "active"
+    assert batch_status("opening-tb", "b1", False, "b2") == "replaced"
+    assert batch_status("opening-tb", "b1", False, None) == "replaced"   # deleted or typed over by a person
+    assert batch_status("opening-tb", "b1", True, "b2") == "undone"

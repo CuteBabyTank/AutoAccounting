@@ -403,6 +403,10 @@ class AAJournalEntry(Base):
     )
     # a bulk write-off: [{"id": open item id, "amount": "…", "doc_number", "kind": document | opening}]
     writeoff_items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    # the spreadsheet import that wrote it (None: typed, or imported before batches existed)
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_import_batches.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -813,12 +817,48 @@ class AAOpeningItem(Base):
     paid_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     paid_via: Mapped[str] = mapped_column(String(10), nullable=False, default="")
     paid_account: Mapped[str] = mapped_column(String(10), nullable=False, default="")
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_import_batches.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AAImportBatch(Base):
+    """One confirmed spreadsheet import (opening TB, opening open items or journal entries), so it can be undone.
+
+    The rows it wrote carry its id (``import_batch_id``); ``written`` keeps their fingerprints (an undo refuses rows
+    edited since) and ``restore`` the opening entry the opening TB import replaced (``{"opening": None}`` when there
+    was none).
+    """
+
+    __tablename__ = "aa_import_batches"
+    __table_args__ = (Index("ix_aa_import_batches_company", "company_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)       # opening-tb | open-items | journal-entries
+    filename: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)   # rows written (lines / items / entries)
+    written: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")   # id → fingerprint
+    restore: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = _created()
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    undone_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class AAChecklistTemplate(Base):

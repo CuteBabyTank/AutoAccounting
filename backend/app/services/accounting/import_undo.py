@@ -73,6 +73,15 @@ def opening_plan(batch_id: str, restore: dict, written: dict[str, str], current)
     return OpeningPlan(action, prior)
 
 
+def batch_status(kind: str, batch_id: str, undone: bool, opening_tag: str | None) -> str:
+    """``undone``, ``replaced`` (an opening TB import a later import or edit took over) or ``active``."""
+    if undone:
+        return "undone"
+    if kind == "opening-tb" and (opening_tag or "") != str(batch_id):
+        return "replaced"
+    return "active"
+
+
 def closed_hits(dates: Iterable[date], closes: list[tuple[date, date]]) -> list[tuple[date, date]]:
     """The closed months (start, end) that hold any of the dates."""
     days = set(dates)
@@ -172,7 +181,7 @@ def undo_problem(f: UndoFacts) -> str:
         return (f"The bank reconciliation of {where} includes this import. Correct it with a journal entry instead, "
                 "or change a line of that month on the Bank page (which voids the reconciliation) first")
     if f.confirmed:
-        return (f"A confirmed bank line pays {_names(f.confirmed)}; reject that match on the Bank page first")
+        return f"A confirmed bank line is matched to {_names(f.confirmed)}; reject that match on the Bank page first"
     if f.paid:
         return f"A payment is recorded on {_names(f.paid)}; clear it first"
     if f.written_off:

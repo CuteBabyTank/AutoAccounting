@@ -1,7 +1,7 @@
 """Request/response models for the spreadsheet importers (opening TB, opening open items, journal entries)."""
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -112,6 +112,7 @@ class ImportPreviewOut(BaseModel):
 
 class ImportResultOut(BaseModel):
     kind: str
+    batch_id: uuid.UUID | None = None        # None when nothing was written (nothing to undo)
     created: int = 0
     updated: int = 0
     skipped: int = 0
@@ -150,3 +151,27 @@ class OpeningItemPatch(BaseModel):
     paid_on: date | None = None
     paid_via: Literal["cash", "bank", "ewallet"] = "cash"
     paid_account: str = Field(default="", max_length=10)
+
+
+class ImportBatchOut(BaseModel):
+    id: uuid.UUID
+    kind: str
+    filename: str
+    row_count: int
+    created_by: str                 # the person's email ("" when the account is gone)
+    created_at: datetime
+    undone_at: datetime | None
+    undone_by: str
+    status: Literal["active", "undone", "replaced"]
+
+
+class ImportBatchesOut(BaseModel):
+    batches: list[ImportBatchOut]
+    can_undo: bool                  # the viewer is an owner / manager
+
+
+class ImportUndoOut(BaseModel):
+    batch: ImportBatchOut
+    removed: int = 0                # journal entries / open items removed
+    restored: bool = False          # the opening TB's prior opening entry was put back
+    warnings: list[str] = Field(default_factory=list)

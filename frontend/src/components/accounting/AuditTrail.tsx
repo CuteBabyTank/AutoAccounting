@@ -58,6 +58,7 @@ const ACTION_LABELS: Record<string, string> = {
   form_filed: "Form marked filed",
   form_unfiled: "Form marked not filed",
   generate: "Version generated",
+  edit: "Edited by hand",
   import: "Imported from a sheet",
   undo_import: "Import undone",
   supplier: "Supplier ATC set",

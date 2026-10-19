@@ -5,6 +5,7 @@ import { ArrowLeft, FilePdf, FileZip } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { EWT_ATC_OPTIONS, apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
+import { PreviewButton, useFilePreview } from "@/components/accounting/PdfPreview";
 import type { StatementType } from "@/types/extras";
 import type { Account, ContactDetail, ContactPatch, ContactRow } from "@/types/accounting";
 
@@ -44,6 +45,7 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
   const [mergeInto, setMergeInto] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const file = useFilePreview();
   const [saved, setSaved] = useState("");
   const [stmtType, setStmtType] = useState<StatementType>("open_item");
   const [stmtStart, setStmtStart] = useState(() => `${asOf.slice(0, 8)}01`);
@@ -136,6 +138,12 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
                   From <input type="date" className={SMALL_INPUT} value={stmtStart} max={asOf} onChange={(e) => setStmtStart(e.target.value)} />
                 </label>
               )}
+              <PreviewButton compact label="Preview customer statement"
+                disabled={busy !== "" || (stmtType !== "open_item" && !(stmtStart && stmtStart <= asOf))}
+                onClick={() => file.open(`${data.registered_name} statement · ${asOf}`,
+                  () => accountingApi.customerStatement(contactId, asOf, stmtType, stmtStart),
+                  `${data.registered_name} statement ${asOf}.pdf`)} />
+              {file.node}
               <button
                 className={BTN}
                 disabled={busy !== "" || (stmtType !== "open_item" && !(stmtStart && stmtStart <= asOf))}

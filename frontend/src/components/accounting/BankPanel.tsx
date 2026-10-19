@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
+import { PreviewButton, useFilePreview } from "@/components/accounting/PdfPreview";
 import type { Account, BankAccountInfo, BankLine, BankMonth, BankRule, ReconcileResult } from "@/types/accounting";
 
 interface Props {
@@ -44,6 +45,7 @@ export default function BankPanel({ companyId, account, month, canManage, onChan
   const [accounts, setAccounts] = useState<BankAccountInfo[]>([]);
   const [chart, setChart] = useState<Account[]>([]);
   const [rules, setRules] = useState<BankRule[] | null>(null);
+  const file = useFilePreview();
   const [openLine, setOpenLine] = useState("");
   const [postTo, setPostTo] = useState("");
   const [partial, setPartial] = useState("");
@@ -202,8 +204,16 @@ export default function BankPanel({ companyId, account, month, canManage, onChan
             {open > 0 && ` · ${open} line${open === 1 ? "" : "s"} to settle`}
           </span>
           {data.reconciliation && (
-            <button className={BTN} onClick={() => download(data.reconciliation!.id)}>Reconciliation report</button>
+            <span className="inline-flex gap-1">
+              <PreviewButton compact label="Preview reconciliation report" onClick={() => {
+                const id = data.reconciliation!.id;
+                file.open(`Bank reconciliation · ${account} ${month}`, () => accountingApi.reconciliationFile(id),
+                  `Bank reconciliation ${account} ${month}.pdf`);
+              }} />
+              <button className={BTN} onClick={() => download(data.reconciliation!.id)}>Reconciliation report</button>
+            </span>
           )}
+          {file.node}
           <button className={`${BTN} ml-auto`} onClick={() => (rules ? setRules(null) : accountingApi.bankRules(companyId).then(setRules).catch(() => setRules([])))}>
             {rules ? "Hide bank rules" : "Bank rules"}
           </button>

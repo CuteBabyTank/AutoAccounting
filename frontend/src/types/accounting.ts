@@ -331,7 +331,27 @@ export interface OutputItem {
   value: string;
   changed: boolean;
   before: string | null;
+  /** The books' figure, when this one was edited by hand. */
+  engine?: string | null;
 }
+
+/** One editable field of a form or certificate in the PDF preview. */
+export interface PdfField {
+  key: string;
+  label: string;
+  value: string;
+  kind: "amount" | "text";
+}
+
+/** A certificate (2307, 2316) in the preview: its id and editable fields. */
+export interface Certificate {
+  id: string;
+  label: string;
+  fields: PdfField[];
+}
+
+/** Edits per certificate id → field key → value. */
+export type CertificateEdits = Record<string, Record<string, string>>;
 
 export interface OutputForm {
   form: string;

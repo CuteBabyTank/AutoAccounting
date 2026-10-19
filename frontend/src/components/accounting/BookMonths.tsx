@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { accountingApi } from "@/lib/accounting-api";
-import { apiErrorMessage, saveBlob } from "@/lib/accounting-format";
+import { apiErrorMessage } from "@/lib/accounting-format";
+import { useFilePreview } from "@/components/accounting/PdfPreview";
 import type { BooksYear } from "@/types/accounting";
 
 interface Props {
@@ -27,6 +28,7 @@ export default function BookMonths({ companyId, year, canManage, onChanged }: Pr
   // A month whose bank statement isn't reconciled can still close, with a reason for the audit log.
   const [bankBlock, setBankBlock] = useState<{ month: string; message: string } | null>(null);
   const [overrideReason, setOverrideReason] = useState("");
+  const file = useFilePreview();
 
   const load = useCallback(() => accountingApi.booksYear(companyId, year).then(setData), [companyId, year]);
 
@@ -61,13 +63,12 @@ export default function BookMonths({ companyId, year, canManage, onChanged }: Pr
     }
   }
 
-  async function download(book: string, monthStart?: string) {
-    try {
-      const blob = await accountingApi.booksFile(companyId, year, book, monthStart);
-      saveBlob(blob, monthStart ? `${book} ${monthStart.slice(0, 7)}.pdf` : `${book} FY${year}.pdf`);
-    } catch (e) {
-      setError(apiErrorMessage(e, "Couldn't download the PDF"));
-    }
+  /** A book opens in the preview first; it downloads from there. */
+  function download(book: string, monthStart?: string) {
+    const label = book === "declaration" ? "Sworn declaration" : book;
+    file.open(monthStart ? `${label} · ${monthStart.slice(0, 7)}` : `${label} · FY ${year}`,
+      () => accountingApi.booksFile(companyId, year, book, monthStart),
+      monthStart ? `${book} ${monthStart.slice(0, 7)}.pdf` : `${book} FY${year}.pdf`);
   }
 
   if (!data) return error ? <p className="mb-3 text-sm text-[var(--alert-error-text)]">{error}</p> : null;
@@ -175,6 +176,7 @@ export default function BookMonths({ companyId, year, canManage, onChanged }: Pr
           )
         )}
       </div>
+      {file.node}
     </section>
   );
 }

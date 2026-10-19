@@ -7,6 +7,7 @@ import ManagementPackSection from "@/components/accounting/ManagementPackSection
 import ReportDrill, { type DrillTarget } from "@/components/accounting/ReportDrill";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatAmount, saveBlob } from "@/lib/accounting-format";
+import { PreviewButton, useFilePreview } from "@/components/accounting/PdfPreview";
 import { PRESETS, presetRange, type PresetKey } from "@/lib/report-periods";
 import { BTN, Chip, INPUT, shortDate } from "@/components/work/ui";
 import type {
@@ -55,6 +56,7 @@ export default function ReportsPanel({ companyId, companyName, fiscalYearEndMont
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [drill, setDrill] = useState<DrillTarget | null>(null);
+  const file = useFilePreview();
 
   const params: ReportParams = useMemo(() => ({
     start, end,
@@ -198,7 +200,13 @@ export default function ReportsPanel({ companyId, companyName, fiscalYearEndMont
             Accrual basis
           </span>
           <button className={BTN} onClick={() => exportAs("xlsx")} disabled={!report}><DownloadSimple size={14} /> Excel</button>
+          <PreviewButton compact label="Preview PDF" disabled={!report} onClick={() => {
+            const title = REPORTS.find((r) => r.kind === kind)?.label ?? kind;
+            file.open(`${title} · ${start} to ${end}`, () => accountingApi.reportFile(companyId, kind, params, "pdf"),
+              `${companyName} ${title} ${start} to ${end}.pdf`);
+          }} />
           <button className={BTN} onClick={() => exportAs("pdf")} disabled={!report}><DownloadSimple size={14} /> PDF</button>
+          {file.node}
         </div>
       </div>
 

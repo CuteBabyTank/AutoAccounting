@@ -7,6 +7,7 @@ import ContactPanel from "@/components/accounting/ContactPanel";
 import WriteOffPanel from "@/components/accounting/WriteOffPanel";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
+import { PreviewButton, useFilePreview } from "@/components/accounting/PdfPreview";
 import type { Aging, AgingBucket, ContactList } from "@/types/accounting";
 
 interface Props {
@@ -78,6 +79,7 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
     );
   }, [list, search, openOnly]);
   const agingById = useMemo(() => new Map((aging?.rows ?? []).map((r) => [r.contact_id, r])), [aging]);
+  const file = useFilePreview();
 
   async function download(format: "xlsx" | "pdf") {
     setBusy(format);
@@ -128,9 +130,13 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
           <button className={BTN} disabled={busy !== ""} onClick={() => download("xlsx")}>
             <FileXls size={16} /> Aging XLSX
           </button>
+          <PreviewButton compact label="Preview aging PDF" disabled={busy !== ""} onClick={() =>
+            file.open(`${title} aging · ${asOf}`, () => accountingApi.agingFile(companyId, kind, asOf, "pdf"),
+              `${companyName} ${kind === "ar" ? "AR" : "AP"} aging ${asOf}.pdf`)} />
           <button className={BTN} disabled={busy !== ""} onClick={() => download("pdf")}>
             <FilePdf size={16} /> Aging PDF
           </button>
+          {file.node}
           {role === "customer" && canManage && !writingOff && (
             <button className={BTN} onClick={() => setWritingOff(true)}>Write off…</button>
           )}

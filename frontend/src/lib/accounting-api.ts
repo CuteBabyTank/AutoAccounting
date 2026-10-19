@@ -3,6 +3,8 @@ import api, { seg } from "@/lib/api";
 import type { StatementType } from "@/types/extras";
 import type {
   BulkResolveResult,
+  Certificate,
+  CertificateEdits,
   ImportKind,
   ImportOptions,
   ImportPreview,
@@ -258,8 +260,18 @@ export const accountingApi = {
   deleteEmployee: (id: string) => api.delete<EmployeesYear>(`/accounting/employees/${seg(id)}`).then((r) => r.data),
   alphalistXlsx: (companyId: string, year: number) =>
     api.get<Blob>(`/accounting/companies/${seg(companyId)}/employees/${seg(year)}/alphalist.xlsx`, { responseType: "blob" }).then((r) => r.data),
-  zip2316: (companyId: string, year: number) =>
-    api.get<Blob>(`/accounting/companies/${seg(companyId)}/employees/${seg(year)}/2316.zip`, { responseType: "blob" }).then((r) => r.data),
+  zip2316: (companyId: string, year: number, edits: CertificateEdits = {}) =>
+    api
+      .post<Blob>(`/accounting/companies/${seg(companyId)}/employees/${seg(year)}/2316.zip`, { edits }, { responseType: "blob" })
+      .then((r) => r.data),
+  certificates2316: (companyId: string, year: number) =>
+    api.get<Certificate[]>(`/accounting/companies/${seg(companyId)}/employees/${seg(year)}/2316/certificates`).then((r) => r.data),
+  preview2316: (companyId: string, year: number, employee: string, values: Record<string, string>) =>
+    api
+      .post<Blob>(`/accounting/companies/${seg(companyId)}/employees/${seg(year)}/2316/preview`, { id: employee, values }, {
+        responseType: "blob",
+      })
+      .then((r) => r.data),
   alphalistStatus: (year: number) =>
     api.get<AlphalistStatus[]>("/accounting/alphalist-status", { params: { year } }).then((r) => r.data),
   booksYear: (companyId: string, year: number) =>
@@ -297,8 +309,20 @@ export const accountingApi = {
   getDocument: (id: string) => api.get<AADocument>(`/accounting/documents/${seg(id)}`).then((r) => r.data),
   documentPayments: (docId: string) =>
     api.get<PaymentLinks>(`/accounting/documents/${seg(docId)}/payments`).then((r) => r.data),
-  outgoing2307s: (id: string) =>
-    api.get<Blob>(`/accounting/outputs/${seg(id)}/2307s`, { responseType: "blob" }).then((r) => r.data),
+  outgoing2307s: (id: string, edits: CertificateEdits = {}) =>
+    api.post<Blob>(`/accounting/outputs/${seg(id)}/2307s`, { edits }, { responseType: "blob" }).then((r) => r.data),
+  certificates2307: (id: string) =>
+    api.get<Certificate[]>(`/accounting/outputs/${seg(id)}/2307s/certificates`).then((r) => r.data),
+  preview2307: (id: string, certificate: string, values: Record<string, string>) =>
+    api
+      .post<Blob>(`/accounting/outputs/${seg(id)}/2307s/preview`, { id: certificate, values }, { responseType: "blob" })
+      .then((r) => r.data),
+  /** A return's PDF with unsaved hand edits (edited items highlighted). */
+  previewForm: (id: string, form: string, values: Record<string, string>) =>
+    api.post<Blob>(`/accounting/outputs/${seg(id)}/preview`, { form, values }, { responseType: "blob" }).then((r) => r.data),
+  /** Save hand edits to a form as the period's next version. */
+  saveFormEdits: (id: string, form: string, values: Record<string, string>) =>
+    api.post<Output>(`/accounting/outputs/${seg(id)}/edits`, { form, values }).then((r) => r.data),
   // Customers / suppliers
   contacts: (companyId: string, role: "customer" | "supplier", asOf: string) =>
     api.get<ContactList>(`/accounting/companies/${seg(companyId)}/contacts`, { params: { role, as_of: asOf } }).then((r) => r.data),

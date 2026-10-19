@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
-import type { Employee, EmployeeData, EmployeesYear, PayrollPreview } from "@/types/accounting";
+import PdfPreview, { PreviewButton } from "@/components/accounting/PdfPreview";
+import type { Certificate, Employee, EmployeeData, EmployeesYear, PayrollPreview } from "@/types/accounting";
 
 interface Props {
   companyId: string;
@@ -35,6 +36,7 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
   const [data, setData] = useState<EmployeesYear | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const [certificates, setCertificates] = useState<Certificate[] | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PayrollPreview | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -98,6 +100,11 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
     }
   }
 
+  async function open2316s() {
+    const list = await run("zip", () => accountingApi.certificates2316(companyId, year));
+    if (list) setCertificates(list);
+  }
+
   async function download(kind: "xlsx" | "zip") {
     const blob = await run(kind, () => (kind === "xlsx" ? accountingApi.alphalistXlsx(companyId, year) : accountingApi.zip2316(companyId, year)));
     if (blob) saveBlob(blob, `${companyName} ${kind === "xlsx" ? "1604-C alphalist" : "2316s"} ${year}.${kind}`);
@@ -131,6 +138,7 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
           <button className={BTN} disabled={!data.employees.length || Boolean(busy)} onClick={() => download("xlsx")}>
             {busy === "xlsx" ? "Preparing…" : "Alphalist (Excel)"}
           </button>
+          <PreviewButton compact label="Preview and edit the 2316s" disabled={!data.employees.length || Boolean(busy)} onClick={open2316s} />
           <button className={BTN} disabled={!data.employees.length || Boolean(busy)} onClick={() => download("zip")}>
             {busy === "zip" ? "Preparing…" : "2316s (PDF)"}
           </button>
@@ -335,6 +343,17 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
             </table>
           </div>
         </div>
+      )}
+      {certificates && (
+        <PdfPreview
+          title={`2316s · ${companyName} ${year}`}
+          docs={certificates}
+          render={(id, values) => accountingApi.preview2316(companyId, year, id, values)}
+          note="Edits change only the certificates you download now. To keep a change, edit the employee instead."
+          exportLabel={(edited) => (edited ? "Download edited 2316s (zip)" : "Download 2316s (zip)")}
+          onExport={async (edits) => saveBlob(await accountingApi.zip2316(companyId, year, edits), `${companyName} 2316s ${year}.zip`)}
+          onClose={() => setCertificates(null)}
+        />
       )}
     </div>
   );

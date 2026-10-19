@@ -24,7 +24,8 @@ export function middleware(request: NextRequest) {
     // 'unsafe-eval' only in dev: React Refresh evaluates modules as strings.
     `script-src 'self' 'nonce-${nonce}'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""} https://accounts.google.com/gsi/client`,
     "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style https://fonts.googleapis.com",
-    "frame-src 'self' https://accounts.google.com/",
+    // blob: lets the PDF preview show a generated file in an iframe.
+    "frame-src 'self' blob: https://accounts.google.com/",
     // blob: covers document previews and generated PDFs opened from object URLs.
     "img-src 'self' data: blob: https://lh3.googleusercontent.com https://*.googleusercontent.com",
     "font-src 'self' data: https://fonts.gstatic.com",

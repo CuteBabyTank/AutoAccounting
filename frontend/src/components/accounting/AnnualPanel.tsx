@@ -419,7 +419,18 @@ export default function AnnualPanel({ companyId, companyName, year, refreshKey, 
               </button>
             ))}
           </div>
-          {selected && <OutputViewer outputId={selected} />}
+          {selected && (
+            <OutputViewer
+              key={selected}
+              outputId={selected}
+              latest={period.outputs[0]?.id === selected}
+              onNewVersion={(o) => {
+                setSelected(o.id);
+                accountingApi.annualPeriod(companyId, year).then(apply).catch(() => undefined);
+                onChanged();
+              }}
+            />
+          )}
         </div>
       )}
     </div>

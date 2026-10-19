@@ -38,6 +38,15 @@ api.interceptors.response.use(
       await new Promise((resolve) => setTimeout(resolve, waitMs));
       return api(config);
     }
+    // A file request (responseType "blob") gets its JSON error back as a Blob: parse it so callers see `detail`.
+    const data = error.response?.data;
+    if (typeof Blob !== "undefined" && data instanceof Blob && data.type.includes("json")) {
+      try {
+        error.response.data = JSON.parse(await data.text());
+      } catch {
+        // leave the Blob; callers fall back to their own message
+      }
+    }
     if (error.response?.status === 401 && typeof window !== "undefined") {
       sessionStorage.removeItem(TOKEN_KEY);
       // Don't hard-redirect here — AuthGate handles routing.

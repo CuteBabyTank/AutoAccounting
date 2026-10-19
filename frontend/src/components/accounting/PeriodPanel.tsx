@@ -342,9 +342,23 @@ export default function PeriodPanel({ companyId, year, quarter, refreshKey, onCh
           </div>
           {selected && (
             <>
-              <OutputViewer outputId={selected} />
-              <PrepareReturns outputId={selected} companyId={companyId} year={year} quarter={quarter} onPeriod={apply}
-                onEditCompany={onEditCompany} />
+              <OutputViewer
+                key={selected}
+                outputId={selected}
+                latest={period.outputs[0]?.id === selected}
+                onNewVersion={(o) => {
+                  setSelected(o.id);
+                  accountingApi.period(companyId, year, quarter).then(apply).catch(() => undefined);
+                  onChanged();
+                }}
+              />
+              <PrepareReturns key={`prep-${selected}`} outputId={selected} companyId={companyId} year={year} quarter={quarter}
+                onPeriod={apply} onEditCompany={onEditCompany}
+                onNewVersion={(o) => {
+                  setSelected(o.id);
+                  accountingApi.period(companyId, year, quarter).then(apply).catch(() => undefined);
+                  onChanged();
+                }} />
             </>
           )}
         </div>

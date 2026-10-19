@@ -13,7 +13,7 @@ _SEVERITY = {"high": 0, "normal": 1}
 @dataclass(frozen=True)
 class Notification:
     key: str
-    kind: str              # deadline | review | bank | cwt | task_assigned | task_due
+    kind: str              # deadline | review | bank | cwt | recurring | task_assigned | task_due
     title: str
     detail: str
     company_id: str | None
@@ -26,9 +26,10 @@ def _plural(n: int, one: str, many: str | None = None) -> str:
 
 
 def build(*, user_id: str, cards: list[dict], summaries: dict[str, dict], cwt: dict[str, tuple[int, int]],
-          tasks: list[dict], today: date, days: int) -> list[Notification]:
+          tasks: list[dict], today: date, days: int, recurring: list[dict] | None = None) -> list[Notification]:
     """``cards`` from the board, ``summaries`` the cheap per-company counts, ``cwt`` company → (pending, overdue),
-    ``tasks`` dicts with id, title, assignee_id, due_date, status, company_id, company_name."""
+    ``tasks`` dicts with id, title, assignee_id, due_date, status, company_id, company_name, ``recurring`` dicts with
+    company_id, company_name, count (recurring entries due to post) and oldest (the earliest due date)."""
     horizon = today + timedelta(days=days)
     out: list[Notification] = []
     for c in cards:
@@ -55,6 +56,13 @@ def build(*, user_id: str, cards: list[dict], summaries: dict[str, dict], cwt: d
         if late_2307:
             out.append(Notification(f"cwt:{cid}:{late_2307}", "cwt", f"{_plural(late_2307, '2307')} still missing",
                                     s["company_name"], cid, None, "normal"))
+    for r in recurring or []:
+        if not r.get("count"):
+            continue
+        n, oldest = r["count"], r.get("oldest")
+        out.append(Notification(f"recurring:{r['company_id']}:{n}:{oldest.isoformat() if oldest else ''}", "recurring",
+                                f"{_plural(n, 'recurring entry', 'recurring entries')} due to post",
+                                r.get("company_name") or "", r["company_id"], oldest, "normal"))
     for t in tasks:
         if t["status"] == "done" or str(t.get("assignee_id") or "") != user_id:
             continue

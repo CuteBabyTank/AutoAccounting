@@ -164,7 +164,7 @@ export interface TaskFilters {
 
 export interface AppNotification {
   key: string;
-  kind: "deadline" | "review" | "bank" | "cwt" | "task_assigned" | "task_due";
+  kind: "deadline" | "review" | "bank" | "cwt" | "recurring" | "task_assigned" | "task_due";
   title: string;
   detail: string;
   company_id: string | null;

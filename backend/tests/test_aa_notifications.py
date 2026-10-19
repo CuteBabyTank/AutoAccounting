@@ -50,3 +50,16 @@ def test_tasks_for_the_assignee():
              {"id": "t3", "title": "Done", "assignee_id": "me", "due_date": None, "status": "done"}]
     keys = {n.key for n in run(tasks=tasks)}
     assert keys == {"task:t1:due:2026-10-18", "task:t1:assigned"}
+
+
+def test_recurring_entries_due_notify_everyone_with_count_and_date_in_the_key():
+    due = [{"company_id": "c1", "company_name": "Bayanihan", "count": 3, "oldest": date(2026, 8, 31)},
+           {"company_id": "c2", "company_name": "Mabuhay", "count": 0, "oldest": None}]
+    [n] = run(recurring=due)
+    assert n.kind == "recurring" and n.key == "recurring:c1:3:2026-08-31"
+    assert n.title == "3 recurring entries due to post" and n.detail == "Bayanihan" and n.company_id == "c1"
+    assert n.due_date == date(2026, 8, 31) and n.severity == "normal"
+    # posting one changes the key, so a dismissed notice comes back with the new situation
+    [m] = run(recurring=[{**due[0], "count": 2, "oldest": date(2026, 9, 30)}])
+    assert m.key != n.key and m.title == "2 recurring entries due to post"
+    assert run(recurring=[{**due[0], "count": 1}])[0].title == "1 recurring entry due to post"

@@ -13,6 +13,7 @@ const KIND_LABEL: Record<AppNotification["kind"], string> = {
   review: "Review",
   bank: "Bank",
   cwt: "2307",
+  recurring: "Recurring",
   task_assigned: "Task",
   task_due: "Task",
 };

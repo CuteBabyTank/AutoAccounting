@@ -283,6 +283,25 @@ async def company_health(company_id: uuid.UUID, user: User = Depends(get_current
 
 # --- notifications (derived on read; read / dismissed persisted per person) -----------------------------------------
 
+async def _recurring_due(db: AsyncSession, ent: uuid.UUID, names: dict[str, str], today: date) -> list[dict]:
+    """Per company of the board: how many recurring entries are due to post by today, and the earliest date."""
+    from app.models.accounting import AARecurringEntry
+    from app.routers.accounting_recurring import MAX_DUE
+    from app.services.accounting.compute.recurring import due_dates
+
+    by_company: dict[str, list[date]] = {}
+    for row in (await db.execute(select(AARecurringEntry).where(
+            AARecurringEntry.enterprise_id == ent, AARecurringEntry.active.is_(True),
+            AARecurringEntry.next_date <= today))).scalars():
+        cid = str(row.company_id)
+        if cid not in names:
+            continue
+        due = due_dates(row.next_date, row.frequency, row.day_of_month, today, row.end_date, MAX_DUE)
+        by_company.setdefault(cid, []).extend(due)
+    return [{"company_id": cid, "company_name": names[cid], "count": len(d), "oldest": min(d)}
+            for cid, d in by_company.items() if d]
+
+
 async def _notifications(db: AsyncSession, user: User, ent: uuid.UUID):
     from app.models.accounting import AANotificationState
     from app.services.accounting.compute.notifications import build
@@ -300,7 +319,9 @@ async def _notifications(db: AsyncSession, user: User, ent: uuid.UUID):
               "company_name": names.get(str(t.company_id), "")}
              for t in (await db.execute(select(AATask).where(
                  AATask.enterprise_id == ent, AATask.assignee_id == user.id, AATask.status != "done"))).scalars()]
-    items = build(user_id=str(user.id), cards=cards, summaries=summaries, cwt=cwt, tasks=tasks, today=today, days=days)
+    recurring = await _recurring_due(db, ent, names, today)
+    items = build(user_id=str(user.id), cards=cards, summaries=summaries, cwt=cwt, tasks=tasks, today=today, days=days,
+                  recurring=recurring)
     states = {s.key: s for s in (await db.execute(select(AANotificationState).where(
         AANotificationState.enterprise_id == ent, AANotificationState.user_id == user.id)
         .execution_options(populate_existing=True))).scalars()}

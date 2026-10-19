@@ -273,6 +273,10 @@ export const accountingApi = {
         responseType: "blob",
       })
       .then((r) => r.data),
+  alphalistPreview: (companyId: string, year: number) =>
+    api
+      .get<{ sheets: WorkbookSheet[] }>(`/accounting/companies/${seg(companyId)}/employees/${seg(year)}/alphalist.xlsx`, { params: { preview: true } })
+      .then((r) => r.data.sheets),
   alphalistStatus: (year: number) =>
     api.get<AlphalistStatus[]>("/accounting/alphalist-status", { params: { year } }).then((r) => r.data),
   booksYear: (companyId: string, year: number) =>
@@ -346,6 +350,10 @@ export const accountingApi = {
     api
       .get<Blob>(`/accounting/companies/${seg(companyId)}/aging`, { params: { kind, as_of: asOf, format }, responseType: "blob" })
       .then((r) => r.data),
+  agingPreview: (companyId: string, kind: "ar" | "ap", asOf: string) =>
+    api
+      .get<{ sheets: WorkbookSheet[] }>(`/accounting/companies/${seg(companyId)}/aging`, { params: { kind, as_of: asOf, format: "xlsx", preview: true } })
+      .then((r) => r.data.sheets),
   customerStatement: (contactId: string, asOf: string, type: StatementType = "open_item", start?: string) =>
     api
       .get<Blob>(`/accounting/contacts/${seg(contactId)}/statement`, {
@@ -365,6 +373,12 @@ export const accountingApi = {
         responseType: "blob",
       })
       .then((r) => r.data),
+  reportPreview: (companyId: string, kind: ReportKind, params: ReportParams) =>
+    api
+      .get<{ sheets: WorkbookSheet[] }>(`/accounting/companies/${seg(companyId)}/reports/${seg(kind)}/export`, {
+        params: { ...params, format: "xlsx", preview: true },
+      })
+      .then((r) => r.data.sheets),
   reportPostings: (companyId: string, codes: string[], start: string | null, end: string) =>
     api
       .get<Postings>(`/accounting/companies/${seg(companyId)}/report-postings`, {

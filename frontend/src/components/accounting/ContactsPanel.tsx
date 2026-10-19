@@ -6,8 +6,9 @@ import Hint from "@/components/guide/Hint";
 import ContactPanel from "@/components/accounting/ContactPanel";
 import WriteOffPanel from "@/components/accounting/WriteOffPanel";
 import { accountingApi } from "@/lib/accounting-api";
-import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
+import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import { useFilePreview } from "@/components/accounting/PdfPreview";
+import { useWorkbookPreview } from "@/components/accounting/WorkbookPreview";
 import type { Aging, AgingBucket, ContactList } from "@/types/accounting";
 
 interface Props {
@@ -45,7 +46,6 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
   const [openOnly, setOpenOnly] = useState(true);
   const [contactId, setContactId] = useState<string | null>(initialContactId ?? null);
   const [refresh, setRefresh] = useState(0);
-  const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [writingOff, setWritingOff] = useState(false);
   const kind = role === "customer" ? "ar" : "ap";
@@ -80,19 +80,7 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
   }, [list, search, openOnly]);
   const agingById = useMemo(() => new Map((aging?.rows ?? []).map((r) => [r.contact_id, r])), [aging]);
   const file = useFilePreview();
-
-  async function download(format: "xlsx" | "pdf") {
-    setBusy(format);
-    setError("");
-    try {
-      const blob = await accountingApi.agingFile(companyId, kind, asOf, format);
-      saveBlob(blob, `${companyName} ${kind === "ar" ? "AR" : "AP"} aging ${asOf}.${format}`);
-    } catch (e) {
-      setError(apiErrorMessage(e, "Download failed"));
-    } finally {
-      setBusy("");
-    }
-  }
+  const sheet = useWorkbookPreview();
 
   if (contactId) {
     return (
@@ -127,15 +115,18 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <label className="text-xs text-[var(--text-secondary)]" htmlFor="contacts-as-of">As of</label>
           <input id="contacts-as-of" type="date" className={INPUT} value={asOf} onChange={(e) => setAsOf(e.target.value)} />
-          <button className={BTN} disabled={busy !== ""} onClick={() => download("xlsx")}>
+          <button className={BTN} onClick={() =>
+            sheet.open(`${title} aging · ${asOf}`, () => accountingApi.agingPreview(companyId, kind, asOf),
+              () => accountingApi.agingFile(companyId, kind, asOf, "xlsx"), `${companyName} ${kind === "ar" ? "AR" : "AP"} aging ${asOf}.xlsx`)}>
             <FileXls size={16} /> Aging XLSX
           </button>
-          <button className={BTN} disabled={busy !== ""} onClick={() =>
+          <button className={BTN} onClick={() =>
             file.open(`${title} aging · ${asOf}`, () => accountingApi.agingFile(companyId, kind, asOf, "pdf"),
               `${companyName} ${kind === "ar" ? "AR" : "AP"} aging ${asOf}.pdf`)}>
             <FilePdf size={16} /> Aging PDF
           </button>
           {file.node}
+          {sheet.node}
           {role === "customer" && canManage && !writingOff && (
             <button className={BTN} onClick={() => setWritingOff(true)}>Write off…</button>
           )}

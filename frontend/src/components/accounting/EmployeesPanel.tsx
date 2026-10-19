@@ -5,6 +5,7 @@ import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
 import PdfPreview from "@/components/accounting/PdfPreview";
+import { useWorkbookPreview } from "@/components/accounting/WorkbookPreview";
 import type { Certificate, Employee, EmployeeData, EmployeesYear, PayrollPreview } from "@/types/accounting";
 
 interface Props {
@@ -37,6 +38,7 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [certificates, setCertificates] = useState<Certificate[] | null>(null);
+  const sheet = useWorkbookPreview();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PayrollPreview | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -105,11 +107,6 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
     if (list) setCertificates(list);
   }
 
-  async function download(kind: "xlsx" | "zip") {
-    const blob = await run(kind, () => (kind === "xlsx" ? accountingApi.alphalistXlsx(companyId, year) : accountingApi.zip2316(companyId, year)));
-    if (blob) saveBlob(blob, `${companyName} ${kind === "xlsx" ? "1604-C alphalist" : "2316s"} ${year}.${kind}`);
-  }
-
   if (!data) return error ? <p className="text-sm text-[var(--alert-error-text)]">{error}</p> : null;
   const mappedName = Object.values(mapping).some((v) => v === "full_name" || v === "last_name");
 
@@ -135,7 +132,9 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
               <button className={BTN} onClick={() => setEditing({ data: { status: "R" } })}>Add employee</button>
             </>
           )}
-          <button className={BTN} disabled={!data.employees.length || Boolean(busy)} onClick={() => download("xlsx")}>
+          <button className={BTN} disabled={!data.employees.length || Boolean(busy)} onClick={() =>
+            sheet.open(`1604-C alphalist · ${companyName} ${year}`, () => accountingApi.alphalistPreview(companyId, year),
+              () => accountingApi.alphalistXlsx(companyId, year), `${companyName} 1604-C alphalist ${year}.xlsx`)}>
             {busy === "xlsx" ? "Preparing…" : "Alphalist (Excel)"}
           </button>
           <button className={BTN} disabled={!data.employees.length || Boolean(busy)} onClick={open2316s}>
@@ -343,6 +342,7 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
           </div>
         </div>
       )}
+      {sheet.node}
       {certificates && (
         <PdfPreview
           title={`2316s · ${companyName} ${year}`}

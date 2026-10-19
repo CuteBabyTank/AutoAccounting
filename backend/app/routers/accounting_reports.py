@@ -34,6 +34,7 @@ from app.services.accounting.report_export import jsonable, report_pdf, report_x
 from app.services.accounting.report_pack import Pack, pack_docx, pack_pdf
 from app.services.accounting.reports import Books, invalid_rows, load_books, parse_uuid
 from app.services.accounting.storage import is_stored_path_safe
+from app.services.accounting.xlsx_preview import workbook_preview
 
 router = APIRouter()
 
@@ -162,6 +163,7 @@ async def get_report(company_id: str, kind: Kind, p: Params = Depends(report_par
 
 @router.get("/companies/{company_id}/reports/{kind}/export")
 async def export_report(company_id: str, kind: Kind, format: Literal["xlsx", "pdf"] = Query("xlsx"),
+                        preview: bool = Query(False),
                         p: Params = Depends(report_params), user: User = Depends(get_current_user),
                         db: AsyncSession = Depends(get_db)):
     company = await _company(db, user, company_id)
@@ -172,6 +174,8 @@ async def export_report(company_id: str, kind: Kind, format: Literal["xlsx", "pd
     render = report_xlsx if format == "xlsx" else report_pdf
     body = await asyncio.get_running_loop().run_in_executor(
         None, lambda: render(header, title, f"{subtitle} · accrual basis", heads, rows))
+    if preview and format == "xlsx":  # the in-app preview: the workbook's sheets as cells
+        return JSONResponse({"sheets": await asyncio.get_running_loop().run_in_executor(None, workbook_preview, body)})
     name = re.sub(r"[^A-Za-z0-9 ._-]+", "", f"{company.registered_name} {title}").strip() or "report"
     return Response(content=body, media_type=_XLSX if format == "xlsx" else "application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{name}.{format}"'})

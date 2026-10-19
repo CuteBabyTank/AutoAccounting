@@ -9,7 +9,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -33,6 +33,7 @@ from app.services.accounting.payroll_import import IMPORT_FIELDS, apply_mapping,
 from app.schemas.accounting import CertificateOut, CertificatePreviewIn, CertificatesIn, PdfFieldOut
 from app.services.accounting.certificate_edits import apply_2316, fields_2316
 from app.services.accounting.pdf_2316 import build_2316_zip, fill_2316
+from app.services.accounting.xlsx_preview import workbook_preview
 
 router = APIRouter()
 MAX_SHEET_BYTES = 10 * 1024 * 1024
@@ -412,11 +413,13 @@ def _filename(company: AACompany, what: str, year: int, ext: str) -> str:
 
 
 @router.get("/companies/{company_id}/employees/{year}/alphalist.xlsx")
-async def download_alphalist(company_id: uuid.UUID, year: int, user: User = Depends(get_current_user),
-                             db: AsyncSession = Depends(get_db)):
+async def download_alphalist(company_id: uuid.UUID, year: int, preview: bool = Query(False),
+                             user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     company = await company_or_404(db, scope_for(user), company_id)
     _, tabs, _, warnings = await _build(db, company, year)
     data = await asyncio.get_running_loop().run_in_executor(None, alphalist_workbook, company, year, tabs, warnings)
+    if preview:  # the in-app preview: the workbook's sheets as cells
+        return JSONResponse({"sheets": await asyncio.get_running_loop().run_in_executor(None, workbook_preview, data)})
     return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="{_filename(company, "1604-C alphalist", year, "xlsx")}"'})
 

@@ -8,7 +8,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,7 @@ from app.services.accounting.compute.statement import activity as statement_acti
 from app.services.accounting.compute.subledger import OpenItem, aging, aging_totals
 from app.services.accounting.contacts import EDITABLE, merge_check, role_union
 from app.services.accounting.subledger_report import aging_pdf, aging_xlsx, statement_pdf
+from app.services.accounting.xlsx_preview import workbook_preview
 
 router = APIRouter()
 _MANILA = ZoneInfo("Asia/Manila")
@@ -361,7 +362,7 @@ def _safe_name(text: str) -> str:
 
 @router.get("/companies/{company_id}/aging", response_model=AgingOut)
 async def get_aging(company_id: uuid.UUID, kind: str = Query("ar", pattern="^(ar|ap)$"), as_of: date | None = None,
-                    format: str = Query("json", pattern="^(json|xlsx|pdf)$"),
+                    format: str = Query("json", pattern="^(json|xlsx|pdf)$"), preview: bool = Query(False),
                     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
@@ -380,6 +381,8 @@ async def get_aging(company_id: uuid.UUID, kind: str = Query("ar", pattern="^(ar
         data = await asyncio.get_running_loop().run_in_executor(
             None, lambda: aging_xlsx(header, kind, sub.as_of, rows, aging_totals(rows), items, tie))
         media = _XLSX
+        if preview:  # the in-app preview: the workbook's sheets as cells
+            return JSONResponse({"sheets": await asyncio.get_running_loop().run_in_executor(None, workbook_preview, data)})
     else:
         data = await asyncio.get_running_loop().run_in_executor(
             None, lambda: aging_pdf(header, kind, sub.as_of, rows, aging_totals(rows), items, tie))

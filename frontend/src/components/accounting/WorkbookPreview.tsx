@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { DownloadSimple, X } from "@phosphor-icons/react";
-import { apiErrorMessage } from "@/lib/accounting-format";
+import { apiErrorMessage, saveBlob } from "@/lib/accounting-format";
 import type { WorkbookSheet } from "@/types/accounting";
 
 const PRIMARY = "inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60";
@@ -138,4 +138,25 @@ export default function WorkbookPreview({ title, load, onDownload, note, onClose
     </div>,
     document.body,
   );
+}
+
+/** An Excel export that opens in the preview first (download inside): ``open`` it, render ``node``. */
+export function useWorkbookPreview() {
+  const [file, setFile] = useState<{
+    title: string; load: () => Promise<WorkbookSheet[]>; download: () => Promise<Blob>; name: string;
+  } | null>(null);
+  const open = useCallback(
+    (title: string, load: () => Promise<WorkbookSheet[]>, download: () => Promise<Blob>, name: string) =>
+      setFile({ title, load, download, name }),
+    [],
+  );
+  const node = file && (
+    <WorkbookPreview
+      title={file.title}
+      load={file.load}
+      onDownload={async () => saveBlob(await file.download(), file.name)}
+      onClose={() => setFile(null)}
+    />
+  );
+  return { open, node };
 }

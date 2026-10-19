@@ -6,8 +6,9 @@ import Hint from "@/components/guide/Hint";
 import ManagementPackSection from "@/components/accounting/ManagementPackSection";
 import ReportDrill, { type DrillTarget } from "@/components/accounting/ReportDrill";
 import { accountingApi } from "@/lib/accounting-api";
-import { apiErrorMessage, formatAmount, saveBlob } from "@/lib/accounting-format";
+import { apiErrorMessage, formatAmount } from "@/lib/accounting-format";
 import { useFilePreview } from "@/components/accounting/PdfPreview";
+import { useWorkbookPreview } from "@/components/accounting/WorkbookPreview";
 import { PRESETS, presetRange, type PresetKey } from "@/lib/report-periods";
 import { BTN, Chip, INPUT, shortDate } from "@/components/work/ui";
 import type {
@@ -57,6 +58,7 @@ export default function ReportsPanel({ companyId, companyName, fiscalYearEndMont
   const [error, setError] = useState("");
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const file = useFilePreview();
+  const sheet = useWorkbookPreview();
 
   const params: ReportParams = useMemo(() => ({
     start, end,
@@ -92,16 +94,6 @@ export default function ReportsPanel({ companyId, companyName, fiscalYearEndMont
     const range = presetRange(key, new Date(), fiscalYearEndMonth);
     setStart(range.start);
     setEnd(range.end);
-  };
-
-  const exportAs = async (format: "xlsx" | "pdf") => {
-    try {
-      const blob = await accountingApi.reportFile(companyId, kind, params, format);
-      const title = REPORTS.find((r) => r.kind === kind)?.label ?? kind;
-      saveBlob(blob, `${companyName} ${title} ${start} to ${end}.${format}`);
-    } catch (e) {
-      setError(apiErrorMessage(e, "Couldn't export the report"));
-    }
   };
 
   const showDates = kind !== "invalid";
@@ -199,13 +191,18 @@ export default function ReportsPanel({ companyId, companyName, fiscalYearEndMont
           <span className="text-xs text-[var(--text-secondary)]" title="The books post on the accrual basis; a cash-basis view isn't available yet.">
             Accrual basis
           </span>
-          <button className={BTN} onClick={() => exportAs("xlsx")} disabled={!report}><DownloadSimple size={14} /> Excel</button>
+          <button className={BTN} disabled={!report} onClick={() => {
+            const title = REPORTS.find((r) => r.kind === kind)?.label ?? kind;
+            sheet.open(`${title} · ${start} to ${end}`, () => accountingApi.reportPreview(companyId, kind, params),
+              () => accountingApi.reportFile(companyId, kind, params, "xlsx"), `${companyName} ${title} ${start} to ${end}.xlsx`);
+          }}><DownloadSimple size={14} /> Excel</button>
           <button className={BTN} disabled={!report} onClick={() => {
             const title = REPORTS.find((r) => r.kind === kind)?.label ?? kind;
             file.open(`${title} · ${start} to ${end}`, () => accountingApi.reportFile(companyId, kind, params, "pdf"),
               `${companyName} ${title} ${start} to ${end}.pdf`);
           }}><DownloadSimple size={14} /> PDF</button>
           {file.node}
+          {sheet.node}
         </div>
       </div>
 

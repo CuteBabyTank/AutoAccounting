@@ -1,5 +1,6 @@
 """Request/response models for the books of accounts endpoints."""
 
+import re
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
@@ -55,6 +56,36 @@ class JournalLineIn(BaseModel):
         return self
 
 
+class JournalLineOut(BaseModel):
+    """A stored line as read back: tolerant, so an old row (e.g. a write-off saved with a formatted contact TIN
+    "400-500-600-000" before the fix) still lists instead of failing validation."""
+    account_code: str = ""
+    debit: Decimal = Decimal("0")
+    credit: Decimal = Decimal("0")
+    party_name: str = ""
+    party_tin: str = ""
+
+    @field_validator("account_code", "party_name", "party_tin", mode="before")
+    @classmethod
+    def _text(cls, v):
+        return "" if v is None else str(v)
+
+    @field_validator("debit", "credit", mode="before")
+    @classmethod
+    def _amount(cls, v):
+        return v if v not in (None, "") else "0"
+
+    @field_validator("party_name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        return v[:255]
+
+    @field_validator("party_tin")
+    @classmethod
+    def _tin(cls, v: str) -> str:
+        return re.sub(r"\D", "", v)[:9] if len(v) > 9 else v
+
+
 class JournalEntryIn(BaseModel):
     kind: Literal["opening", "manual"] = "manual"
     book: Literal["GJ", "CRJ", "CDJ"] = "GJ"
@@ -89,7 +120,7 @@ class JournalEntryOut(BaseModel):
     entry_date: date
     reference: str
     particulars: str
-    lines: list[JournalLineIn]
+    lines: list[JournalLineOut]
     is_adjusting: bool = False
     is_writeoff: bool = False        # a bulk write-off: can be deleted (reopens the invoices), not edited
     recurring: bool = False          # posted from a recurring template

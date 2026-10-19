@@ -94,3 +94,26 @@ def test_written_off_totals_feed_the_bank_matcher():
                      counterparty_address="", gross=D(g)) for i, g in (("a", "1200.00"), ("b", "1000.00"))]
     left = {c.ref: c.amount for c in bank_open_items(lines, {}, {}, paid)}
     assert left == {"b": D("600.00")}       # fully written off: never offered; partly: only the rest
+
+
+def test_legacy_writeoff_lines_with_formatted_tin_still_serialise():
+    """Write-offs saved before the TIN fix carry "400-500-600-000" on their A/R lines; reading them must not fail."""
+    import uuid
+    from datetime import datetime, timezone
+
+    from app.schemas.accounting_books import JournalEntryOut
+
+    out = JournalEntryOut(
+        id=uuid.uuid4(), kind="manual", book="GJ", entry_date=date(2026, 12, 31), reference="", particulars="",
+        lines=[{"account_code": "6140", "debit": "1200.00", "credit": "0", "party_name": "", "party_tin": ""},
+               {"account_code": "1100", "debit": "0", "credit": "1200.00", "party_name": "K" * 300,
+                "party_tin": "400-500-600-000"}],
+        is_writeoff=True, created_at=datetime.now(timezone.utc))
+    assert out.lines[1].party_tin == "400500600"
+    assert len(out.lines[1].party_name) == 255
+    assert out.lines[1].credit == D("1200.00")
+    # missing keys in an old row default instead of failing
+    bare = JournalEntryOut(id=uuid.uuid4(), kind="manual", book="GJ", entry_date=date(2026, 12, 31), reference="",
+                           particulars="", lines=[{"account_code": "1010", "debit": "5", "credit": "0"}],
+                           created_at=datetime.now(timezone.utc))
+    assert bare.lines[0].party_tin == "" and bare.lines[0].party_name == ""

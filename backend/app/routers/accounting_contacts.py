@@ -19,13 +19,13 @@ from app.models.user import User
 from app.routers.accounting_scope import MANAGER_ROLES, company_or_404, scope_for
 from app.schemas.accounting_contacts import (
     AgingOut, AgingRowOut, CertificateOut, ContactDocumentOut, ContactListOut, ContactOut, ContactPatch,
-    ContactPaymentOut, ContactRowOut, Cwt2307In, Cwt2307Out, MergeIn, OpenItemOut, Outgoing2307Out,
+    ContactPaymentOut, ContactRowOut, Cwt2307In, Cwt2307Out, MergeIn, OpenItemOut, Outgoing2307Out, TieLineOut,
 )
 from app.services.accounting import audit
 from app.services.accounting.books.closing import header_for
 from app.services.accounting.books.receipts import party_key
 from app.services.accounting.books.subledger import (
-    Subledger, counterparty, doc_kind, key_map_for, load_subledger, outgoing_2307_outputs, payment_rows,
+    Subledger, control_ties, counterparty, doc_kind, key_map_for, load_subledger, outgoing_2307_outputs, payment_rows,
 )
 from app.services.accounting.compute import writeoff
 from app.services.accounting.compute.money import ZERO, c2
@@ -344,13 +344,15 @@ async def mark_cwt_2307(document_id: uuid.UUID, body: Cwt2307In, user: User = De
                       certificate_label=(cert.doc_number or "2307") if cert else "", source=item.source)
 
 
-def aging_out(sub: Subledger, kind: str) -> AgingOut:
+def aging_out(sub: Subledger, kind: str, tie: list | None = None, tie_note: str = "") -> AgingOut:
     items = [i for i in sub.items if i.doc.kind == kind]
     rows = aging(items)
     ids = {c.key: c.id for c in sub.contacts}
-    return AgingOut(kind=kind, as_of=sub.as_of, totals=aging_totals(rows), items=[_item_out(i, _recovered(sub)) for i in items],
+    recovered = _recovered(sub)
+    return AgingOut(kind=kind, as_of=sub.as_of, totals=aging_totals(rows), items=[_item_out(i, recovered) for i in items],
                     rows=[AgingRowOut(contact_id=ids.get(r.contact_key), name=r.name, tin=r.tin, buckets=r.buckets,
-                                      total=r.total, count=r.count, unverified=r.unverified) for r in rows])
+                                      total=r.total, count=r.count, unverified=r.unverified) for r in rows],
+                    tie=[TieLineOut(key=t.key, label=t.label, amount=t.amount) for t in tie or []], tie_note=tie_note)
 
 
 def _safe_name(text: str) -> str:
@@ -364,9 +366,11 @@ async def get_aging(company_id: uuid.UUID, kind: str = Query("ar", pattern="^(ar
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
     sub = await load_subledger(db, company, as_of or today())
+    ties, tie_note = await control_ties(db, company, sub)
+    tie = ties.get(kind, [])
     await db.commit()
     if format == "json":
-        return aging_out(sub, kind)
+        return aging_out(sub, kind, tie, tie_note)
     items = [i for i in sub.items if i.doc.kind == kind]
     rows = aging(items)
     header = header_for(company)
@@ -374,11 +378,11 @@ async def get_aging(company_id: uuid.UUID, kind: str = Query("ar", pattern="^(ar
     name = f"{_safe_name(company.registered_name)} {what} {sub.as_of.isoformat()}.{format}"
     if format == "xlsx":
         data = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: aging_xlsx(header, kind, sub.as_of, rows, aging_totals(rows), items))
+            None, lambda: aging_xlsx(header, kind, sub.as_of, rows, aging_totals(rows), items, tie))
         media = _XLSX
     else:
         data = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: aging_pdf(header, kind, sub.as_of, rows, aging_totals(rows), items))
+            None, lambda: aging_pdf(header, kind, sub.as_of, rows, aging_totals(rows), items, tie))
         media = "application/pdf"
     return Response(content=data, media_type=media, headers={"Content-Disposition": f'attachment; filename="{name}"'})
 

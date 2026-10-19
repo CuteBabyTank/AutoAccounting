@@ -188,3 +188,46 @@ def cwt_items(docs: list[OpenDoc], marks: dict[str, dict], received: list[Receiv
         out.append(CwtItem(d.id, d.contact_key, d.withheld, d.period, "received" if cert else "pending",
                            cert.id if cert else None, "auto" if cert else ""))
     return out
+
+
+@dataclass(frozen=True)
+class TieLine:
+    key: str            # aging | cwt | counter | other | books
+    label: str
+    amount: Decimal
+
+
+TIE_LABELS = {
+    "ar": {"aging": "Open items (this aging)",
+           "cwt": "Customer CWT still in A/R until its 2307 is booked",
+           "counter": "Paid at the counter, no payment recorded in the books",
+           "other": "Other differences (opening balances vs opening items, journal entries, documents before the "
+                    "books start)",
+           "books": "Accounts receivable in the books"},
+    "ap": {"aging": "Open items (this aging)",
+           "counter": "Paid at the counter, no payment recorded in the books",
+           "other": "Other differences (opening balances vs opening items, journal entries, documents before the "
+                    "books start)",
+           "books": "Accounts payable in the books"},
+}
+
+
+def control_tie(kind: str, docs: list[OpenDoc], payments: list[Payment], as_of: date, books_start: date,
+                aging_total: Decimal, books_balance: Decimal, cwt_booked: Decimal) -> list[TieLine]:
+    """Aging total → the books' A/R or A/P control, line by line. By design the books keep the customer's CWT in A/R
+    until the 2307 document posts (``cwt_booked`` = the 2307s' tax credited to A/R up to ``as_of``) and leave a
+    document paid at the counter in A/R / A/P until a payment is recorded; the aging nets both. Whatever is left is
+    "other" (opening balances vs imported open items, typed journal entries, documents dated before the books start).
+    ``books_balance`` is on the account's normal side (A/R debit, A/P credit)."""
+    posted = [d for d in docs if d.kind == kind and not d.opening and books_start <= d.doc_date <= as_of]
+    paid = paid_amounts(docs, payments, as_of)
+    explained: list[tuple[str, Decimal]] = []
+    if kind == "ar":
+        explained.append(("cwt", c2(sum((d.withheld for d in posted), ZERO) - c2(cwt_booked))))
+    explained.append(("counter", c2(sum((d.total - d.withheld - paid.get(d.id, ZERO)
+                                         for d in posted if d.paid_at_counter), ZERO))))
+    other = c2(books_balance - aging_total - sum((a for _, a in explained), ZERO))
+    labels = TIE_LABELS[kind]
+    lines = [TieLine("aging", labels["aging"], c2(aging_total))]
+    lines += [TieLine(k, labels[k], a) for k, a in explained + [("other", other)] if a]
+    return lines + [TieLine("books", labels["books"], c2(books_balance))]

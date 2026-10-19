@@ -88,3 +88,20 @@ def test_long_names_are_cut_before_the_next_column():
     number = next(r for t, r in spans if t.startswith("SI-2026"))
     on = next(r for t, r in spans if t == "2026-10-01")
     assert number.x1 <= on.x0
+
+
+def test_aging_exports_show_the_tie_to_the_books():
+    from app.services.accounting.compute.subledger import TieLine
+
+    items, rows = _ap()
+    total = aging_totals(rows)["total"]
+    tie = [TieLine("aging", "Open items (this aging)", total),
+           TieLine("counter", "=Paid at the counter, no payment recorded in the books", Decimal("1120.00")),
+           TieLine("books", "Accounts payable in the books", total + Decimal("1120.00"))]
+    text = _text(aging_pdf(HEADER, "ap", AS_OF, rows, aging_totals(rows), items, tie))
+    assert "Tie to the books" in text and "Accounts payable in the books" in text
+    wb = load_workbook(io.BytesIO(aging_xlsx(HEADER, "ap", AS_OF, rows, aging_totals(rows), items, tie)))
+    cells = [(c.value, c.offset(0, 7).value) for c in wb["Aging"]["A"] if c.value]
+    assert ("Tie to the books", None) in cells
+    assert ("'=Paid at the counter, no payment recorded in the books", Decimal("1120.00")) in cells or \
+        ("'=Paid at the counter, no payment recorded in the books", 1120) in cells

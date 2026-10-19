@@ -880,6 +880,9 @@ export interface Aging {
   rows: AgingRow[];
   totals: Record<AgingBucket | "total", string>;
   items: OpenItemRow[];
+  /** Aging total → the books' control account: open items, CWT still in A/R, counter-paid, other, books. */
+  tie?: { key: "aging" | "cwt" | "counter" | "other" | "books"; label: string; amount: string }[];
+  tie_note?: string;
 }
 
 // --- Reports (live from the books) ---------------------------------------------------------------------------------

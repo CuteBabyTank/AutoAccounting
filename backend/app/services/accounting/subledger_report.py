@@ -79,7 +79,7 @@ def _header(w: _Writer, header: Header, title: str, subtitle: str) -> None:
 
 
 def aging_pdf(header: Header, kind: str, as_of: date, rows: list[AgingRow], totals: dict[str, Decimal],
-              items: list[OpenItem]) -> bytes:
+              items: list[OpenItem], tie: list | None = None) -> bytes:
     """Summary by contact (buckets), then the open items; A/P marks bills with no payment seen yet."""
     w = _Writer(_PAGE)
     _header(w, header, TITLES[kind], f"As of {as_of:%B %d, %Y}")
@@ -98,6 +98,12 @@ def aging_pdf(header: Header, kind: str, as_of: date, rows: list[AgingRow], tota
               + [(x, peso(r.buckets[b]), "r") for x, b in zip(cols, BUCKETS)] + [(cols[-1], peso(r.total), "r")])
     w.row([(MARGIN, "Total", "l")] + [(x, peso(totals[b]), "r") for x, b in zip(cols, BUCKETS)]
           + [(cols[-1], peso(totals["total"]), "r")], bold=True)
+    if tie:
+        w.gap(12)
+        w.text("Tie to the books", bold=True)
+        for t in tie:
+            w.row([(MARGIN, _cut(t.label, right - MARGIN - 110), "l"), (right, peso(t.amount), "r")],
+                  bold=t.key in ("aging", "books"))
     w.gap(12)
     w.text("Open items", bold=True)
     x_no, x_date, x_due = MARGIN + 230, MARGIN + 330, MARGIN + 400
@@ -193,7 +199,7 @@ def statement_pdf(header: Header, contact: dict, as_of: date, items: list[OpenIt
 
 
 def aging_xlsx(header: Header, kind: str, as_of: date, rows: list[AgingRow], totals: dict[str, Decimal],
-               items: list[OpenItem]) -> bytes:
+               items: list[OpenItem], tie: list | None = None) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "Aging"
@@ -220,6 +226,14 @@ def aging_xlsx(header: Header, kind: str, as_of: date, rows: list[AgingRow], tot
     for col, b in enumerate(list(BUCKETS) + ["total"], start=3):
         cell = ws.cell(r, col, totals[b])
         cell.number_format, cell.font = _MONEY, bold
+    if tie:
+        r += 2
+        ws.cell(r, 1, "Tie to the books").font = bold
+        for t in tie:
+            r += 1
+            ws.cell(r, 1, csv_safe(t.label)).font = Font(bold=t.key in ("aging", "books"))
+            cell = ws.cell(r, 8, t.amount)
+            cell.number_format = _MONEY
     for col, width in zip("ABCDEFGHIJ", (40, 14, 15, 15, 15, 15, 15, 16, 11, 11)):
         ws.column_dimensions[col].width = width
 

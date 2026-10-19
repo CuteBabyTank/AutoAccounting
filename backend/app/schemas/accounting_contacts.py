@@ -164,9 +164,17 @@ class AgingRowOut(BaseModel):
     unverified: int
 
 
+class TieLineOut(BaseModel):
+    key: str                        # aging | cwt | counter | other | books
+    label: str
+    amount: Decimal
+
+
 class AgingOut(BaseModel):
     kind: str
     as_of: date
     rows: list[AgingRowOut]
     totals: dict[str, Decimal]
     items: list[OpenItemOut]
+    tie: list[TieLineOut] = []      # aging total → the books' control account (empty when the books are off)
+    tie_note: str = ""

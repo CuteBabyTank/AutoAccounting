@@ -244,6 +244,29 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
               </table>
             </div>
           )}
+          {(aging.tie?.length ?? 0) > 0 && (
+            <details className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2" open={aging.tie!.length > 2}>
+              <summary className="cursor-pointer text-sm font-medium text-[var(--text-primary)]">
+                Tie to the books{aging.tie!.length > 2 ? " · differences explained" : " · agrees"}
+              </summary>
+              <table className="mt-2 w-full text-sm">
+                <tbody>
+                  {aging.tie!.map((t) => (
+                    <tr key={t.key} className={t.key === "books" ? "border-t border-[var(--border)]" : ""}>
+                      <td className={`py-1 pr-3 ${t.key === "aging" || t.key === "books" ? "font-medium text-[var(--text-primary)]" : "pl-3 text-[var(--text-secondary)]"}`}>
+                        {t.key !== "aging" && t.key !== "books" && "+ "}{t.label}
+                      </td>
+                      <td className="py-1 text-right tabular-nums text-[var(--text-primary)]">{formatPeso(t.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                The aging nets the customer&apos;s CWT and treats documents paid at the counter as paid; the books keep both in the control account until the 2307 or a payment is recorded.
+              </p>
+            </details>
+          )}
+          {aging.tie_note && <p className="mt-2 text-xs text-[var(--text-secondary)]">{aging.tie_note}</p>}
         </>
       )}
     </div>

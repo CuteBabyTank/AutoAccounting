@@ -180,3 +180,10 @@ Progress entry, CLAUDE.md layout / gotchas, Decisions below kept current.
 - **Quarter versions** store the aging as of the quarter end in ledger tabs `ARAging` / `APAging` (one row per open
   item), so the version's aging PDF never changes after generation; the live aging (any date) is on the Customers /
   Suppliers pages.
+- **Aging ↔ books tie (bug fix 2026-10-19).** The two differences above are by design (the books don't post an implicit
+  counter payment, and keep customer CWT in A/R until the 2307 posts), so the books are not changed. Instead the live
+  aging (JSON, XLSX, PDF; `compute/subledger.control_tie` via `books/subledger.control_ties`) ends with a "Tie to the
+  books" block: open items + customer CWT still in A/R (sales' CWT in the books window − 2307s credited to A/R) +
+  paid at the counter with no payment in the books + other (opening balances vs opening items, typed JEs, documents
+  before the books start) = the A/R / A/P control (the system account and its sub-accounts, closing entries left
+  out). Quarter-version aging tabs are unchanged.

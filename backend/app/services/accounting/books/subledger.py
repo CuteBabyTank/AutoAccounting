@@ -220,3 +220,45 @@ async def outgoing_2307_outputs(db: AsyncSession, company: AACompany) -> dict[tu
             has = bool(((snap or {}).get("ledgers") or {}).get("QAP"))
             best[(year, quarter)] = (version, str(output_id), has)
     return {k: v[1] for k, v in best.items() if v[2]}
+
+
+async def control_ties(db: AsyncSession, company: AACompany, sub: Subledger) -> tuple[dict[str, list], str]:
+    """Aging → books control account tie for A/R and A/P as of ``sub.as_of`` ({kind: [TieLine]}, note). Empty with a
+    note when the books are off, start later, or can't be built."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.services.accounting.books.bank import book_entries
+    from app.services.accounting.books.loader import ensure_chart
+    from app.services.accounting.compute.book_ledgers import balances
+    from app.services.accounting.compute.reports import check_window, is_closing
+    from app.services.accounting.compute.statements import _key
+    from app.services.accounting.compute.subledger import control_tie
+
+    if company.books_start is None:
+        return {}, ""
+    if sub.as_of < company.books_start:
+        return {}, f"The books start on {company.books_start:%b %d, %Y}; nothing to tie to yet."
+    try:
+        check_window(None, sub.as_of, datetime.now(ZoneInfo("Asia/Manila")).date(), company.fiscal_year_end_month)
+        entries = await book_entries(db, company, sub.as_of)
+    except (ValueError, KeyError) as exc:
+        return {}, f"The books couldn't be built to tie the aging out: {exc}"
+    if entries is None:
+        return {}, ""
+    chart = await ensure_chart(db, company)
+    entries = [e for e in entries if not is_closing(e)]
+    bal = balances(entries, sub.as_of)
+    out: dict[str, list] = {}
+    for kind in ("ar", "ap"):
+        codes = {a.code for a in chart.accounts if _key(chart, a.code) == kind}
+        control = c2(sum((bal.get(c, ZERO) for c in codes), ZERO))
+        if kind == "ap":
+            control = -control
+        ar_codes = codes if kind == "ar" else set()
+        cwt_booked = c2(sum((l.credit - l.debit for e in entries if e.id.endswith(":2307") for l in e.lines
+                             if l.account in ar_codes), ZERO))
+        aging_total = c2(sum((i.open for i in sub.items if i.doc.kind == kind), ZERO))
+        out[kind] = control_tie(kind, sub.docs, sub.payments, sub.as_of, company.books_start, aging_total, control,
+                                cwt_booked)
+    return out, ""

@@ -205,3 +205,36 @@ def test_user_mark_wins():
     assert (items[0].status, items[0].source) == ("pending", "user")
     items = cwt_items(docs, {"0006": {"status": "received", "document_id": "x"}}, [])
     assert (items[0].status, items[0].document_id, items[0].source) == ("received", "x", "user")
+
+
+def test_control_tie_explains_books_vs_aging():
+    """The books keep customer CWT in A/R until the 2307 posts and leave counter-paid documents in A/R / A/P until a
+    payment is recorded; the aging nets both. The tie lists each difference so aging + lines = the GL control."""
+    from app.services.accounting.compute.subledger import control_tie
+
+    start = date(2026, 10, 1)
+    docs = [doc("SI-1", "ar", "Kalayaan", date(2026, 10, 5), "11200.00", withheld="200.00"),
+            doc("SI-2", "ar", "Walk-in", date(2026, 11, 2), "560.00", counter=True),
+            doc("SI-3", "ar", "Mabuhay", date(2026, 11, 9), "5600.00", withheld="100.00"),
+            doc("OLD", "ar", "Old", date(2026, 9, 1), "1000.00", withheld="50.00"),     # before the books start
+            doc("BL-1", "ap", "Pacific", date(2026, 10, 7), "8000.00", withheld="80.00"),
+            doc("OR-9", "ap", "Hardware", date(2026, 12, 1), "1120.00", withheld="0", counter=True)]
+    pays = [Payment("p1", "SI-1", date(2026, 11, 30), None, "bank", "")]
+    items = open_items(docs, pays, AS_OF, {})
+    ar_total = sum((i.open for i in items if i.doc.kind == "ar"), D("0"))
+    assert ar_total == D("6450.00")                       # SI-3 5,500 + OLD 950
+    # books A/R: SI-1 200 CWT left, SI-2 560 (no payment), SI-3 5,600, minus a 2307 for SI-1 (200) booked → 6,160;
+    # plus an opening balance of 1,000 for OLD
+    ar = control_tie("ar", docs, pays, AS_OF, start, ar_total, D("7160.00"), D("200.00"))
+    assert [(l.key, l.amount) for l in ar] == [
+        ("aging", D("6450.00")), ("cwt", D("100.00")), ("counter", D("560.00")), ("other", D("50.00")),
+        ("books", D("7160.00"))]
+    assert sum((l.amount for l in ar[1:-1]), ar[0].amount) == ar[-1].amount
+
+    ap_total = sum((i.open for i in items if i.doc.kind == "ap"), D("0"))
+    ap = control_tie("ap", docs, pays, AS_OF, start, ap_total, D("9040.00"), D("0"))
+    assert [(l.key, l.amount) for l in ap] == [("aging", D("7920.00")), ("counter", D("1120.00")),
+                                               ("books", D("9040.00"))]
+    # all tied: just aging and books, the same figure
+    assert [l.key for l in control_tie("ap", docs[4:5], [], AS_OF, start, D("7920.00"), D("7920.00"), D("0"))] == [
+        "aging", "books"]

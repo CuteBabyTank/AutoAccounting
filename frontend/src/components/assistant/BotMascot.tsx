@@ -114,7 +114,7 @@ export default function BotMascot({ state, size, playful = false }: BotMascotPro
           {imageState !== "done" && (
             <svg className="aa-bot-neck" viewBox="0 0 256 256" fill="none" aria-hidden="true">
               {/* Hidden upper chest: the source helmet must not remain on the body. */}
-              <path d="M48 152H190L196 175L197 190H42L43 175Z" fill={imageState === "idle" ? "#d7e7ec" : "#d4e6ec"} stroke={imageState === "idle" ? "#1a4d72" : "#044773"} strokeWidth="5" strokeLinejoin="round" />
+              <path d="M50 150H188L194 175V186L190 202H48L44 186L45 175Z" fill={imageState === "idle" ? "#d7e7ec" : "#d4e6ec"} stroke={imageState === "idle" ? "#1a4d72" : "#044773"} strokeWidth="5" strokeLinejoin="round" />
             </svg>
           )}
           {["body", "head"].map((layer) => (

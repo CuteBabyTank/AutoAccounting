@@ -13,8 +13,7 @@
   height: 100%;
 }
 .aa-bot-art { transition: opacity 200ms var(--ease-out); }
-/* Helmet outline ends at rows 184–186; overlap in the shoulders hides the join.
-   Moving down keeps the body's copy of that outline covered throughout the nod. */
+/* Original split retained for the stationary done art. */
 .aa-bot-head {
   transform-origin: 46.5% 72%;
   clip-path: polygon(0 0, 100% 0, 100% 62%, 77% 62%, 74% 67%, 70% 71%, 63% 74%, 30% 74%, 24% 70%, 20% 66%, 16% 62%, 0 62%);
@@ -22,20 +21,24 @@
 .aa-bot-body {
   clip-path: polygon(0 61%, 16% 61%, 19% 64%, 24% 67%, 31% 69%, 63% 69%, 70% 67%, 74% 64%, 77% 61%, 100% 61%, 100% 100%, 0 100%);
 }
-/* Follow the helmet's lower outline (rows 154–185), excluding shoulder pixels.
-   The stationary neck backs the removed outline, so a tilt cannot open a gap. */
+/* PNG coordinates: ears end at y=155; the helmet ends at y=185. Follow that
+   contour instead of carrying the shoulders with the head. The body starts
+   below the old helmet outline; the neck SVG fills the otherwise missing chest.
+   Its top edge (y=147.5–152.5) stays inside the head at 0–7% / ±4deg; its
+   bottom edge (y=199.5–204.5) is covered by the opaque body, even at rest.
+   Keep these splits in percentages so they also overlap at 36/72/112px. */
 .aa-bot-art[data-image-state="idle"] .aa-bot-head {
-  clip-path: polygon(0 0, 100% 0, 100% 60%, 77% 60%, 75% 65%, 72% 68%, 68% 71%, 63% 73%, 33% 73%, 28% 71.5%, 24% 69%, 21% 66%, 18% 62%, 16% 59%, 0 59%);
+  clip-path: polygon(0 0, 100% 0, 100% 61%, 77% 61%, 75% 65%, 72% 68%, 68% 71%, 63% 73%, 33% 73%, 28% 71.5%, 24% 69.5%, 21% 67%, 18% 65%, 16% 61%, 0 61%);
 }
 .aa-bot-art[data-image-state="idle"] .aa-bot-body {
-  clip-path: polygon(0 60%, 16% 60%, 18% 64%, 21% 68%, 24% 71%, 29% 73%, 34% 74%, 62% 74%, 68% 72%, 73% 69%, 76% 65%, 78% 60%, 100% 60%, 100% 100%, 0 100%);
+  clip-path: polygon(0 62%, 16% 62%, 18% 66%, 21% 69%, 24% 71%, 29% 73%, 34% 74%, 62% 74%, 68% 72%, 73% 69%, 76% 65%, 78% 62%, 100% 62%, 100% 100%, 0 100%);
 }
 /* Carry the thinking hand to row 193, following its outline above the chest. */
 .aa-bot-art[data-image-state="thinking"] .aa-bot-head {
-  clip-path: polygon(0 0, 100% 0, 100% 60%, 76% 60%, 74% 65%, 71% 68%, 67% 71%, 61% 73%, 43% 73%, 42% 75%, 35% 76%, 31% 74%, 28% 69%, 24% 69%, 21% 66%, 18% 62%, 16% 59%, 0 59%);
+  clip-path: polygon(0 0, 100% 0, 100% 61%, 76% 61%, 74% 65%, 71% 68%, 67% 71%, 61% 73%, 43% 73%, 42% 75%, 35% 76%, 31% 74%, 28% 69%, 24% 69%, 21% 66%, 18% 64%, 16% 61%, 0 61%);
 }
 .aa-bot-art[data-image-state="thinking"] .aa-bot-body {
-  clip-path: polygon(0 60%, 17% 60%, 19% 65%, 23% 69%, 28% 72%, 31% 76%, 42% 76%, 44% 74%, 61% 74%, 67% 72%, 72% 69%, 75% 65%, 77% 60%, 100% 60%, 100% 100%, 0 100%);
+  clip-path: polygon(0 62%, 17% 62%, 19% 65%, 23% 69%, 28% 72%, 31% 76%, 42% 76%, 44% 74%, 61% 74%, 67% 72%, 72% 69%, 75% 65%, 77% 62%, 100% 62%, 100% 100%, 0 100%);
 }
 /* Split the existing ! from the helmet so only the notification pulses. */
 .aa-bot-art[data-image-state="done"] .aa-bot-head {

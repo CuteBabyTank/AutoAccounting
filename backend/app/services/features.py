@@ -99,6 +99,7 @@ ALWAYS_ON: frozenset[str] = frozenset({
     f"{_A}/companies/{{company_id}}/health",
     f"{_A}/companies/{{company_id}}/assets", f"{_A}/assets/{{asset_id}}",
     f"{_A}/coa-templates", f"{_A}/coa-templates/{{template_id}}",
+    f"{_A}/atc-codes",                                  # the ATC pickers' list
 })
 
 

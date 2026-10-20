@@ -32,6 +32,7 @@ import type {
   Asset,
   AssetPatch,
   OpeningAssetInput,
+  AtcCode,
   AtcDatabank,
   Aging,
   ContactDetail,
@@ -311,6 +312,7 @@ export const accountingApi = {
         responseType: "blob",
       })
       .then((r) => r.data),
+  atcCodes: () => api.get<AtcCode[]>("/accounting/atc-codes").then((r) => r.data),
   atcDatabank: (companyId: string) =>
     api.get<AtcDatabank>(`/accounting/companies/${seg(companyId)}/atc-databank`).then((r) => r.data),
   setSupplierAtc: (companyId: string, tin: string, ewtAtc: string, name = "") =>

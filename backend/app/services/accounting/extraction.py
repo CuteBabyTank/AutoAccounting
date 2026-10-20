@@ -61,6 +61,7 @@ Reply with ONLY valid JSON, no markdown fences, no explanation:
   "marked_paid": <true when the document says PAID, RELEASED or RECEIVED (e.g. a payroll sheet marked released), else false>,
   "nature": "<goods_for_resale|raw_materials|capital_goods|services|import|payroll|other>",
   "expense_account": "<purchases|raw_materials|importation|capital_goods|salaries|rent|utilities|professional_fees|office_supplies|representation|transportation|repairs|taxes_licenses|other>",
+  "description": "<what was bought or the service rendered, in a few words, e.g. office rent for March, aircon repair, cement and rebar>",
   "confidence": <0-100, your certainty in the amounts and date>,
   "statement": <ONLY for a bank or e-wallet statement, else omit: {"bank_name": "", "account_number": "<as printed>",
     "period_start": "<YYYY-MM-DD>", "period_end": "<YYYY-MM-DD>", "opening_balance": <beginning balance>,

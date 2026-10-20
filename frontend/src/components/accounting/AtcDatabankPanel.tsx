@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
+import AtcPicker from "@/components/accounting/AtcPicker";
 import { accountingApi } from "@/lib/accounting-api";
-import { ACCOUNT_LABELS, EWT_ATC_OPTIONS, apiErrorMessage } from "@/lib/accounting-format";
+import { ACCOUNT_LABELS, apiErrorMessage } from "@/lib/accounting-format";
 import type { AtcDatabank } from "@/types/accounting";
 
 interface Props {
@@ -15,18 +16,9 @@ interface Props {
 
 const SELECT = "w-full rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] disabled:opacity-60";
 const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-60";
-const CODES = EWT_ATC_OPTIONS.filter((o) => o.value);
 
-function AtcSelect({ value, blank, disabled, onChange }: { value: string; blank: string; disabled: boolean; onChange: (v: string) => void }) {
-  return (
-    <select className={SELECT} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
-      <option value="">{blank}</option>
-      {CODES.map((o) => (
-        <option key={o.value} value={o.value}>{o.label}</option>
-      ))}
-      {value && !CODES.some((o) => o.value === value) && <option value={value}>{value}</option>}
-    </select>
-  );
+function AtcSelect({ value, blank, hint, disabled, onChange }: { value: string; blank: string; hint?: string; disabled: boolean; onChange: (v: string) => void }) {
+  return <AtcPicker className={SELECT} value={value} blank={blank} blankHint={hint} disabled={disabled} onChange={onChange} />;
 }
 
 export default function AtcDatabankPanel({ companyId, companyName, onChanged }: Props) {
@@ -97,7 +89,7 @@ export default function AtcDatabankPanel({ companyId, companyName, onChanged }: 
                   <span className="truncate">{ACCOUNT_LABELS[d.account] ?? d.account}</span>
                   <AtcSelect
                     value={d.ewt_atc}
-                    blank="Suggested by AutoAccounting"
+                    blank={d.suggestion ? `Suggested (${d.suggestion})` : "Suggested"}
                     disabled={busy}
                     onChange={(v) => run(() => accountingApi.setAccountAtc(companyId, d.account, v))}
                   />
@@ -149,7 +141,8 @@ export default function AtcDatabankPanel({ companyId, companyName, onChanged }: 
                       <td className="py-1.5 pl-3">
                         <AtcSelect
                           value={s.ewt_atc}
-                          blank="Default for the expense type"
+                          blank={s.automatic ? `Suggested (${s.automatic})` : "Suggested"}
+                          hint={s.automatic_reason}
                           disabled={busy}
                           onChange={(v) => run(() => accountingApi.setSupplierAtc(companyId, s.tin, v, s.name))}
                         />

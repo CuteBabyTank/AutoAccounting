@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { ArrowsLeftRight, X } from "@phosphor-icons/react";
 import AssetSection from "@/components/accounting/AssetSection";
+import AtcPicker from "@/components/accounting/AtcPicker";
 import AuditTrail, { formatWhen } from "@/components/accounting/AuditTrail";
 import DuplicateCompare from "@/components/accounting/DuplicateCompare";
 import AmountInput from "@/components/AmountInput";
 import MoveDocumentDialog from "@/components/accounting/MoveDocumentDialog";
 import { accountingApi } from "@/lib/accounting-api";
-import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, EWT_ATC_OPTIONS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, formatPeso, reasonDetail, formatTin, tinBranch } from "@/lib/accounting-format";
+import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, formatPeso, reasonDetail, formatTin, tinBranch } from "@/lib/accounting-format";
 import type { AADocument, Account, AuditEvent, DocumentPatch, DuplicatePair, PaymentLinks } from "@/types/accounting";
 import PageViewer from "@/components/accounting/PageViewer";
 
@@ -406,14 +407,12 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
           {(draft.category === "purchases" || draft.category === "expenses") && (
             <div className="col-span-2">
               <label className={LABEL}>Expanded withholding (ATC)</label>
-              <select className={INPUT} value={draft.ewt_atc} onChange={(e) => setDraft((d) => ({ ...d, ewt_atc: e.target.value }))}>
-                {EWT_ATC_OPTIONS.map((o) => (
-                  <option key={o.value || "auto"} value={o.value}>{o.label}</option>
-                ))}
-                {draft.ewt_atc && !EWT_ATC_OPTIONS.some((o) => o.value === draft.ewt_atc) && (
-                  <option value={draft.ewt_atc}>{draft.ewt_atc}</option>
-                )}
-              </select>
+              <AtcPicker
+                className={INPUT}
+                value={draft.ewt_atc}
+                blank={!doc.ewt_atc && doc.ewt_atc_effective ? `Suggested (${doc.ewt_atc_effective})` : "Suggested"}
+                onChange={(v) => setDraft((d) => ({ ...d, ewt_atc: v }))}
+              />
               {draft.ewt_atc === doc.ewt_atc && !doc.ewt_atc && (
                 <span className="mt-0.5 block text-[11px] text-[var(--text-primary)]">
                   {doc.ewt_atc_effective ? `Currently using ${doc.ewt_atc_effective}` : "Currently no withholding"}

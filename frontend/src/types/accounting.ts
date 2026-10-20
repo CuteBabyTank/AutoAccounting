@@ -583,10 +583,18 @@ export interface AtcSupplier {
   ewt_atc: string;
   suggestion: string;
   suggestion_company: string;
+  automatic: string; // ATC(s) its documents get with no supplier ATC, e.g. "WC120" or "WC120 / WC158"
+  automatic_reason: string;
+}
+
+export interface AtcCode {
+  code: string;
+  nature: string;
+  rate: string; // fraction, e.g. "0.05"
 }
 
 export interface AtcDatabank {
-  defaults: { account: string; ewt_atc: string }[];
+  defaults: { account: string; ewt_atc: string; suggestion: string }[];
   suppliers: AtcSupplier[];
 }
 

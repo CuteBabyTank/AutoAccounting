@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Hint from "@/components/guide/Hint";
+import AtcPicker from "@/components/accounting/AtcPicker";
 import { accountingApi } from "@/lib/accounting-api";
-import { EWT_ATC_OPTIONS, apiErrorMessage, formatAmount } from "@/lib/accounting-format";
+import { apiErrorMessage, formatAmount } from "@/lib/accounting-format";
 import { PRESETS, presetRange, type PresetKey } from "@/lib/report-periods";
 import { BTN, BTN_PRIMARY, Chip, INPUT } from "@/components/work/ui";
 import type { Account, ReclassifyList, ReclassifyPreview } from "@/types/accounting";
@@ -17,7 +18,6 @@ interface Props {
 }
 
 const LABEL = "block text-[11px] font-medium text-[var(--text-secondary)] mb-1";
-const ATCS = EWT_ATC_OPTIONS.filter((o) => o.value);
 
 /** Company → Reclassify: move the postings behind an account (documents, typed journal entries) in bulk. */
 export default function ReclassifyPanel({ companyId, companyName, fiscalYearEndMonth, onOpenDocument, onChanged }: Props) {
@@ -142,10 +142,7 @@ export default function ReclassifyPanel({ companyId, companyName, fiscalYearEndM
         </div>
         <div>
           <label className={LABEL}>ATC (optional)</label>
-          <select className={`${INPUT} max-w-52`} value={atc} onChange={(e) => setAtc(e.target.value)}>
-            <option value="">Any</option>
-            {ATCS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+          <AtcPicker className={`${INPUT} max-w-52`} value={atc} blank="Any" onChange={setAtc} />
         </div>
         <button className={BTN_PRIMARY} disabled={!account || busy} onClick={load}>Show postings</button>
       </div>
@@ -219,10 +216,12 @@ export default function ReclassifyPanel({ companyId, companyName, fiscalYearEndM
           </div>
           <div>
             <label className={LABEL}>and / or ATC (documents)</label>
-            <select className={`${INPUT} max-w-52`} value={toAtc} onChange={(e) => { setPreview(null); setToAtc(e.target.value); }}>
-              <option value="">Keep the ATC</option>
-              {EWT_ATC_OPTIONS.filter((o) => o.value).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            <AtcPicker
+              className={`${INPUT} max-w-52`}
+              value={toAtc}
+              blank="Keep the ATC"
+              onChange={(v) => { setPreview(null); setToAtc(v); }}
+            />
           </div>
           <button className={BTN} disabled={busy || picked.size === 0 || (!toAccount && !toAtc)} onClick={() => run(false)}>Preview</button>
         </div>

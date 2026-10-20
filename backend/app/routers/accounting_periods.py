@@ -41,7 +41,7 @@ from app.services.accounting.compute.specs import FORM_ORDER, FORM_TITLES, PAYAB
 from app.services.accounting.assets import active_assets
 from app.services.accounting.atc_prefs import account_key, remembered_atc
 from app.services.accounting.books.loader import quarter_books, touch_books
-from app.services.accounting.classify import document_nature
+from app.services.accounting.classify import document_description, document_nature
 from app.services.accounting.diff import count_changes, diff_snapshots, snapshot
 from app.services.accounting.filing import (
     amended_forms, amends_payment, backfill, derive, file_all, form_amended, set_form, unfile_all, unset_form,
@@ -93,7 +93,7 @@ def doc_line(doc: AADocument, atc_rules: dict[str, str] | None = None,
         input_vat_valid=doc.input_vat_valid, open_review=doc.needs_review and not doc.reviewed,
         ewt_atc=doc.ewt_atc or remembered,
         counterparty_vat_registered=None if seller else doc.seller_vat_registered,
-        gl_account=gl, nature=document_nature(doc.raw),
+        gl_account=gl, nature=document_nature(doc.raw), description=document_description(doc.raw),
     )
 
 

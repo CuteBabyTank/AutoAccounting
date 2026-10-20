@@ -12,10 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db
 from app.models.accounting import AAAtcDefault, AACompany, AADocument, AASupplierRule
 from app.models.user import User
+from app.routers.accounting_periods import company_facts
 from app.routers.accounting_scope import company_or_404, scope_for
-from app.schemas.accounting import AtcDatabankOut, AtcDefaultOut, AtcSet, AtcSupplierOut
+from app.schemas.accounting import AtcCodeOut, AtcDatabankOut, AtcDefaultOut, AtcSet, AtcSupplierOut
 from app.services.accounting import audit
-from app.services.accounting.atc_prefs import SeenSupplier, supplier_rows
+from app.services.accounting.atc_prefs import SeenSupplier, automatic_suggestion, document_pick, supplier_rows
+from app.services.accounting.compute.ewt import account_suggestions, ewt_codes
+from app.services.accounting.compute.inputs import CompanyFacts, DocLine
 from app.services.accounting.extraction import EXPENSE_ACCOUNTS
 from app.services.accounting.parsing import normalize_tin
 
@@ -41,6 +44,27 @@ async def _seen_suppliers(db: AsyncSession, company_id: uuid.UUID) -> list[SeenS
         AADocument.company_id == company_id, AADocument.deleted_at.is_(None), AADocument.seller_tin != "", *_PAYMENT,
     ).group_by(AADocument.seller_tin))).all()
     return [SeenSupplier(tin, name or "", count, last) for tin, name, count, last in rows]
+
+
+async def _automatic(db: AsyncSession, company_id: uuid.UUID, defaults: dict[str, str],
+                     facts: CompanyFacts) -> dict[str, tuple[str, str]]:
+    """tin -> (ATCs, reason) the supplier's documents without their own ATC get when the supplier has none."""
+    rows = (await db.execute(select(
+        AADocument.seller_tin, AADocument.seller_name, AADocument.category, AADocument.account,
+        AADocument.raw["nature"].astext, AADocument.raw["description"].astext, AADocument.gross_amount,
+        AADocument.vat_amount, AADocument.withholding_amount, AADocument.seller_vat_registered,
+    ).where(
+        AADocument.company_id == company_id, AADocument.deleted_at.is_(None), AADocument.seller_tin != "",
+        AADocument.ewt_atc == "", *_PAYMENT,
+    ))).all()
+    picks: dict[str, list[tuple[str, str]]] = {}
+    for tin, name, category, account, nature, description, gross, vat, withheld, vat_registered in rows:
+        line = DocLine(id="", category=category, account=account, doc_type="", client_role="buyer", doc_date=None,
+                       doc_number="", counterparty_tin=tin, counterparty_name=name or "", counterparty_address="",
+                       gross=gross, vat=vat, withholding=withheld, counterparty_vat_registered=vat_registered,
+                       nature=nature or "", description=(description or "")[:200])
+        picks.setdefault(tin, []).append(document_pick(line, defaults.get(account, ""), facts))
+    return {tin: automatic_suggestion(p) for tin, p in picks.items()}
 
 
 async def suggestions_from_other_companies(db: AsyncSession, company: AACompany,
@@ -69,10 +93,19 @@ async def _databank(db: AsyncSession, company: AACompany) -> AtcDatabankOut:
     seen = await _seen_suppliers(db, company.id)
     missing = {s.tin for s in seen if not rules.get(s.tin, ("", ""))[0]}
     elsewhere = await suggestions_from_other_companies(db, company, missing)
+    facts = company_facts(company)
+    automatic = await _automatic(db, company.id, defaults, facts)
     return AtcDatabankOut(
-        defaults=[AtcDefaultOut(account=a, ewt_atc=defaults.get(a, "")) for a in ATC_ACCOUNTS],
-        suppliers=[AtcSupplierOut(**vars(r)) for r in supplier_rows(seen, rules, elsewhere)],
+        defaults=[AtcDefaultOut(account=a, ewt_atc=defaults.get(a, ""),
+                                suggestion=" / ".join(account_suggestions(a, facts))) for a in ATC_ACCOUNTS],
+        suppliers=[AtcSupplierOut(**vars(r)) for r in supplier_rows(seen, rules, elsewhere, automatic)],
     )
+
+
+@router.get("/atc-codes", response_model=list[AtcCodeOut])
+async def list_atc_codes(user: User = Depends(get_current_user)):
+    """Every expanded withholding ATC a payment can carry (the pickers' list)."""
+    return [AtcCodeOut(code=c, nature=n, rate=r) for c, n, r in ewt_codes()]
 
 
 @router.get("/companies/{company_id}/atc-databank", response_model=AtcDatabankOut)

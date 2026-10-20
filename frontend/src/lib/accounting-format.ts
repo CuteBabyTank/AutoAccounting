@@ -145,10 +145,8 @@ export function formatAmount(value: string, whole = false): string {
 /** Pastel yellow used for "changed since the previous version" everywhere. */
 export const CHANGED_STYLE = { backgroundColor: "#FFF4B3", color: "#1F1F1F" } as const;
 
-/** EWT ATCs offered on a payment; "" lets AutoAccounting suggest one, NONE means no withholding. */
-export const EWT_ATC_OPTIONS: { value: string; label: string }[] = [
-  { value: "", label: "Automatic (suggested from the account and supplier)" },
-  { value: "NONE", label: "No withholding" },
+/** The ATCs most payments use, listed first in every ATC picker (`AtcPicker` adds the rest from the backend). */
+export const COMMON_ATCS: { value: string; label: string }[] = [
   { value: "WI010", label: "WI010 Professional fees, individual ≤ ₱3M (5%)" },
   { value: "WI011", label: "WI011 Professional fees, individual > ₱3M or VAT-registered (10%)" },
   { value: "WC010", label: "WC010 Professional fees, corporate ≤ ₱720k (10%)" },

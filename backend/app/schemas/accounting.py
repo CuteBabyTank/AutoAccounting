@@ -708,11 +708,20 @@ class AtcSupplierOut(BaseModel):
     ewt_atc: str
     suggestion: str = ""
     suggestion_company: str = ""
+    automatic: str = ""          # ATC(s) its documents get with no supplier ATC (expense-type default, else the tree)
+    automatic_reason: str = ""
 
 
 class AtcDefaultOut(BaseModel):
     account: str
     ewt_atc: str
+    suggestion: str = ""  # what AutoAccounting picks with no default, e.g. "WI100 / WC100"
+
+
+class AtcCodeOut(BaseModel):
+    code: str
+    nature: str
+    rate: Decimal  # fraction, e.g. 0.05
 
 
 class AtcDatabankOut(BaseModel):

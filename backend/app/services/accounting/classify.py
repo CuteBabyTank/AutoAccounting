@@ -208,6 +208,12 @@ def document_nature(raw: dict | None) -> str:
     return nature if isinstance(nature, str) else ""
 
 
+def document_description(raw: dict | None) -> str:
+    """What Gemini read was bought or done, for a stored document ("" when unknown)."""
+    text = (raw or {}).get("description") if isinstance(raw, dict) else None
+    return text[:200] if isinstance(text, str) else ""
+
+
 def classify_document(
     ext: ExtractedDoc,
     company: CompanyProfile,

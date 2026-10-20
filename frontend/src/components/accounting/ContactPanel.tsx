@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, FilePdf, FileZip } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
+import AtcPicker from "@/components/accounting/AtcPicker";
 import { accountingApi } from "@/lib/accounting-api";
-import { EWT_ATC_OPTIONS, apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
+import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
 import { useFilePreview } from "@/components/accounting/PdfPreview";
 import type { StatementType } from "@/types/extras";
 import type { Account, ContactDetail, ContactPatch, ContactRow } from "@/types/accounting";
@@ -412,12 +413,13 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
             </label>
             <label>
               <span className={LABEL}>Default ATC</span>
-              <select className={INPUT} disabled={!data.tin} value={value("default_atc", data.default_atc)} onChange={(e) => set({ default_atc: e.target.value })}>
-                <option value="">Suggested by AutoAccounting</option>
-                {EWT_ATC_OPTIONS.filter((o) => o.value).map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+              <AtcPicker
+                className={INPUT}
+                disabled={!data.tin}
+                value={value("default_atc", data.default_atc) ?? ""}
+                blank="Suggested"
+                onChange={(v) => set({ default_atc: v })}
+              />
             </label>
           </>
         )}

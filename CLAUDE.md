@@ -76,7 +76,15 @@ Both `backend/` and `frontend/` are bind-mounted and hot-reload (frontend uses `
 
 ## Env vars
 
-Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CLIENT_ID`; insecure defaults fail startup. Also: `DATABASE_URL`, `ENVIRONMENT`, `FRONTEND_URL` (comma-separated CORS origins), `ACCOUNTING_GEMINI_MODEL`, `ACCOUNTING_GEMINI_THINKING_LEVEL`, `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB`, `MAX_BATCH_SIZE`, `BOOTSTRAP_ADMIN_EMAIL`, `ENABLE_DEV_LOGIN`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CLIENT_ID`; insecure defaults fail startup. Also: `DATABASE_URL`, `ENVIRONMENT`, `FRONTEND_URL` (comma-separated CORS origins), `ACCOUNTING_GEMINI_MODEL`, `ACCOUNTING_GEMINI_THINKING_LEVEL`, `ASSISTANT_LLM_PROVIDER` (`ollama` default, or `openai`),
+`ASSISTANT_LLM_BASE_URL` (`http://host.docker.internal:11434`, no `/v1` for native Ollama),
+`ASSISTANT_LLM_MODEL` (`qwen3:4b-instruct`), `ASSISTANT_LLM_API_KEY` (empty locally, Bearer key when set),
+`ASSISTANT_LLM_THINK` (false, reasoning always hidden), `ASSISTANT_LLM_KEEP_ALIVE` (`30m`),
+`ASSISTANT_LLM_NUM_CTX` (16384), `ASSISTANT_LLM_MAX_OUTPUT_TOKENS` (1024),
+`ASSISTANT_LLM_TIMEOUT_SECONDS` (90 per call, fixed 5-second connect timeout), `ASSISTANT_TURN_SECONDS` (180),
+`ASSISTANT_MAX_STEPS` (5), `ASSISTANT_MAX_CALLS_PER_STEP` (3), `ASSISTANT_OBSERVATION_CHARS` (6000),
+`ASSISTANT_HISTORY_TURNS` (12 messages), `ASSISTANT_HISTORY_CHARS` (800 per message),
+`ASSISTANT_HISTORY_BUDGET_CHARS` (4000 total), `ASSISTANT_ANSWER_CHARS` (4000, truncated with `…`), `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB`, `MAX_BATCH_SIZE`, `BOOTSTRAP_ADMIN_EMAIL`, `ENABLE_DEV_LOGIN`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
 ## Gotchas
 
@@ -195,6 +203,38 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   printed ("000") live in `seller_branch` / `buyer_branch` (extraction: `Party.printed_branch`; forms still pad via
   `normalize_tin`). The panel shows / edits the full TIN (`formatTin(tin, branch)`). Documents read before
   2026-10-20: `python -m app.services.accounting.books.tin_branches [--dry-run]`.
+- **Assistant** (`routers/accounting_assistant.py`, `services/accounting/assistant/`): read-only firm chat at
+  `POST /api/accounting/assistant/chat`, SSE events `start/action/observation/clarify/final/error`.
+  Defaults to native Ollama `POST /api/chat` (`stream=false`, `think=false`, `num_ctx=16384`, `num_predict=1024`,
+  temperature 0, keep alive 30m) on `http://host.docker.internal:11434`, model `qwen3:4b-instruct`.
+  Pull it on the host with `ollama pull qwen3:4b-instruct`. Docker's host gateway is configured. No Gemini key/quota dependency;
+  document extraction still uses Gemini. Empty base URL gives 503. Settings/defaults are in the env list above and
+  `.env.example`; recreate backend after env changes. Hosted Qwen switch: `ASSISTANT_LLM_PROVIDER=openai`,
+  `ASSISTANT_LLM_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1`, `ASSISTANT_LLM_MODEL=qwen-plus`,
+  `ASSISTANT_LLM_API_KEY=<DashScope key>`. Hosted requests use `max_tokens`; only DashScope receives
+  `enable_thinking=false`. Native replies get synthetic tool ids; tool messages use `tool_name`.
+  One retry for connect errors / 429 / 5xx; no read-timeout retry. Per-call timeout 90s, connect 5s, whole turn 180s
+  including tools/retries. When near the turn budget, reserve a final call if a full call still fits, else emit a
+  clear timeout. Model-unreachable gets its own error. At most 5 lookup rounds, 3 executed calls/round; repeats reuse
+  results. Forced final omits native tools (OpenAI `tool_choice=none`) and says it stopped early; ignored forced-final
+  calls fall back to plain text. History is untrusted text only, capped to 12 messages × 800 chars / 4000 total.
+  Observations are sanitized valid JSON ≤6000 chars; answers ≤4000 chars. Figures still pass numeric grounding and
+  unsupported peso claims are refused. Obvious instruction attacks are declined without a model call. The short
+  system prompt restricts scope to firm data/BIR notes; ambiguous company/period uses `ask_clarification`, emitted as
+  a terminal `clarify` event and rendered as a question without numeric grounding. Progress labels are deterministic;
+  model thinking is never streamed, even when `ASSISTANT_LLM_THINK=true`.
+  Plain missing-info replies also become `clarify` before grounding (except company-only questions for a sole client).
+  Universal company claims require a successful firm-wide lookup; the loop retries within budget or adds a coverage
+  caveat naming checked companies. Relative filings use `within_days` / `past_days` (1–366); report `period` resolves
+  calendar months / fiscal quarters and years server-side in Manila (`this_year` = fiscal year to date).
+  Tools use the server's `scope_for(user)` only. Direct company/document/search queries retain explicit firm filters;
+  `assistant/scope.py` adds session-local ORM `enterprise_id` criteria to all nested aa_* SELECTs (period/output,
+  books, subledger, work/health included), independent of RLS and across loader commits, and removes the hook in
+  `finally`. Assignee reads are owner/staff only; sources are revalidated by entity and company. Foreign UUIDs use
+  the same not-found response as missing UUIDs. `python -m scripts.assistant_isolation_check` creates two throwaway
+  firms, checks real tools plus positive controls without an LLM, and removes fixture users/rows in `finally`.
+  Feature switch `assistant`; UI `components/assistant/AssistantPanel.tsx`, stream client `lib/assistant-api.ts`.
+  Per-person rate limit: 40 turns / 10 minutes. Sources are limited to 12; list results to 25 (filings 50), GL lines 30.
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.
 - **Frontend token** lives in `sessionStorage` (`autoaccounting_token`). The axios interceptor attaches it, and on 401 it is cleared and AuthGate redirects.
 

@@ -28,6 +28,7 @@ import { HOMEPAGE, roleLabel } from "@/lib/roles";
 import { resetGuides } from "@/lib/guides";
 import LogoMark from "@/components/layout/LogoMark";
 import NotificationBell from "@/components/work/NotificationBell";
+import AssistantPanel from "@/components/assistant/AssistantPanel";
 import SearchPalette from "@/components/search/SearchPalette";
 import AvatarPicker from "@/components/layout/AvatarPicker";
 import { useFeatures, type FeatureKey } from "@/lib/features";
@@ -109,6 +110,7 @@ export default function Sidebar() {
   const features = useFeatures();
   const showSearch = firmMember && features.on("search");
   const showBell = firmMember && features.on("notifications");
+  const showAssistant = firmMember && features.on("assistant");
 
   // Close the drawer whenever the route changes (tapping a nav item navigates).
   useEffect(() => {
@@ -434,6 +436,7 @@ export default function Sidebar() {
       </div>,
       document.body
     )}
+    {showAssistant && <AssistantPanel />}
     </>
   );
 }

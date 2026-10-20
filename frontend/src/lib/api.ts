@@ -1,7 +1,7 @@
 import axios from "axios";
 import type { Account, AdminFeatures, BudgetOperation, FirmUsage, Member, UserRole } from "@/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /** Encode one interpolated URL path segment, so an id can never add path parts ("../", "?", "#"). */
 export const seg = (value: string | number): string => encodeURIComponent(value);

@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth";
 export type FeatureKey =
   | "documents" | "work" | "companies" | "team" | "upload" | "search" | "notifications"
   | "filing" | "annual" | "employees" | "books" | "close" | "recurring" | "bank" | "subledgers"
-  | "reports" | "reclassify" | "imports" | "atc" | "audit";
+  | "reports" | "reclassify" | "imports" | "atc" | "audit" | "assistant";
 
 /** Ask every open screen to re-read the switches (the admin panel after a change, a 503 from a switched-off route). */
 export const FEATURES_STALE = "aa:features-stale";

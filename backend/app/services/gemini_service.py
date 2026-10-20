@@ -375,6 +375,27 @@ def _is_transient_gemini_error(exc: BaseException) -> bool:
     return any(hint in msg for hint in _TRANSIENT_ERROR_HINTS)
 
 
+async def wait_for_quota(user_id: str) -> None:
+    """Wait for a slot under the per-user and then the global Gemini RPM limits."""
+    while True:
+        wait = _user_api_limiter.acquire(user_id)
+        if wait == 0:
+            break
+        logger.info("api_rpm_throttled scope=user user_id=%s wait=%.1fs rpm_limit=%d", user_id, wait, settings.gemini_user_rpm_limit)
+        await asyncio.sleep(wait)
+
+    # Global limit protects the shared Gemini quota
+    while True:
+        wait = _global_api_limiter.acquire()
+        if wait == 0:
+            break
+        logger.info(
+            "api_rpm_throttled scope=global wait=%.1fs rpm_limit=%d active_users=%d",
+            wait, _global_api_limiter.last_rpm, _user_api_limiter.active_user_count(),
+        )
+        await asyncio.sleep(wait)
+
+
 async def _call_gemini(
     client: genai.Client, file_bytes: bytes, mime_type: str, prompt: str, user_id: str,
     model: str, thinking_config: types.ThinkingConfig,
@@ -413,24 +434,7 @@ async def _call_gemini(
             config=config,
         )
 
-    # Enforce per-user RPM limit
-    while True:
-        wait = _user_api_limiter.acquire(user_id)
-        if wait == 0:
-            break
-        logger.info("api_rpm_throttled scope=user user_id=%s wait=%.1fs rpm_limit=%d", user_id, wait, settings.gemini_user_rpm_limit)
-        await asyncio.sleep(wait)
-
-    # Enforce global RPM limit (protects shared Gemini quota)
-    while True:
-        wait = _global_api_limiter.acquire()
-        if wait == 0:
-            break
-        logger.info(
-            "api_rpm_throttled scope=global wait=%.1fs rpm_limit=%d active_users=%d",
-            wait, _global_api_limiter.last_rpm, _user_api_limiter.active_user_count(),
-        )
-        await asyncio.sleep(wait)
+    await wait_for_quota(user_id)
 
     async def _call_with_transient_retry(use_cache: bool) -> "object":
         last_exc: BaseException | None = None

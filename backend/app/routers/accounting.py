@@ -27,7 +27,8 @@ from app.models.accounting import (
 )
 from app.models.user import User, UserRole
 from app.routers import (
-    accounting_annual, accounting_atc, accounting_audit, accounting_bank, accounting_books, accounting_checklists,
+    accounting_annual, accounting_assistant, accounting_atc, accounting_audit, accounting_bank, accounting_books,
+    accounting_checklists,
     accounting_contacts,
     accounting_employees, accounting_imports,
     accounting_periods, accounting_reclassify, accounting_reports, accounting_search, accounting_tasks,
@@ -1253,6 +1254,7 @@ router.include_router(accounting_writeoff.router)
 router.include_router(accounting_checklists.router)
 router.include_router(accounting_atc.router)
 router.include_router(accounting_search.router)
+router.include_router(accounting_assistant.router)
 # Annual routes first: "/periods/{company}/{year}/annual" would otherwise match the quarter route's {quarter}.
 router.include_router(accounting_annual.router)
 router.include_router(accounting_periods.router)

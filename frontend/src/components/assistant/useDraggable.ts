@@ -11,7 +11,7 @@ const viewport = (): CasperViewport => ({
   bottom: window.innerWidth < 768 ? 80 : 8,
 });
 
-export default function useDraggable() {
+export default function useDraggable(onMove: () => void) {
   const [layout, setLayout] = useState<{ point: CasperPoint; view: CasperViewport } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [tilt, setTilt] = useState(0);
@@ -95,7 +95,10 @@ export default function useDraggable() {
         const dx = e.clientX - drag.x;
         const dy = e.clientY - drag.y;
         if (!drag.moved && Math.hypot(dx, dy) < 5) return;
-        drag.moved = true;
+        if (!drag.moved) {
+          drag.moved = true;
+          onMove();
+        }
         setDragging(true);
         setTilt(Math.max(-9, Math.min(9, (e.clientX - drag.lastX) / Math.max(1, e.timeStamp - drag.lastAt) * 8)));
         drag.lastX = e.clientX;
@@ -116,6 +119,7 @@ export default function useDraggable() {
         const step = delta[e.key];
         if (!step) return;
         e.preventDefault();
+        onMove();
         move({ x: current.current.point.x + step.x, y: current.current.point.y + step.y }, true);
       },
     },

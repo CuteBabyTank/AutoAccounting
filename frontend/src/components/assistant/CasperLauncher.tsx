@@ -16,8 +16,8 @@ interface CasperLauncherProps {
 }
 
 export default function CasperLauncher({ open, state, notice, onOpen }: CasperLauncherProps) {
-  const drag = useDraggable();
   const speech = useCasperBubble(open, notice);
+  const drag = useDraggable(speech.dismiss);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { bubble } = speech;
   const cancelDrag = drag.cancel;
@@ -65,7 +65,7 @@ export default function CasperLauncher({ open, state, notice, onOpen }: CasperLa
           <DotsThree size={18} weight="bold" />
         </button>
       </div>
-      {bubble && !drag.dragging && (
+      {bubble && (
         <CasperBubble
           point={point} view={view}
           text={bubble.kind === "greeting" ? CASPER_LINES[0].text : bubble.kind === "notice" ? bubble.text : "Need a little room? Drag me somewhere comfy, or send me back to my corner."}

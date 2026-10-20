@@ -210,9 +210,9 @@ export default function AssistantDock() {
       aria-label="Open the assistant (Ctrl J)"
       title="Assistant (Ctrl J)"
       data-tour="assistant"
-      className="aa-launcher nav-press fixed bottom-5 right-5 z-[55] flex h-[72px] w-[72px] items-center justify-center rounded-full border border-[var(--border-sidebar)] bg-[var(--bg-secondary)] text-[var(--text-primary)] md:bottom-6 md:right-6"
+      className="aa-launcher nav-press fixed bottom-5 right-5 z-[55] flex h-[72px] w-[72px] items-center justify-center rounded-full text-[var(--text-primary)] md:bottom-6 md:right-6"
     >
-      <BotMascot state={mascotState} size={64} playful />
+      <BotMascot state={mascotState} size={72} playful />
     </button>
   );
 

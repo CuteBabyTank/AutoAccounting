@@ -6,31 +6,34 @@
   pointer-events: none;
   vertical-align: middle;
 }
-.aa-bot-image, .aa-bot-wave, .aa-bot-game {
+.aa-bot-art, .aa-bot-image, .aa-bot-game {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
 }
-.aa-bot-image { transition: opacity 200ms var(--ease-out); }
-.aa-bot[data-state="thinking"] { animation: aa-bot-bob 1.8s var(--ease-in-out) infinite; }
-@keyframes aa-bot-bob {
+.aa-bot-art { transition: opacity 200ms var(--ease-out); }
+/* Helmet outline ends at rows 184–186; overlap in the shoulders hides the join.
+   Moving down keeps the body's copy of that outline covered throughout the nod. */
+.aa-bot-head {
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 77% 62%, 74% 67%, 70% 71%, 63% 74%, 30% 74%, 24% 70%, 20% 66%, 16% 62%, 0 62%);
+}
+.aa-bot-body {
+  clip-path: polygon(0 61%, 16% 61%, 19% 64%, 24% 67%, 31% 69%, 63% 69%, 70% 67%, 74% 64%, 77% 61%, 100% 61%, 100% 100%, 0 100%);
+}
+/* Carry the thinking hand to row 193, following its outline above the chest. */
+.aa-bot-art[data-image-state="thinking"] .aa-bot-head {
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 77% 62%, 74% 67%, 70% 71%, 63% 74%, 42% 74%, 39.5% 75.4%, 35% 75.4%, 31% 74%, 28% 69%, 24% 69%, 20% 66%, 16% 62%, 0 62%);
+}
+.aa-bot-art[data-image-state="thinking"] .aa-bot-body {
+  clip-path: polygon(0 61%, 16% 61%, 19% 64%, 24% 67%, 28% 69%, 31% 73%, 43% 73%, 44% 69%, 63% 69%, 70% 67%, 74% 64%, 77% 61%, 100% 61%, 100% 100%, 0 100%);
+}
+.aa-bot-art[data-image-state="idle"] .aa-bot-head { animation: aa-bot-head-nod 3.6s var(--ease-in-out) infinite; }
+.aa-bot-art[data-image-state="thinking"] .aa-bot-head { animation: aa-bot-head-nod 1.6s var(--ease-in-out) infinite; }
+.aa-bot:not([data-scene="rest"]) .aa-bot-head { animation: none; }
+@keyframes aa-bot-head-nod {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4%); }
-}
-.aa-bot-wave { overflow: visible; animation: aa-bot-wave-in 1.8s var(--ease-out) both; }
-.aa-bot-hand {
-  transform-box: view-box;
-  transform-origin: 82% 75%;
-  animation: aa-bot-wave 500ms var(--ease-in-out) 150ms 3;
-}
-@keyframes aa-bot-wave-in {
-  0%, 100% { opacity: 0; transform: translateY(4%); }
-  12%, 85% { opacity: 1; transform: translateY(0); }
-}
-@keyframes aa-bot-wave {
-  0%, 100% { transform: rotate(-12deg); }
-  50% { transform: rotate(16deg); }
+  50% { transform: translateY(2%); }
 }
 .aa-bot-game { overflow: visible; animation: aa-bot-game-in 5.6s var(--ease-out) both; }
 @keyframes aa-bot-game-in {
@@ -87,5 +90,5 @@
 .aa-bot[data-paused="true"], .aa-bot[data-paused="true"] * { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) {
   .aa-bot, .aa-bot * { animation: none !important; transition: none; }
-  .aa-bot-wave, .aa-bot-game { display: none; }
+  .aa-bot-game { display: none; }
 }

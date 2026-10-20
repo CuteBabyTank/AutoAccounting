@@ -74,7 +74,7 @@ function GameBreak({ outcome }: { outcome: "win" | "lose" }) {
   );
 }
 
-/** The art shares a frame; only opacity changes when the assistant changes state. */
+/** Each state crossfades as a pair; only the clipped head moves. */
 export default function BotMascot({ state, size, playful = false }: BotMascotProps) {
   const [scene, setScene] = useState<BotIdleScene>("rest");
   const [paused, setPaused] = useState(false);
@@ -110,16 +110,13 @@ export default function BotMascot({ state, size, playful = false }: BotMascotPro
   return (
     <span className="aa-bot" data-state={state} data-scene={activeScene} data-paused={paused} style={{ width: size, height: size }} aria-hidden="true">
       {STATES.map((imageState) => (
-        // eslint-disable-next-line @next/next/no-img-element -- same-frame local art, stacked for crossfading
-        <img key={imageState} className="aa-bot-image" src={`/assistant/bot-${imageState}.png`} width={256} height={256} alt="" aria-hidden="true" draggable={false} style={{ opacity: imageState === state ? 1 : 0 }} />
+        <span key={imageState} className="aa-bot-art" data-image-state={imageState} style={{ opacity: imageState === state ? 1 : 0 }}>
+          {["body", "head"].map((layer) => (
+            // eslint-disable-next-line @next/next/no-img-element -- same-frame local art, clipped into overlapping layers
+            <img key={layer} className={`aa-bot-image aa-bot-${layer}`} src={`/assistant/bot-${imageState}.png`} width={256} height={256} alt="" aria-hidden="true" draggable={false} />
+          ))}
+        </span>
       ))}
-      {activeScene === "wave" && (
-        <svg className="aa-bot-wave" viewBox="0 0 256 256" fill="none" aria-hidden="true">
-          <g className="aa-bot-hand" fill="#fff" stroke="#1e4b73" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m203 191-9-19q-2-5 2-6t8 10l-2-25q0-6 5-6t6 23l2-24q1-5 5-4t3 25l4-16q2-5 6-3t-1 25l4-8q3-5 6-2t-6 22q-5 14-15 14Z" />
-          </g>
-        </svg>
-      )}
       {game && <GameBreak outcome={activeScene} />}
     </span>
   );

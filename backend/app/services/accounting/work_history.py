@@ -1,9 +1,10 @@
 """Firm-scoped completion facts. Actors of version filings come only from matching audit evidence."""
 import uuid
+from collections import defaultdict
 from datetime import date, datetime, time
 
 from fastapi import HTTPException
-from sqlalchemy import Date, DateTime, and_, cast, exists, func, or_, select
+from sqlalchemy import Date, DateTime, and_, cast, exists, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.accounting import AAAuditEvent, AACompany, AAOutput, AAPeriod, AATask, AAWorkItem
@@ -45,15 +46,22 @@ async def load_history(db: AsyncSession, ent: uuid.UUID, start: date, end: date,
         AAWorkItem.enterprise_id == ent, AAWorkItem.filed_on.between(start, end)))).scalars())
     periods = list((await db.execute(filed_periods_query(ent, start, end))).scalars())
     # Assignment metadata for a version filing may predate the completion window.
-    cids = {p.company_id for p in periods}
+    period_keys = {(p.company_id, p.year, p.quarter) for p in periods}
     assigned = {(r.company_id, r.year, r.quarter, r.form): r.assignee_id for r in (await db.execute(
-        select(AAWorkItem).where(AAWorkItem.enterprise_id == ent, AAWorkItem.company_id.in_(cids)))).scalars()} if cids else {}
+        select(AAWorkItem).where(AAWorkItem.enterprise_id == ent,
+            tuple_(AAWorkItem.company_id, AAWorkItem.year, AAWorkItem.quarter).in_(period_keys))
+    )).scalars()} if period_keys else {}
+    audit_keys = {(p.company_id, _audit_period(p)) for p in periods}
     events = list((await db.execute(select(AAAuditEvent).where(
-        AAAuditEvent.enterprise_id == ent, AAAuditEvent.entity == "period", AAAuditEvent.company_id.in_(cids),
+        AAAuditEvent.enterprise_id == ent, AAAuditEvent.entity == "period",
+        tuple_(AAAuditEvent.company_id, AAAuditEvent.entity_id).in_(audit_keys),
         AAAuditEvent.action.in_(("filed", "form_filed")),
-    ).order_by(AAAuditEvent.at, AAAuditEvent.id))).scalars()) if cids else []
-    evidence = [{"company_id": str(e.company_id), "entity_id": e.entity_id, "after": e.after,
-                 "user_id": str(e.user_id) if e.user_id else None} for e in events]
+    ).order_by(AAAuditEvent.at, AAAuditEvent.id))).scalars()) if audit_keys else []
+    evidence = defaultdict(list)
+    for e in events:
+        evidence[(str(e.company_id), e.entity_id)].append({
+            "company_id": str(e.company_id), "entity_id": e.entity_id, "after": e.after,
+            "user_id": str(e.user_id) if e.user_id else None})
     completions = []
     due_cache = {}
 
@@ -98,7 +106,8 @@ async def load_history(db: AsyncSession, ent: uuid.UUID, start: date, end: date,
                 else datetime.fromisoformat(stamp)
             if at.tzinfo is None:
                 at = at.replace(tzinfo=MANILA)
-            actor = filing_actor(evidence, str(p.company_id), _audit_period(p), form, entry)
+            actor = filing_actor(evidence[(str(p.company_id), _audit_period(p))],
+                                 str(p.company_id), _audit_period(p), form, entry)
             filing(p.company_id, p.year, p.quarter, form, at, actor,
                    assigned.get((p.company_id, p.year, p.quarter, form)), "return", f"return:{p.id}:{form}")
 

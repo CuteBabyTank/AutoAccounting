@@ -12,10 +12,11 @@ import { BTN } from "@/components/work/ui";
 export default function TaskHistory({ taskId, people }: { taskId: string; people: Person[] }) {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
+  const [page, setPage] = useState({ offset: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useEffect(() => {
+    const { offset } = page;
     let cancelled = false;
     setLoading(true);
     setError("");
@@ -26,7 +27,7 @@ export default function TaskHistory({ taskId, people }: { taskId: string; people
       .catch((e) => { if (!cancelled) setError(apiErrorMessage(e, "Couldn't load task history")); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [taskId, offset]);
+  }, [taskId, page]);
 
   const names = new Map(people.map((p) => [p.id, p.name]));
   const withNames = (fields: Record<string, unknown>) => Object.fromEntries(Object.entries(fields).map(([key, value]) =>
@@ -37,6 +38,6 @@ export default function TaskHistory({ taskId, people }: { taskId: string; people
     <AuditTrail events={events.map((event) => ({ ...event, before: withNames(event.before), after: withNames(event.after) }))} />
     {error && <p className="mt-2 text-sm text-[var(--alert-error-text)]">{error}</p>}
     {loading ? <p className="mt-2 text-xs text-[var(--text-secondary)]">Loading history…</p> : events.length === 0 && !error ? <p className="text-xs text-[var(--text-secondary)]">No recorded changes yet.</p> : null}
-    {events.length < total && <button type="button" className={`${BTN} mt-2`} disabled={loading} onClick={() => setOffset(offset + 20)}>Older changes</button>}
+    {events.length < total && <button type="button" className={`${BTN} mt-2`} disabled={loading} onClick={() => setPage({ offset: events.length })}>Older changes</button>}
   </section>;
 }

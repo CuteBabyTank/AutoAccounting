@@ -18,12 +18,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db
 from app.models.accounting import AAChecklistTemplate, AATask
 from app.models.user import User
-from app.routers.accounting_scope import MANAGER_ROLES, company_or_404, scope_for
-from app.routers.accounting_tasks import _FIELDS as TASK_FIELDS, tasks_out
+from app.routers.accounting_scope import MANAGER_ROLES, company_or_404, firm_settings, scope_for
+from app.routers.accounting_tasks import _AUDIT_FIELDS as TASK_FIELDS, tasks_out
 from app.routers.accounting_work import assignee_or_400
 from app.schemas.accounting_work import TaskOut
+from app.schemas.accounting import manila_today
 from app.services.accounting import audit
+from app.services.accounting.assignment import assign_auto, assignment_facts, lock_firm
+from app.services.accounting.compute.assign import plan_assignments
 from app.services.accounting.compute.checklists import BUILTIN, clean_items, plan_tasks
+from app.services.accounting.compute.work import board_window
 
 router = APIRouter()
 _FIELDS = ("name", "cadence", "items")
@@ -156,6 +160,7 @@ async def apply_checklist(template_id: str, body: ApplyIn, user: User = Depends(
                           db: AsyncSession = Depends(get_db)):
     """One task per step for the company and the period ending on ``period_end`` (steps already there are skipped)."""
     ent = scope_for(user)
+    await lock_firm(db, ent)
     if template_id in BUILTIN:
         name, cadence, items = BUILTIN[template_id]["name"], BUILTIN[template_id]["cadence"], BUILTIN[template_id]["items"]
     else:
@@ -174,12 +179,23 @@ async def apply_checklist(template_id: str, body: ApplyIn, user: User = Depends(
     rows = []
     for values in planned:
         task = AATask(id=uuid.uuid4(), enterprise_id=ent, company_id=company.id, assignee_id=body.assignee_id,
-                      status="open", created_by=user.id, **values)
+                      status="open", created_by=user.id, assigned_auto=False, completed_at=None, completed_by=None,
+                      **values)
         db.add(task)
         audit.record(db, ent=ent, company_id=company.id, user=user, entity="task", entity_id=task.id,
                      action="create", label=task.title[:200], after=audit.snapshot(task, TASK_FIELDS),
                      reason=f"Checklist: {name}")
         rows.append(task)
+    if rows and body.assignee_id is None and (await firm_settings(db, ent)).auto_assign:
+        today = manila_today()
+        _, _, _, _, _, members, handlers, loads, recent = await assignment_facts(
+            db, ent, *board_window(None, None, today), today)
+        chosen = plan_assignments(
+            [{"key": str(t.id), "company_id": str(company.id)} for t in rows],
+            members, str(ent), handlers, loads, recent)
+        for task in rows:
+            if str(task.id) in chosen:
+                assign_auto(db, ent, user, task, uuid.UUID(chosen[str(task.id)]))
     audit.record(db, ent=ent, company_id=company.id, user=user, entity="checklist_template", entity_id=template_id,
                  action="apply", label=name, after={"period_end": body.period_end.isoformat(),
                                                     "created": len(rows), "skipped": len(items) - len(rows)})

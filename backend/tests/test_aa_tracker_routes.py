@@ -127,7 +127,7 @@ def test_employee_cannot_change_handler_or_bulk_assign():
 
 
 def test_handler_rejects_non_member_like_other_assignees(monkeypatch):
-    async def nobody(*args):
+    async def nobody(*args, **kwargs):
         return []
     monkeypatch.setattr(work, "firm_people", nobody)
     with pytest.raises(HTTPException) as exc:
@@ -288,3 +288,115 @@ def test_auto_assignment_audits_actual_previous_flag_after_user_deletion():
     event = db.added[0]
     assert event.before == {"assignee_id": None} and event.after == {"assignee_id": str(new_assignee)}
     assert task.assigned_auto is True and event.reason == "auto-assign"
+
+
+def test_done_task_creation_does_not_auto_assign(monkeypatch):
+    user, db = manager(), Db()
+
+    async def out(db, ent, rows):
+        return rows
+
+    async def on(*args):
+        return SimpleNamespace(auto_assign=True)
+
+    async def choose(*args):
+        return user.id
+
+    monkeypatch.setattr(tasks, "tasks_out", out)
+    monkeypatch.setattr(tasks, "firm_settings", on)
+    monkeypatch.setattr(tasks, "choose_for_task", choose)
+    row = asyncio.run(tasks.create_task(TaskIn(title="Already finished", status="done"), user, db))
+    assert row.assignee_id is None and row.assigned_auto is False
+    assert row.completed_by == user.id and row.completed_at is not None
+    assert [e.action for e in db.added if isinstance(e, AAAuditEvent)] == ["create"]
+
+
+@pytest.mark.parametrize("enabled,manual,handler", [(True, False, False), (False, False, False),
+                                                  (True, True, False), (True, False, True)])
+def test_checklist_tasks_follow_assignment_settings_and_are_audited(monkeypatch, enabled, manual, handler):
+    from app.routers import accounting_checklists as checklists
+    from app.services.accounting.compute.assign import Member
+
+    user, db = manager(), Db()
+    ent, cid = user.enterprise_id, uuid.uuid4()
+    person_a, person_b = uuid.uuid4(), uuid.uuid4()
+
+    async def company(*args):
+        return SimpleNamespace(id=cid, fiscal_year_end_month=12)
+
+    async def out(db, ent, rows):
+        return rows
+
+    async def settings(*args):
+        return SimpleNamespace(auto_assign=enabled)
+
+    async def facts(db, ent, *args):
+        members = [Member(str(person_a), "Ana", str(ent), "employee"),
+                   Member(str(person_b), "Ben", str(ent), "employee")]
+        return [], [], [], [], [], members, {str(cid): str(person_b)} if handler else {}, {}, {}
+
+    async def validate(*args):
+        pass
+
+    monkeypatch.setattr(checklists, "company_or_404", company)
+    monkeypatch.setattr(checklists, "tasks_out", out)
+    monkeypatch.setattr(checklists, "ApplyOut", SimpleNamespace)
+    monkeypatch.setattr(checklists, "assignee_or_400", validate)
+    monkeypatch.setattr(checklists, "firm_settings", settings)
+    # Keep the real planner/writer: assert resulting tasks and audit records, not a mocked assignment call.
+    monkeypatch.setattr(checklists, "assignment_facts", facts)
+    result = asyncio.run(checklists.apply_checklist(
+        "builtin:quarter-close", checklists.ApplyIn(company_id=cid, period_end=date(2026, 9, 30),
+                                                   assignee_id=user.id if manual else None), user, db))
+    rows = result.created
+    assert len(rows) == 5 and result.skipped == 0
+    if manual:
+        assert all(t.assignee_id == user.id and not t.assigned_auto for t in rows)
+    elif enabled:
+        assert [t.assignee_id for t in rows] == ([person_b] * 5 if handler else
+                                               [person_a, person_b, person_a, person_b, person_a])
+        assert all(t.assigned_auto for t in rows)
+    else:
+        assert all(t.assignee_id is None and not t.assigned_auto for t in rows)
+    assert all(t.status == "open" and t.completed_by is None and t.completed_at is None for t in rows)
+    events = [e for e in db.added if isinstance(e, AAAuditEvent) and e.entity == "task"]
+    assert sum(e.action == "create" for e in events) == 5
+    assert sum(e.action == "assign" and e.reason == "auto-assign" for e in events) == (5 if enabled and not manual else 0)
+    assert "FROM users" in db.statements[0] and "FOR UPDATE" in db.statements[0]
+    assert str(ent) in db.statements[0]
+
+
+def test_history_metadata_queries_only_load_selected_periods(monkeypatch):
+    from app.models.accounting import AAPeriod
+    from app.services.accounting import work_history
+
+    ent, cid = uuid.uuid4(), uuid.uuid4()
+    # An old fiscal period may be completed in today's window, so filter by its identity, not due year.
+    period = AAPeriod(id=uuid.uuid4(), enterprise_id=ent, company_id=cid, year=2020, quarter=3,
+                      filed_forms={"2550Q": {"filed_at": "2026-10-21T00:00:00+00:00"}})
+
+    class HistoryDb(Db):
+        async def execute(self, stmt):
+            statement = sql(stmt)
+            self.statements.append(statement)
+            return Result([period] if "FROM aa_periods" in statement else [])
+
+    async def empty(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(work_history, "firm_people", empty)
+    monkeypatch.setattr(work_history, "load_cards", empty)
+    db = HistoryDb()
+    asyncio.run(work_history.load_history(db, ent, date(2026, 10, 1), date(2026, 10, 31), date(2026, 10, 21)))
+    assignments = next(s for s in db.statements if "FROM aa_work_items" in s and "filed_on BETWEEN" not in s)
+    events = next(s for s in db.statements if "FROM aa_audit_events" in s)
+    assert "2020" in assignments and "3" in assignments and str(cid) in assignments
+    assert "2020-Q3" in events and str(cid) in events
+    assert f"enterprise_id = '{ent}'" in assignments and f"enterprise_id = '{ent}'" in events
+
+
+def test_assignee_validation_locks_members_against_concurrent_removal():
+    db, ent = Db(), uuid.uuid4()
+    with pytest.raises(HTTPException):
+        asyncio.run(work.assignee_or_400(db, ent, uuid.uuid4()))
+    assert "FOR UPDATE" in db.statements[0]

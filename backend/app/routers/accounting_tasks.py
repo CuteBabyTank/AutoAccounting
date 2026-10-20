@@ -137,7 +137,7 @@ async def create_task(body: TaskIn, user: User = Depends(get_current_user), db: 
     db.add(row)
     audit.record(db, ent=ent, company_id=row.company_id, user=user, entity="task", entity_id=row.id,
                  action="create", label=_label(row), before=None, after=audit.snapshot(row, _AUDIT_FIELDS))
-    if row.assignee_id is None and (await firm_settings(db, ent)).auto_assign:
+    if row.status != "done" and row.assignee_id is None and (await firm_settings(db, ent)).auto_assign:
         today = manila_today()
         assignee_id = await choose_for_task(db, ent, *board_window(None, None, today), today, row.company_id)
         if assignee_id:

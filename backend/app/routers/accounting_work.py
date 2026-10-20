@@ -37,7 +37,7 @@ OWNER_ROLES = (UserRole.ADMIN, UserRole.ENTERPRISE)
 async def assignee_or_400(db: AsyncSession, ent: uuid.UUID, assignee_id: uuid.UUID | None) -> User | None:
     if assignee_id is None:
         return None
-    person = next((p for p in await firm_people(db, ent) if p.id == assignee_id), None)
+    person = next((p for p in await firm_people(db, ent, lock=True) if p.id == assignee_id), None)
     if person is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That person isn't an active member of your firm")
     return person

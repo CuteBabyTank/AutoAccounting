@@ -17,8 +17,8 @@ interface Props {
 const SELECT = "w-full rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] disabled:opacity-60";
 const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-60";
 
-function AtcSelect({ value, blank, hint, disabled, onChange }: { value: string; blank: string; hint?: string; disabled: boolean; onChange: (v: string) => void }) {
-  return <AtcPicker className={SELECT} value={value} blank={blank} blankHint={hint} disabled={disabled} onChange={onChange} />;
+function AtcSelect({ value, blank, disabled, onChange }: { value: string; blank: string; disabled: boolean; onChange: (v: string) => void }) {
+  return <AtcPicker className={SELECT} value={value} blank={blank} disabled={disabled} onChange={onChange} />;
 }
 
 export default function AtcDatabankPanel({ companyId, companyName, onChanged }: Props) {
@@ -59,6 +59,7 @@ export default function AtcDatabankPanel({ companyId, companyName, onChanged }: 
     );
   }, [data, search]);
   const suggested = (data?.suppliers ?? []).filter((s) => s.suggestion && !s.ewt_atc).length;
+  const hinted = (data?.suppliers ?? []).filter((s) => s.hint && !s.ewt_atc).length;
 
   return (
     <div className="mb-6">
@@ -106,6 +107,11 @@ export default function AtcDatabankPanel({ companyId, companyName, onChanged }: 
                   Use {suggested} suggestion{suggested === 1 ? "" : "s"} from other companies
                 </button>
               )}
+              {hinted > 0 && (
+                <button className={BTN} disabled={busy} onClick={() => run(() => accountingApi.useAtcHints(companyId))}>
+                  Use AutoAccounting&apos;s {hinted} suggestion{hinted === 1 ? "" : "s"}
+                </button>
+              )}
               <label className="relative ml-auto">
                 <MagnifyingGlass size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
                 <input
@@ -142,10 +148,23 @@ export default function AtcDatabankPanel({ companyId, companyName, onChanged }: 
                         <AtcSelect
                           value={s.ewt_atc}
                           blank={s.automatic ? `Suggested (${s.automatic})` : "Suggested"}
-                          hint={s.automatic_reason}
                           disabled={busy}
                           onChange={(v) => run(() => accountingApi.setSupplierAtc(companyId, s.tin, v, s.name))}
                         />
+                        {s.hint && (
+                          <span className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                            <span className="min-w-0" title={s.hint_reason}>
+                              AutoAccounting suggests {s.hint === "NONE" ? "no withholding" : s.hint}: {s.hint_reason}
+                            </span>
+                            <button
+                              className="shrink-0 font-semibold text-[var(--accent)]"
+                              disabled={busy}
+                              onClick={() => run(() => accountingApi.setSupplierAtc(companyId, s.tin, s.hint, s.name))}
+                            >
+                              Use
+                            </button>
+                          </span>
+                        )}
                         {s.suggestion && (
                           <span className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
                             {s.suggestion} in {s.suggestion_company}

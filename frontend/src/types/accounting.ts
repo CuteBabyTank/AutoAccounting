@@ -583,8 +583,9 @@ export interface AtcSupplier {
   ewt_atc: string;
   suggestion: string;
   suggestion_company: string;
-  automatic: string; // ATC(s) its documents get with no supplier ATC, e.g. "WC120" or "WC120 / WC158"
-  automatic_reason: string;
+  automatic: string; // ATC(s) the returns use for its documents with no supplier ATC, e.g. "WC120 / WC158"
+  hint: string; // the decision tree's ATC (or NONE) to adopt, "" when it agrees
+  hint_reason: string;
 }
 
 export interface AtcCode {

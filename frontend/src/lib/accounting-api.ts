@@ -325,6 +325,8 @@ export const accountingApi = {
       .then((r) => r.data),
   useAtcSuggestions: (companyId: string) =>
     api.post<AtcDatabank>(`/accounting/companies/${seg(companyId)}/atc-databank/use-suggestions`).then((r) => r.data),
+  useAtcHints: (companyId: string) =>
+    api.post<AtcDatabank>(`/accounting/companies/${seg(companyId)}/atc-databank/use-hints`).then((r) => r.data),
   getDocument: (id: string) => api.get<AADocument>(`/accounting/documents/${seg(id)}`).then((r) => r.data),
   documentPayments: (docId: string) =>
     api.get<PaymentLinks>(`/accounting/documents/${seg(docId)}/payments`).then((r) => r.data),

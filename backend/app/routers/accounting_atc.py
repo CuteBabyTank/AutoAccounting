@@ -16,8 +16,8 @@ from app.routers.accounting_periods import company_facts
 from app.routers.accounting_scope import company_or_404, scope_for
 from app.schemas.accounting import AtcCodeOut, AtcDatabankOut, AtcDefaultOut, AtcSet, AtcSupplierOut
 from app.services.accounting import audit
-from app.services.accounting.atc_prefs import SeenSupplier, automatic_suggestion, document_pick, supplier_rows
-from app.services.accounting.compute.ewt import account_suggestions, ewt_codes
+from app.services.accounting.atc_prefs import Automatic, SeenSupplier, automatic_for, document_pick, supplier_rows
+from app.services.accounting.compute.ewt import account_suggestions, ewt_codes, tree_suggestion
 from app.services.accounting.compute.inputs import CompanyFacts, DocLine
 from app.services.accounting.extraction import EXPENSE_ACCOUNTS
 from app.services.accounting.parsing import normalize_tin
@@ -47,8 +47,8 @@ async def _seen_suppliers(db: AsyncSession, company_id: uuid.UUID) -> list[SeenS
 
 
 async def _automatic(db: AsyncSession, company_id: uuid.UUID, defaults: dict[str, str],
-                     facts: CompanyFacts) -> dict[str, tuple[str, str]]:
-    """tin -> (ATCs, reason) the supplier's documents without their own ATC get when the supplier has none."""
+                     facts: CompanyFacts) -> dict[str, Automatic]:
+    """tin -> what the returns use for the supplier's documents without their own ATC, and the tree's hint."""
     rows = (await db.execute(select(
         AADocument.seller_tin, AADocument.seller_name, AADocument.category, AADocument.account,
         AADocument.raw["nature"].astext, AADocument.raw["description"].astext, AADocument.gross_amount,
@@ -57,14 +57,17 @@ async def _automatic(db: AsyncSession, company_id: uuid.UUID, defaults: dict[str
         AADocument.company_id == company_id, AADocument.deleted_at.is_(None), AADocument.seller_tin != "",
         AADocument.ewt_atc == "", *_PAYMENT,
     ))).all()
-    picks: dict[str, list[tuple[str, str]]] = {}
+    current: dict[str, list[str]] = {}
+    tree: dict[str, list[tuple[str, str]]] = {}
     for tin, name, category, account, nature, description, gross, vat, withheld, vat_registered in rows:
         line = DocLine(id="", category=category, account=account, doc_type="", client_role="buyer", doc_date=None,
                        doc_number="", counterparty_tin=tin, counterparty_name=name or "", counterparty_address="",
                        gross=gross, vat=vat, withholding=withheld, counterparty_vat_registered=vat_registered,
                        nature=nature or "", description=(description or "")[:200])
-        picks.setdefault(tin, []).append(document_pick(line, defaults.get(account, ""), facts))
-    return {tin: automatic_suggestion(p) for tin, p in picks.items()}
+        current.setdefault(tin, []).append(document_pick(line, defaults.get(account, ""), facts))
+        decision = tree_suggestion(line, facts)
+        tree.setdefault(tin, []).append((decision.atc, decision.reason))
+    return {tin: automatic_for(current[tin], tree[tin]) for tin in current}
 
 
 async def suggestions_from_other_companies(db: AsyncSession, company: AACompany,
@@ -167,6 +170,25 @@ async def use_suggestions(company_id: uuid.UUID, user: User = Depends(get_curren
                      action="use_suggestions", before={s.tin: "" for s in adopted},
                      after={s.tin: s.suggestion for s in adopted})
     if adopted:
+        await _touch(db, company, AADocument.seller_tin.in_([s.tin for s in adopted]))
+    await db.commit()
+    return await _databank(db, company)
+
+
+@router.post("/companies/{company_id}/atc-databank/use-hints", response_model=AtcDatabankOut)
+async def use_hints(company_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Adopt every ATC the decision tree suggests for suppliers with no ATC here yet (it then reaches the returns)."""
+    ent = scope_for(user)
+    company = await company_or_404(db, ent, company_id)
+    current = await _databank(db, company)
+    adopted = [s for s in current.suppliers if s.hint and not s.ewt_atc]
+    for s in adopted:
+        await _set_supplier(db, company, s.tin, s.hint, s.name)
+    if adopted:
+        audit.record(db, label="AutoAccounting's supplier ATCs",
+                     ent=ent, company_id=company.id, user=user, entity="atc", entity_id="suppliers",
+                     action="use_hints", before={s.tin: "" for s in adopted},
+                     after={s.tin: s.hint for s in adopted})
         await _touch(db, company, AADocument.seller_tin.in_([s.tin for s in adopted]))
     await db.commit()
     return await _databank(db, company)

@@ -14,7 +14,8 @@ Walked top to bottom, the first branch that fits wins:
 7. Otherwise                                  -> no withholding
 
 Individual (WI) or corporate (WC) comes from the payee's name. Callers check that the client is a withholding agent
-and the document is a payment first (``ewt.suggest_atc``).
+and the document is a payment first (``ewt.tree_suggestion``). The tree only suggests: the returns keep using
+``ewt.suggest_atc`` until a person adopts a suggestion as the supplier's ATC.
 """
 
 import re

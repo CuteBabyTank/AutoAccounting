@@ -1,8 +1,8 @@
 from decimal import Decimal
 
-from app.services.accounting.atc_prefs import automatic_suggestion, document_pick
+from app.services.accounting.atc_prefs import Automatic, automatic_for, document_pick, rank_picks
 from app.services.accounting.compute.atc_tree import decide, withheld_rate
-from app.services.accounting.compute.ewt import suggest_decision
+from app.services.accounting.compute.ewt import suggest_atc, tree_suggestion
 from tests.aa_factories import company, expense, purchase
 
 D = Decimal
@@ -83,21 +83,35 @@ def test_top_withholding_agents_keep_the_goods_and_services_rules():
 
 
 def test_every_decision_says_why():
-    d = suggest_decision(expense(account="rent", counterparty_name="Ayala Land Inc."), AGENT)
+    d = tree_suggestion(expense(account="rent", counterparty_name="Ayala Land Inc."), AGENT)
     assert d.atc == "WC100" and "Rent" in d.reason
-    assert suggest_decision(expense(account="rent"), company()).reason == "The company isn't a withholding agent"
+    assert tree_suggestion(expense(account="rent"), company()).reason == "The company isn't a withholding agent"
+
+
+def test_the_returns_keep_the_standard_rules_until_a_hint_is_adopted():
+    courier = expense(account="transportation", counterparty_name="PADALA EXPRESS COURIER", nature="services")
+    assert tree_suggestion(courier, AGENT).atc == "WI120"
+    assert suggest_atc(courier, AGENT) == ""
+    assert document_pick(courier, "", AGENT) == ""
 
 
 def test_document_pick_uses_the_expense_type_default_first():
     rent = expense(account="rent", counterparty_name="Ayala Land Inc.")
-    assert document_pick(rent, "", AGENT)[0] == "WC100"
-    assert document_pick(rent, "WI100", AGENT) == ("WI100", "The default for its expense type")
-    assert document_pick(rent, "NONE", AGENT)[0] == ""
+    assert document_pick(rent, "", AGENT) == "WC100"
+    assert document_pick(rent, "WI100", AGENT) == "WI100"
+    assert document_pick(rent, "NONE", AGENT) == ""
 
 
-def test_automatic_suggestion_ranks_the_supplier_documents():
-    assert automatic_suggestion([]) == ("", "")
-    assert automatic_suggestion([("", "No withholding expected")]) == ("", "No withholding expected")
+def test_rank_picks_orders_the_supplier_documents():
+    assert rank_picks([]) == ("", "")
+    assert rank_picks([("", "No withholding expected")]) == ("", "No withholding expected")
     picks = [("WC120", "Contractor"), ("WC158", "Goods"), ("WC120", "Contractor"), ("", "x")]
-    assert automatic_suggestion(picks) == ("WC120 / WC158", "Contractor (2 of 4 documents)")
-    assert automatic_suggestion([("WI100", "Rent"), ("WI100", "Rent")]) == ("WI100", "Rent")
+    assert rank_picks(picks) == ("WC120 / WC158", "Contractor (2 of 4 documents)")
+    assert rank_picks([("WI100", "Rent"), ("WI100", "Rent")]) == ("WI100", "Rent")
+
+
+def test_a_hint_only_when_the_tree_disagrees_with_the_returns():
+    assert automatic_for(["WC100"], [("WC100", "Rent")]) == Automatic("WC100")
+    assert automatic_for(["", ""], [("WI120", "Courier"), ("WI120", "Courier")]) == Automatic("", "WI120", "Courier")
+    assert automatic_for(["WC120"], [("", "Government office")]) == Automatic("WC120", "NONE", "Government office")
+    assert automatic_for(["", ""], [("", "x"), ("", "x")]) == Automatic("")

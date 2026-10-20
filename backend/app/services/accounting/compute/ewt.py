@@ -9,7 +9,9 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from app.services.accounting.compute.atc_tree import AtcDecision, decide, is_corporate_name
+from app.services.accounting.compute.atc_tree import (
+    GOODS_NATURES, TWA_GOODS, TWA_SERVICES, AtcDecision, decide, is_corporate_name,
+)
 from app.services.accounting.compute.due_dates import quarter_start
 from app.services.accounting.compute.inputs import CompanyFacts, DocLine
 from app.services.accounting.compute.money import c2, total
@@ -61,8 +63,9 @@ def expected_atc(account: str, counterparty_name: str, vat_registered: bool | No
     return ""
 
 
-def suggest_decision(line: DocLine, company: CompanyFacts) -> AtcDecision:
-    """The decision tree's ATC for this payment, with the branch that chose it (``compute/atc_tree.py``)."""
+def tree_suggestion(line: DocLine, company: CompanyFacts) -> AtcDecision:
+    """The decision tree's ATC for this payment, with the branch that chose it (``compute/atc_tree.py``).
+    A hint only: the returns never use it until a person sets it as the supplier's or document's ATC."""
     if not is_agent(company):
         return AtcDecision("", "The company isn't a withholding agent")
     if not _is_payment(line):
@@ -71,8 +74,22 @@ def suggest_decision(line: DocLine, company: CompanyFacts) -> AtcDecision:
 
 
 def suggest_atc(line: DocLine, company: CompanyFacts) -> str:
-    """The usual ATC for this payment, or "" when no withholding is expected."""
-    return suggest_decision(line, company).atc
+    """The standard ATC the returns use for a payment with no ATC chosen, or "" when no withholding is expected."""
+    if not is_agent(company) or not _is_payment(line):
+        return ""
+    expected = expected_atc(line.account, line.counterparty_name, line.counterparty_vat_registered)
+    if expected:
+        return expected
+    prefix = "WC" if is_corporate_name(line.counterparty_name) else "WI"
+    goods = line.nature in GOODS_NATURES  # e.g. parts or materials booked to repairs: not a contractor's fee
+    if line.account == "repairs" and not goods:
+        return f"{prefix}120"
+    if company.is_top_withholding_agent:
+        if line.account in TWA_GOODS or (line.account == "repairs" and goods):
+            return f"{prefix}158"
+        if line.account in TWA_SERVICES:
+            return f"{prefix}160"
+    return ""
 
 
 def account_suggestions(account: str, company: CompanyFacts) -> list[str]:

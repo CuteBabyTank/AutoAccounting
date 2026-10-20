@@ -65,6 +65,7 @@ const ACTION_LABELS: Record<string, string> = {
   undo_import: "Import undone",
   supplier: "Supplier ATC set",
   use_suggestions: "Suggested ATCs adopted",
+  use_hints: "AutoAccounting's ATCs adopted",
   account: "Default ATC set",
   board_filed: "Marked filed on the work board",
   board_unfiled: "Work board filing cleared",

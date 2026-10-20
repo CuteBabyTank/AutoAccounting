@@ -41,8 +41,6 @@ interface Props {
   /** Classes for the closed box (the panel's usual input style). */
   className: string;
   ariaLabel?: string;
-  /** Why the blank choice suggests what it does; shown on hover while it's selected. */
-  blankHint?: string;
 }
 
 const MENU_WIDTH = 560;
@@ -50,7 +48,7 @@ const MENU_HEIGHT = 380; // search box + ten rows
 
 /** ATC dropdown with a search box: the blank choice, "No withholding", the common ATCs, then every other one the
  * backend knows, about ten rows at a time. A saved code that isn't listed still shows. */
-export default function AtcPicker({ value, onChange, blank, disabled, className, ariaLabel = "ATC", blankHint }: Props) {
+export default function AtcPicker({ value, onChange, blank, disabled, className, ariaLabel = "ATC" }: Props) {
   const [codes, setCodes] = useState<AtcCode[]>([]);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -162,7 +160,6 @@ export default function AtcPicker({ value, onChange, blank, disabled, className,
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
-        title={!value && blankHint ? blankHint : undefined}
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={(e) => {
           if (!open && (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ")) {

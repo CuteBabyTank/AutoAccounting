@@ -708,8 +708,9 @@ class AtcSupplierOut(BaseModel):
     ewt_atc: str
     suggestion: str = ""
     suggestion_company: str = ""
-    automatic: str = ""          # ATC(s) its documents get with no supplier ATC (expense-type default, else the tree)
-    automatic_reason: str = ""
+    automatic: str = ""          # ATC(s) the returns use for its documents with no supplier ATC
+    hint: str = ""               # the decision tree's ATC (or NONE) to adopt, when it differs
+    hint_reason: str = ""
 
 
 class AtcDefaultOut(BaseModel):

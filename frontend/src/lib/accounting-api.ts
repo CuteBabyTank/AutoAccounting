@@ -159,6 +159,9 @@ export const accountingApi = {
   /** Keep both: the pair is never offered as a duplicate again. */
   notDuplicate: (id: string, otherId: string, reason = "") =>
     api.post(`/accounting/documents/${seg(id)}/not-duplicate`, { other_id: otherId, reason }).then(() => undefined),
+  /** Move a document to another company of the firm; the server re-sorts it for that company. */
+  moveDocumentToCompany: (id: string, companyId: string) =>
+    api.post<AADocument>(`/accounting/documents/${seg(id)}/move-company`, { company_id: companyId }).then((r) => r.data),
   deleteDocument: (id: string) => api.delete(`/accounting/documents/${seg(id)}`).then(() => undefined),
   pageImage: (fileId: string, page: number) =>
     api

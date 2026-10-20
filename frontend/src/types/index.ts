@@ -4,6 +4,8 @@ export interface User {
   id: string;
   email: string;
   nickname?: string | null;
+  /** Profile picture as a data: URI (small WebP). */
+  avatar?: string | null;
   role: UserRole;
   organization_name?: string | null;
   is_active: boolean;

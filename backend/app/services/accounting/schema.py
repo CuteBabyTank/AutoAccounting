@@ -6,6 +6,7 @@ New databases get these columns from the models via create_all; existing ones ge
 
 def column_statements() -> list[str]:
     return [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar BYTEA",
         "ALTER TABLE aa_documents ADD COLUMN IF NOT EXISTS ewt_atc VARCHAR(10) NOT NULL DEFAULT ''",
         "ALTER TABLE aa_supplier_rules ADD COLUMN IF NOT EXISTS ewt_atc VARCHAR(10) NOT NULL DEFAULT ''",
         "ALTER TABLE aa_companies ADD COLUMN IF NOT EXISTS operations_start_year INTEGER",

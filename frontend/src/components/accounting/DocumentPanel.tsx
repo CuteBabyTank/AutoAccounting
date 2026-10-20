@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X } from "@phosphor-icons/react";
+import { ArrowsLeftRight, X } from "@phosphor-icons/react";
 import AssetSection from "@/components/accounting/AssetSection";
 import AuditTrail, { formatWhen } from "@/components/accounting/AuditTrail";
 import DuplicateCompare from "@/components/accounting/DuplicateCompare";
+import MoveDocumentDialog from "@/components/accounting/MoveDocumentDialog";
 import { accountingApi } from "@/lib/accounting-api";
 import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, EWT_ATC_OPTIONS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, formatPeso, reasonDetail } from "@/lib/accounting-format";
 import type { AADocument, Account, AuditEvent, DocumentPatch, DuplicatePair, PaymentLinks } from "@/types/accounting";
@@ -83,8 +84,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
   const [notice, setNotice] = useState("");
   useEffect(() => setNotice(""), [doc.id]);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [moveYear, setMoveYear] = useState(String(doc.period_year ?? new Date().getFullYear()));
-  const [moveQuarter, setMoveQuarter] = useState(String(doc.period_quarter ?? 1));
+  const [moving, setMoving] = useState(false);
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [links, setLinks] = useState<PaymentLinks | null>(null);
@@ -499,26 +499,6 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
           <AssetSection doc={doc} onChanged={() => onChanged(doc)} />
         )}
 
-        <div className="mt-4 rounded-lg border border-[var(--border)] p-3">
-          <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">Move to another quarter</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <input type="number" min={2000} max={2100} className={`${INPUT} w-24`} value={moveYear} onChange={(e) => setMoveYear(e.target.value)} />
-            <select className={`${INPUT} w-20`} value={moveQuarter} onChange={(e) => setMoveQuarter(e.target.value)}>
-              {[1, 2, 3, 4].map((q) => (
-                <option key={q} value={q}>Q{q}</option>
-              ))}
-            </select>
-            <button className={BTN} disabled={busy} onClick={() => save({ period_year: Number(moveYear), period_quarter: Number(moveQuarter) })}>
-              Move
-            </button>
-            {doc.period_locked && (
-              <button className={BTN} disabled={busy} onClick={() => save({ period_year: null, period_quarter: null })}>
-                Use document date
-              </button>
-            )}
-          </div>
-        </div>
-
         {error && <p className="mt-3 text-sm text-[var(--alert-error-text)]">{error}</p>}
         {notice && <p className="mt-3 text-sm text-[var(--text-secondary)]">{notice}</p>}
 
@@ -561,6 +541,17 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
           >
             {doc.excluded ? "Include again" : "Exclude from computation"}
           </button>
+          {/* Company, folder and quarter in one dialog; unsaved edits are saved first so they move too. */}
+          <button
+            className={`${BTN} inline-flex items-center gap-1.5`}
+            disabled={busy}
+            onClick={async () => {
+              if (await save()) setMoving(true);
+            }}
+          >
+            <ArrowsLeftRight size={15} />
+            Move
+          </button>
           <button
             className="ml-auto rounded-lg border border-[var(--alert-error-border)] px-3 py-1.5 text-sm font-medium text-[var(--alert-error-text)] hover:bg-[var(--alert-error-bg)] disabled:opacity-60"
             disabled={busy}
@@ -569,6 +560,16 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
             {confirmDelete ? "Click again to delete" : "Delete"}
           </button>
         </div>
+        {moving && (
+          <MoveDocumentDialog
+            doc={doc}
+            onClose={() => setMoving(false)}
+            onMoved={(moved, summary) => {
+              onChanged(moved);
+              setNotice(summary);
+            }}
+          />
+        )}
         {override && (
           <div className="mt-3 rounded-lg border border-[var(--border)] p-3">
             <label className={LABEL} htmlFor="override-reason">Why? (optional, saved in the History tab)</label>

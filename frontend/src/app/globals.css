@@ -1488,6 +1488,30 @@ tr.aa-focus-flash { outline-offset: -2px; }
     transition-delay: calc(20ms + min(var(--i, 0), 7) * 8ms);
   }
 }
+/* The nav scrolls without a bar; in the 72px rail one would eat the icons. */
+.aa-rail-scroll {
+  scrollbar-width: none;
+  /* A row cut off by a short window fades out instead of ending on a hard edge. */
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(#000 calc(100% - 16px), transparent);
+}
+.aa-rail-scroll::-webkit-scrollbar { display: none; }
+/* Short windows (a laptop with the dock and a tab strip): tighter rows so
+   the whole rail, footer included, usually fits without scrolling. */
+@media (max-height: 760px) {
+  .aa-rail-panel .aa-item { height: 36px; margin-bottom: 2px; }
+  .aa-rail-panel .aa-rail-logo { padding-top: 14px; padding-bottom: 10px; }
+  .aa-rail-panel .aa-rail-section { margin-bottom: 12px; }
+  .aa-rail-panel .aa-rail-rule { margin-bottom: 8px; }
+}
+@media (max-height: 620px) {
+  .aa-rail-panel .aa-item { height: 32px; }
+}
+@media (max-height: 540px) {
+  .aa-rail-panel .aa-rail-logo { padding-top: 10px; padding-bottom: 6px; }
+  .aa-rail-panel .aa-rail-section { margin-bottom: 6px; }
+  .aa-rail-panel .aa-rail-rule { margin-top: 2px; margin-bottom: 4px; }
+}
 @media (prefers-reduced-motion: reduce) {
   /* Gentler, not gone: a short, soft slide so the push still reads as
      one continuous change (a snap would jolt the whole page), labels

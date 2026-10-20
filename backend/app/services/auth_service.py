@@ -1,11 +1,12 @@
 """Authentication service: Google SSO only."""
 
+import base64
 import logging
 
 from fastapi import HTTPException
 from google.oauth2 import id_token
 from google.auth.transport import requests
-from sqlalchemy import select
+from sqlalchemy import inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import create_access_token
@@ -133,12 +134,20 @@ async def _maybe_bootstrap_admin(db: AsyncSession, user: User) -> None:
     logger.info("bootstrap_admin_granted user_id=%s email=%s", user.id, user.email)
 
 
+def avatar_data_uri(user: User) -> str | None:
+    """The profile picture as a data: URI, or None. Needs `avatar` loaded (it is deferred)."""
+    if "avatar" in sa_inspect(user).unloaded or not user.avatar:
+        return None
+    return "data:image/webp;base64," + base64.b64encode(user.avatar).decode()
+
+
 def user_to_response(user: User) -> dict:
     """Convert User model to UserResponse dict."""
     return {
         "id": str(user.id),
         "email": user.email,
         "nickname": user.nickname,
+        "avatar": avatar_data_uri(user),
         "role": user.role.value if user.role else "unverified",
         "organization_name": user.organization_name,
         "is_active": user.is_active,

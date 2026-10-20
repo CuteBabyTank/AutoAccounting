@@ -41,12 +41,12 @@ from app.schemas.accounting import (
     FolderOut, NotDuplicateIn,
     TreeCompanyOut, UploadFileOut, UploadGroupOut, UploadOut,
 )
-from app.services.accounting import audit, pipeline
+from app.services.accounting import audit, move_company, pipeline
 from app.services.accounting.books.links import relink_receipts
 from app.services.accounting.books.chart import locked_message
 from app.services.accounting.books.loader import ensure_chart, touch_books
 from app.services.accounting.compute.reclassify import document_main_account
-from app.services.accounting.review_rules import BULK_MAX, LOCKED_REASON, bulk_targets, sync_receipt_flag
+from app.services.accounting.review_rules import BULK_MAX, LOCKED_REASON, bulk_targets, flag_locked, sync_receipt_flag
 from app.services.accounting import duplicates
 from app.services.accounting.classify import document_nature, needs_review_for, rule_conflicts
 from app.services.accounting.matching import file_detection_from_json, suggest_groups
@@ -926,6 +926,80 @@ async def delete_document(
     await duplicates.refresh_flags(db, doc.company_id)  # the copy left behind is no longer a duplicate
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class MoveCompanyIn(BaseModel):
+    company_id: uuid.UUID
+
+
+@router.post("/documents/{doc_id}/move-company", response_model=DocumentOut)
+async def move_document_to_company(
+    doc_id: uuid.UUID, body: MoveCompanyIn, user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move a document to another company of the firm, re-sorted for it (side, folder, account, review flags and
+    quarter by its fiscal year). The file stays where it is; only the document moves. Refused (409) while something
+    in the old company still depends on it."""
+    ent = _scope(user)
+    doc = await _document_or_404(db, ent, doc_id)
+    source = await _company_or_404(db, ent, doc.company_id)
+    target = await _company_or_404(db, ent, body.company_id)
+    if target.id == source.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The document is already in this company")
+
+    doc_ref = str(doc.id)
+    facts = move_company.MoveFacts(
+        is_statement=doc.doc_type == "statement",
+        has_asset=(await db.execute(select(AAAsset.id).where(AAAsset.document_id == doc.id).limit(1))).first()
+        is not None,
+        confirmed_bank_match=(await db.execute(select(AABankLine.id).where(
+            AABankLine.company_id == source.id, AABankLine.match_status == "confirmed",
+            AABankLine.match_kind == "document", AABankLine.matched_ref == doc_ref,
+        ).limit(1))).first() is not None,
+        written_off=(await db.execute(select(AAJournalEntry.id).where(
+            AAJournalEntry.company_id == source.id, AAJournalEntry.deleted_at.is_(None),
+            AAJournalEntry.writeoff_items.contains([{"id": doc_ref}]),
+        ).limit(1))).first() is not None,
+        is_2307_for_a_sale=(await db.execute(select(AADocument.id).where(
+            AADocument.company_id == source.id, AADocument.deleted_at.is_(None),
+            AADocument.cwt_2307["document_id"].astext == doc_ref,
+        ).limit(1))).first() is not None,
+    )
+    problem = move_company.move_problem(facts)
+    if problem:
+        raise HTTPException(status.HTTP_409_CONFLICT, problem)
+
+    rules = {r.counterparty_tin: (r.category, r.account) for r in (await db.execute(
+        select(AASupplierRule).where(AASupplierRule.company_id == target.id))).scalars().all()}
+    others = frozenset((await db.execute(select(AACompany.tin).where(
+        AACompany.enterprise_id == ent, AACompany.id != target.id, AACompany.tin != ""))).scalars().all())
+    fields = move_company.resorted_fields(doc, pipeline.company_profile(target), rules, others)
+    locks = await pipeline._locked_charts(db, [target.id])
+    if target.id in locks:  # classified into a locked account: queue it, as extraction does
+        checked = {**fields, "seller_tin": doc.seller_tin, "buyer_tin": doc.buyer_tin}
+        flag_locked(checked, *locks[target.id])
+        fields["review_reasons"], fields["needs_review"] = checked["review_reasons"], checked["needs_review"]
+
+    before = {"company": source.registered_name, **audit.snapshot(doc, ("category", "period_year", "period_quarter"))}
+    # Receipts in the old company that a person linked to this one as the invoice they pay.
+    for receipt in (await db.execute(select(AADocument).where(
+        AADocument.company_id == source.id, AADocument.settles_document_id == doc.id))).scalars().all():
+        receipt.settles_document_id, receipt.settles_source = None, ""
+    for name, value in fields.items():
+        setattr(doc, name, value)
+    doc.company_id = target.id
+    after = {"company": target.registered_name, **audit.snapshot(doc, ("category", "period_year", "period_quarter"))}
+    for company, action in ((source, "move_out"), (target, "move_in")):
+        audit.record(db, label=audit.document_label(doc), ent=ent, company_id=company.id, user=user,
+                     entity="document", entity_id=doc.id, action=action, before=before, after=after)
+
+    await db.flush()
+    for company in (source, target):
+        await relink_receipts(db, company.id)
+        await bank_service.rematch(db, company)
+        await duplicates.refresh_flags(db, company.id)
+    await db.commit()
+    return await _document_out(db, doc, target)
 
 
 @router.get("/duplicates", response_model=list[DuplicatePairOut])

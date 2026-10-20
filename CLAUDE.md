@@ -172,6 +172,12 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   `/api/accounting` or `/api/team` must go in `ROUTES` or `ALWAYS_ON` (`tests/test_features.py` fails otherwise). The
   frontend reads `GET /api/features` through `useFeatures()` (`lib/features.tsx`) to hide nav items, tree leaves and
   panels; a new switch needs its key in `FEATURES` and in `FeatureKey`.
+- **Moving documents:** the document panel's Move dialog picks company, folder and quarter. Same company = the usual
+  PATCH (category / period). Another company = `POST /documents/{id}/move-company` (pure `move_company.py`): the
+  document is re-sorted for the target via `classify_document` from its current fields (hand edits kept), company
+  links are cleared (`CLEARED_FIELDS`), the file stays put, both companies get relink + rematch + duplicates, and the
+  audit log gets `move_out` / `move_in`. Refused (409, `move_problem`) for statements, assets, confirmed bank matches,
+  write-offs and 2307s marked received; a new way to tie a document to its company needs a `MoveFacts` guard.
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.
 - **Frontend token** lives in `sessionStorage` (`autoaccounting_token`). The axios interceptor attaches it, and on 401 it is cleared and AuthGate redirects.
 

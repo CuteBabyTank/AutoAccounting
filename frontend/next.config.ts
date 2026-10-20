@@ -4,6 +4,8 @@ const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: false,
   poweredByHeader: false,
+  // The dev-only "N" badge defaults to bottom-left, on top of the sidebar's Sign out.
+  devIndicators: { position: "bottom-right" },
   productionBrowserSourceMaps: false,
   compiler: {
     removeConsole: process.env.NODE_ENV === "production" ? { exclude: ["error", "warn"] } : false,
@@ -35,7 +37,7 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
+            value: "camera=(self), microphone=(), geolocation=()",  // camera: taking a profile picture
           },
           {
             key: "Strict-Transport-Security",

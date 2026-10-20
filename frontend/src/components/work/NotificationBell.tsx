@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { Bell, X } from "@phosphor-icons/react";
@@ -24,15 +24,39 @@ interface Props {
   /** "rail": a sidebar row (label fades in with the rail); "bar": the mobile top bar icon. */
   variant: "rail" | "bar";
   fadeStyle?: CSSProperties;
+  /** Tells the sidebar the panel is showing, so the rail stays open beside it. */
+  onOpenChange?: (open: boolean) => void;
 }
 
 /** The bell in the app shell: deadlines, documents to review, unreconciled bank months, missing 2307s and tasks. */
-export default function NotificationBell({ variant, fadeStyle }: Props) {
+export default function NotificationBell({ variant, fadeStyle, onOpenChange }: Props) {
   const [data, setData] = useState<Notifications | null>(null);
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const panel = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  // Rail panel: its bottom lines up with the bell's and it grows upward, never past the window's edges.
+  const [anchor, setAnchor] = useState<{ bottom: number; maxHeight: number } | null>(null);
+
+  useEffect(() => {
+    onOpenChange?.(open);
+    return () => onOpenChange?.(false);
+  }, [open, onOpenChange]);
+
+  // Layout effect: placed before the first paint, so the panel never flashes in the wrong spot.
+  useLayoutEffect(() => {
+    if (!open || variant !== "rail") return;
+    const place = () => {
+      const rect = trigger.current?.getBoundingClientRect();
+      if (!rect) return;
+      const bottom = Math.max(12, window.innerHeight - rect.bottom);
+      setAnchor({ bottom, maxHeight: Math.min(560, window.innerHeight - bottom - 12) });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open, variant]);
 
   const load = useCallback(() => {
     workApi.notifications().then(setData).catch(() => undefined);
@@ -106,6 +130,7 @@ export default function NotificationBell({ variant, fadeStyle }: Props) {
   const button =
     variant === "rail" ? (
       <button
+        ref={trigger}
         onClick={() => setOpen((o) => !o)}
         aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}
         aria-expanded={open}
@@ -147,9 +172,14 @@ export default function NotificationBell({ variant, fadeStyle }: Props) {
               role="dialog"
               aria-label="Notifications"
               onClick={(e) => e.stopPropagation()}
-              className="modal-enter fixed inset-x-3 top-16 flex max-h-[70vh] flex-col rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] shadow-xl outline-none md:inset-x-auto md:left-[88px] md:top-auto md:bottom-6 md:w-[380px]"
+              style={variant === "rail" && anchor ? { bottom: anchor.bottom, maxHeight: anchor.maxHeight } : undefined}
+              className={`modal-enter fixed flex flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)] shadow-xl outline-none ${
+                variant === "rail"
+                  ? "left-[260px] w-[min(380px,calc(100vw-272px))]"
+                  : "inset-x-3 top-16 max-h-[calc(100dvh-5rem)]"
+              }`}
             >
-              <div className="flex items-center gap-2 border-b border-[var(--border)] px-4 py-3">
+              <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-3">
                 <h2 className="text-sm font-semibold text-[var(--text-primary)]">Notifications</h2>
                 {data && data.items.length > 0 && (
                   <>
@@ -171,7 +201,7 @@ export default function NotificationBell({ variant, fadeStyle }: Props) {
                   <X size={16} />
                 </button>
               </div>
-              <div className="overflow-y-auto">
+              <div className="min-h-0 overflow-y-auto overscroll-contain">
                 {!data ? (
                   <p className="px-4 py-6 text-sm text-[var(--text-secondary)]">Loading…</p>
                 ) : data.items.length === 0 ? (

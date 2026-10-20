@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FolderSimple } from "@phosphor-icons/react";
+import { ArrowLeft, FolderSimple } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { CATEGORY_LABELS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, counterpartyName, formatPeso } from "@/lib/accounting-format";
@@ -87,6 +87,15 @@ export default function FileGrid({ folder, category, onCategory, onOpen, onEditC
         </button>
         {category && <span className="text-[var(--text-secondary)]">/ {CATEGORY_LABELS[category]}</span>}
         <div className="ml-auto flex items-center gap-3">
+          {category && (
+            <button
+              onClick={() => onCategory(null)}
+              className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+            >
+              <ArrowLeft size={13} />
+              Back
+            </button>
+          )}
           {folder.counts.review > 0 && (
             <span className="rounded-full bg-[var(--badge-yellow-bg)] px-2.5 py-0.5 text-xs font-medium text-[var(--badge-yellow-text)]">
               {folder.counts.review} to review

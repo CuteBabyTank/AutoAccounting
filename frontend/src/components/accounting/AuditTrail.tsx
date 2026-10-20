@@ -40,6 +40,8 @@ const ACTION_LABELS: Record<string, string> = {
   exclude: "Excluded from computation",
   include: "Included again",
   move: "Moved to another quarter",
+  move_out: "Moved to another company",
+  move_in: "Moved in from another company",
   not_duplicate: "Kept both (not a duplicate)",
   supplier_rule: "Moved by a correction to the same supplier",
   confirm: "Files confirmed for this company",

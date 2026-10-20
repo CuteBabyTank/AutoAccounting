@@ -273,6 +273,8 @@ class DocumentOut(BaseModel):
     ewt_atc_source: str = ""      # document | supplier | account | "" (built-in suggestion)
     ewt_atc_suggestion: str = ""  # this supplier's ATC in another company of the firm (not applied)
     ewt_atc_suggestion_company: str = ""
+    ewt_atc_best: str = ""        # the decision tree's pick (an ATC or NONE), shown first in the picker
+    ewt_atc_best_reason: str = ""
     rule_applied_to: int = 0  # after a correction: the supplier's other unreviewed documents it also changed
     paid_on: date | None = None
     paid_via: str = ""
@@ -711,6 +713,8 @@ class AtcSupplierOut(BaseModel):
     automatic: str = ""          # ATC(s) the returns use for its documents with no supplier ATC
     hint: str = ""               # the decision tree's ATC (or NONE) to adopt, when it differs
     hint_reason: str = ""
+    best: str = ""               # the decision tree's pick (an ATC or NONE), shown first in the picker
+    best_reason: str = ""
 
 
 class AtcDefaultOut(BaseModel):

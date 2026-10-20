@@ -30,25 +30,31 @@ interface Option {
   value: string;
   label: string;
   group: string; // "" = top of the list, no heading
+  note?: string; // why it's the best match
 }
 
 interface Props {
   value: string;
   onChange: (value: string) => void;
-  /** Label of the "" choice ("Suggested (WC100)", "Any", …). */
+  /** Label of the "" choice ("Auto (WC100)", "Any", …). */
   blank: string;
+  /** AutoAccounting's best ATCs for this payment (ATC codes or NONE), listed first under "Best match". */
+  best?: string[];
+  /** Why they're the best match. */
+  bestReason?: string;
   disabled?: boolean;
   /** Classes for the closed box (the panel's usual input style). */
   className: string;
   ariaLabel?: string;
 }
 
+const BEST = "Best match";
 const MENU_WIDTH = 560;
 const MENU_HEIGHT = 380; // search box + ten rows
 
-/** ATC dropdown with a search box: the blank choice, "No withholding", the common ATCs, then every other one the
- * backend knows, about ten rows at a time. A saved code that isn't listed still shows. */
-export default function AtcPicker({ value, onChange, blank, disabled, className, ariaLabel = "ATC" }: Props) {
+/** ATC dropdown with a search box: the blank choice, "No withholding", the best match, the common ATCs, then every
+ * other one the backend knows, about ten rows at a time. A saved code that isn't listed still shows. */
+export default function AtcPicker({ value, onChange, blank, best, bestReason, disabled, className, ariaLabel = "ATC" }: Props) {
   const [codes, setCodes] = useState<AtcCode[]>([]);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -68,21 +74,27 @@ export default function AtcPicker({ value, onChange, blank, disabled, className,
 
   const options = useMemo<Option[]>(() => {
     const common = new Set(COMMON_ATCS.map((o) => o.value));
-    const out: Option[] = [
-      { value: "", label: blank, group: "" },
+    const listed: Option[] = [
       { value: "NONE", label: "No withholding", group: "" },
       ...COMMON_ATCS.map((o) => ({ ...o, group: "Common" })),
       ...codes.filter((c) => !common.has(c.code)).map((c) => ({ value: c.code, label: codeLabel(c), group: "All other ATCs" })),
     ];
+    const top: Option[] = (best ?? []).filter(Boolean).map((code) => ({
+      value: code,
+      label: listed.find((o) => o.value === code)?.label ?? code,
+      group: BEST,
+      note: bestReason,
+    }));
+    const out: Option[] = [{ value: "", label: blank, group: "" }, listed[0], ...top, ...listed.slice(1)];
     if (value && !out.some((o) => o.value === value)) out.push({ value, label: value, group: "" });
     return out;
-  }, [codes, blank, value]);
+  }, [codes, blank, value, best, bestReason]);
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return options;
     const words = q.split(/\s+/);
-    return options.filter((o) => o.value && words.every((w) => o.label.toLowerCase().includes(w)));
+    return options.filter((o) => o.value && o.group !== BEST && words.every((w) => o.label.toLowerCase().includes(w)));
   }, [options, query]);
 
   const selected = options.find((o) => o.value === value) ?? options[0];
@@ -196,7 +208,7 @@ export default function AtcPicker({ value, onChange, blank, disabled, className,
             </label>
             <ul ref={listRef} role="listbox" aria-label={ariaLabel} className="max-h-80 overflow-y-auto py-1">
               {shown.map((o, i) => (
-                <li key={o.value || "blank"}>
+                <li key={`${o.group}:${o.value}`}>
                   {o.group && o.group !== shown[i - 1]?.group && (
                     <div className="px-3 pb-0.5 pt-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">{o.group}</div>
                   )}
@@ -209,7 +221,10 @@ export default function AtcPicker({ value, onChange, blank, disabled, className,
                     onClick={() => choose(o.value)}
                     className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm leading-snug text-[var(--text-primary)] ${i === active ? "bg-[var(--bg-hover)]" : ""}`}
                   >
-                    <span className="min-w-0 flex-1">{o.label}</span>
+                    <span className="min-w-0 flex-1">
+                      {o.label}
+                      {o.note && <span className="block text-[11px] text-[var(--text-secondary)]">{o.note}</span>}
+                    </span>
                     {o.value === value && <Check size={14} weight="bold" className="shrink-0 text-[var(--accent)]" />}
                   </button>
                 </li>

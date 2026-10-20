@@ -118,6 +118,9 @@ class ContactOut(BaseModel):
     payment_terms_days: int | None
     default_account: str            # from the supplier databank (by TIN)
     default_atc: str
+    auto_atc: str = ""              # what the returns use for its documents with no ATC set (e.g. "WC120")
+    best_atc: str = ""              # the decision tree's pick (an ATC or NONE), first in the picker
+    best_atc_reason: str = ""
     manual: list[str]
     merged_into_id: uuid.UUID | None
     merged_from: list[str]          # names of contacts merged into this one

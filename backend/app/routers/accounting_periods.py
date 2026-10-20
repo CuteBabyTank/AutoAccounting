@@ -33,7 +33,8 @@ from app.services.accounting.compute.annual import annual_form
 from app.services.accounting.certificate_edits import apply_2307, fields_2307
 from app.services.accounting.compute.due_dates import annual_due_date, due_dates, quarter_end, quarter_start
 from app.services.accounting.compute.engine import AMENDED_WARNING, build_quarter, expected_forms
-from app.services.accounting.compute.ewt import effective_atc
+from app.services.accounting.compute.atc_tree import AtcDecision
+from app.services.accounting.compute.ewt import best_atc, effective_atc
 from app.services.accounting.compute.inputs import (
     CompanyFacts, DocLine, PeriodData, PeriodInputs, inputs_from_json, inputs_to_json,
 )
@@ -111,6 +112,11 @@ async def supplier_gl_rules(db: AsyncSession, company_id: uuid.UUID) -> dict[str
 def effective_document_atc(doc: AADocument, company: AACompany, atc_rules: dict[str, str]) -> str:
     """The ATC the next generation will use for this document ("" = no withholding)."""
     return effective_atc(doc_line(doc, atc_rules), company_facts(company))
+
+
+def best_document_atc(doc: AADocument, company: AACompany) -> AtcDecision:
+    """The decision tree's pick for this document, for the ATC picker (never used by the returns)."""
+    return best_atc(doc_line(doc), company_facts(company))
 
 
 def document_atc_source(doc: AADocument, atc_rules: dict[str, str]) -> str:

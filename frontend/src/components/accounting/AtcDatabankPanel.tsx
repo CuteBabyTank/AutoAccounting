@@ -17,8 +17,10 @@ interface Props {
 const SELECT = "w-full rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] disabled:opacity-60";
 const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-60";
 
-function AtcSelect({ value, blank, disabled, onChange }: { value: string; blank: string; disabled: boolean; onChange: (v: string) => void }) {
-  return <AtcPicker className={SELECT} value={value} blank={blank} disabled={disabled} onChange={onChange} />;
+function AtcSelect({ value, blank, best, bestReason, disabled, onChange }: {
+  value: string; blank: string; best?: string[]; bestReason?: string; disabled: boolean; onChange: (v: string) => void;
+}) {
+  return <AtcPicker className={SELECT} value={value} blank={blank} best={best} bestReason={bestReason} disabled={disabled} onChange={onChange} />;
 }
 
 export default function AtcDatabankPanel({ companyId, companyName, onChanged }: Props) {
@@ -90,7 +92,9 @@ export default function AtcDatabankPanel({ companyId, companyName, onChanged }: 
                   <span className="truncate">{ACCOUNT_LABELS[d.account] ?? d.account}</span>
                   <AtcSelect
                     value={d.ewt_atc}
-                    blank={d.suggestion ? `Suggested (${d.suggestion})` : "Suggested"}
+                    blank={d.suggestion ? `Auto (${d.suggestion})` : "Auto"}
+                    best={d.suggestion ? d.suggestion.split(" / ") : []}
+                    bestReason={d.suggestion ? "WI for an individual supplier, WC for a company" : undefined}
                     disabled={busy}
                     onChange={(v) => run(() => accountingApi.setAccountAtc(companyId, d.account, v))}
                   />
@@ -147,7 +151,9 @@ export default function AtcDatabankPanel({ companyId, companyName, onChanged }: 
                       <td className="py-1.5 pl-3">
                         <AtcSelect
                           value={s.ewt_atc}
-                          blank={s.automatic ? `Suggested (${s.automatic})` : "Suggested"}
+                          blank={s.automatic ? `Auto (${s.automatic})` : "Auto"}
+                          best={[s.best]}
+                          bestReason={s.best_reason}
                           disabled={busy}
                           onChange={(v) => run(() => accountingApi.setSupplierAtc(companyId, s.tin, v, s.name))}
                         />

@@ -192,6 +192,8 @@ export interface AADocument {
   ewt_atc_source: "document" | "supplier" | "account" | "";
   ewt_atc_suggestion: string;
   ewt_atc_suggestion_company: string;
+  ewt_atc_best: string; // the decision tree's pick (an ATC or NONE), first in the picker
+  ewt_atc_best_reason: string;
   rule_applied_to?: number; // after a category/account correction: the supplier's other unreviewed documents changed
   vat_treatment: string;
   input_vat_valid: boolean | null;
@@ -586,6 +588,8 @@ export interface AtcSupplier {
   automatic: string; // ATC(s) the returns use for its documents with no supplier ATC, e.g. "WC120 / WC158"
   hint: string; // the decision tree's ATC (or NONE) to adopt, "" when it agrees
   hint_reason: string;
+  best: string; // the decision tree's pick (an ATC or NONE), first in the picker
+  best_reason: string;
 }
 
 export interface AtcCode {
@@ -899,6 +903,9 @@ export interface ContactDetail {
   payment_terms_days: number | null;
   default_account: string;
   default_atc: string;
+  auto_atc: string; // what the returns use for its documents with no ATC set
+  best_atc: string; // the decision tree's pick (an ATC or NONE), first in the picker
+  best_atc_reason: string;
   manual: string[];
   merged_into_id: string | null;
   merged_from: string[];

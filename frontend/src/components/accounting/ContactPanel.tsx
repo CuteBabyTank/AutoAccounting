@@ -417,7 +417,9 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
                 className={INPUT}
                 disabled={!data.tin}
                 value={value("default_atc", data.default_atc) ?? ""}
-                blank="Suggested"
+                blank={data.auto_atc ? `Auto (${data.auto_atc})` : "Auto"}
+                best={[data.best_atc]}
+                bestReason={data.best_atc_reason}
                 onChange={(v) => set({ default_atc: v })}
               />
             </label>

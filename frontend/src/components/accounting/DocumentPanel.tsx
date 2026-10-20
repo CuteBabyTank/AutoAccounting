@@ -410,7 +410,9 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
               <AtcPicker
                 className={INPUT}
                 value={draft.ewt_atc}
-                blank={!doc.ewt_atc && doc.ewt_atc_effective ? `Suggested (${doc.ewt_atc_effective})` : "Suggested"}
+                blank={!doc.ewt_atc && doc.ewt_atc_effective ? `Auto (${doc.ewt_atc_effective})` : "Auto"}
+                best={[doc.ewt_atc_best]}
+                bestReason={doc.ewt_atc_best_reason}
                 onChange={(v) => setDraft((d) => ({ ...d, ewt_atc: v }))}
               />
               {draft.ewt_atc === doc.ewt_atc && !doc.ewt_atc && (

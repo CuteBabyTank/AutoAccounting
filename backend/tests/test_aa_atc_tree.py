@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from app.services.accounting.atc_prefs import Automatic, automatic_for, document_pick, rank_picks
 from app.services.accounting.compute.atc_tree import decide, withheld_rate
-from app.services.accounting.compute.ewt import suggest_atc, tree_suggestion
+from app.services.accounting.compute.ewt import best_atc, suggest_atc, tree_suggestion
 from tests.aa_factories import company, expense, purchase
 
 D = Decimal
@@ -111,7 +111,16 @@ def test_rank_picks_orders_the_supplier_documents():
 
 
 def test_a_hint_only_when_the_tree_disagrees_with_the_returns():
-    assert automatic_for(["WC100"], [("WC100", "Rent")]) == Automatic("WC100")
-    assert automatic_for(["", ""], [("WI120", "Courier"), ("WI120", "Courier")]) == Automatic("", "WI120", "Courier")
-    assert automatic_for(["WC120"], [("", "Government office")]) == Automatic("WC120", "NONE", "Government office")
-    assert automatic_for(["", ""], [("", "x"), ("", "x")]) == Automatic("")
+    assert automatic_for(["WC100"], [("WC100", "Rent")]) == Automatic("WC100", best="WC100", best_reason="Rent")
+    assert automatic_for(["", ""], [("WI120", "Courier"), ("WI120", "Courier")]) == Automatic(
+        "", "WI120", "Courier", "WI120", "Courier")
+    assert automatic_for(["WC120"], [("", "Government office")]) == Automatic(
+        "WC120", "NONE", "Government office", "NONE", "Government office")
+    assert automatic_for(["", ""], [("", "x"), ("", "x")]) == Automatic("", best="NONE", best_reason="x")
+
+
+def test_best_atc_is_a_picker_choice():
+    assert best_atc(expense(account="rent", counterparty_name="Ayala Land Inc."), AGENT).atc == "WC100"
+    assert best_atc(expense(account="representation", counterparty_name="KALDERO GRILL"), AGENT).atc == "NONE"
+    assert best_atc(expense(account="rent"), company()).atc == ""
+    assert best_atc(expense(category="sales", client_role="seller"), AGENT).atc == ""

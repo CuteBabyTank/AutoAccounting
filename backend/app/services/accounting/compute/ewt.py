@@ -73,6 +73,14 @@ def tree_suggestion(line: DocLine, company: CompanyFacts) -> AtcDecision:
     return decide(line, company.is_top_withholding_agent)
 
 
+def best_atc(line: DocLine, company: CompanyFacts) -> AtcDecision:
+    """The tree's pick as a choice in an ATC picker: an ATC, NONE (no withholding), or "" when ATCs don't apply."""
+    decision = tree_suggestion(line, company)
+    if not is_agent(company) or not _is_payment(line):
+        return AtcDecision("", decision.reason)
+    return AtcDecision(decision.atc or ATC_NONE, decision.reason)
+
+
 def suggest_atc(line: DocLine, company: CompanyFacts) -> str:
     """The standard ATC the returns use for a payment with no ATC chosen, or "" when no withholding is expected."""
     if not is_agent(company) or not _is_payment(line):

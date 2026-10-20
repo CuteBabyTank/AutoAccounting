@@ -47,15 +47,17 @@ async def _seen_suppliers(db: AsyncSession, company_id: uuid.UUID) -> list[SeenS
 
 
 async def _automatic(db: AsyncSession, company_id: uuid.UUID, defaults: dict[str, str],
-                     facts: CompanyFacts) -> dict[str, Automatic]:
-    """tin -> what the returns use for the supplier's documents without their own ATC, and the tree's hint."""
+                     facts: CompanyFacts, tin: str = "") -> dict[str, Automatic]:
+    """tin -> what the returns use for the supplier's documents without their own ATC, and the tree's hint
+    (every supplier, or only ``tin``)."""
+    only = (AADocument.seller_tin == tin,) if tin else ()
     rows = (await db.execute(select(
         AADocument.seller_tin, AADocument.seller_name, AADocument.category, AADocument.account,
         AADocument.raw["nature"].astext, AADocument.raw["description"].astext, AADocument.gross_amount,
         AADocument.vat_amount, AADocument.withholding_amount, AADocument.seller_vat_registered,
     ).where(
         AADocument.company_id == company_id, AADocument.deleted_at.is_(None), AADocument.seller_tin != "",
-        AADocument.ewt_atc == "", *_PAYMENT,
+        AADocument.ewt_atc == "", *_PAYMENT, *only,
     ))).all()
     current: dict[str, list[str]] = {}
     tree: dict[str, list[tuple[str, str]]] = {}
@@ -85,6 +87,16 @@ async def suggestions_from_other_companies(db: AsyncSession, company: AACompany,
     for tin, atc, name in rows:
         out.setdefault(tin, (atc, name))
     return out
+
+
+async def supplier_automatic(db: AsyncSession, company: AACompany, tin: str) -> Automatic:
+    """One supplier's ``Automatic`` (what the returns use, the tree's best pick), e.g. for its contact page."""
+    if not tin:
+        return Automatic()
+    defaults = dict((await db.execute(select(AAAtcDefault.account, AAAtcDefault.ewt_atc).where(
+        AAAtcDefault.company_id == company.id))).all())
+    found = await _automatic(db, company.id, defaults, company_facts(company), tin)
+    return found.get(tin, Automatic())
 
 
 async def _databank(db: AsyncSession, company: AACompany) -> AtcDatabankOut:

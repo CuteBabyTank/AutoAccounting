@@ -842,6 +842,8 @@ def _documents_out(docs, company: AACompany, rules: dict[str, str]) -> list[Docu
         item = DocumentOut.model_validate(doc)
         item.ewt_atc_effective = accounting_periods.effective_document_atc(doc, company, rules)
         item.ewt_atc_source = accounting_periods.document_atc_source(doc, rules)
+        best = accounting_periods.best_document_atc(doc, company)
+        item.ewt_atc_best, item.ewt_atc_best_reason = best.atc, best.reason if best.atc else ""
         out.append(item)
     return out
 

@@ -47,6 +47,8 @@ class SupplierRow:
     automatic: str = ""          # what the returns use for its documents with no supplier ATC, e.g. "WC120 / WC158"
     hint: str = ""               # the decision tree's ATC (or NONE) when it differs and the supplier has no ATC
     hint_reason: str = ""
+    best: str = ""               # the decision tree's pick (an ATC or NONE)
+    best_reason: str = ""
 
 
 def document_pick(line: DocLine, account_default: str, company: CompanyFacts) -> str:
@@ -78,6 +80,8 @@ class Automatic:
     current: str = ""      # e.g. "WC120" or "WC120 / WC158"
     hint: str = ""         # one ATC or NONE to adopt, "" when the tree agrees with the returns
     hint_reason: str = ""
+    best: str = ""         # the tree's pick (an ATC or NONE) whether or not it agrees
+    best_reason: str = ""
 
 
 def automatic_for(current: list[str], tree: list[tuple[str, str]]) -> Automatic:
@@ -85,9 +89,10 @@ def automatic_for(current: list[str], tree: list[tuple[str, str]]) -> Automatic:
     now, _ = rank_picks([(atc, "") for atc in current])
     suggested, reason = rank_picks(tree)
     top_now, top_tree = now.split(" / ")[0], suggested.split(" / ")[0]
+    best = top_tree or ATC_NONE
     if top_tree == top_now:
-        return Automatic(now)
-    return Automatic(now, top_tree or ATC_NONE, reason)
+        return Automatic(now, best=best, best_reason=reason)
+    return Automatic(now, best, reason, best, reason)
 
 
 def supplier_rows(seen: list[SeenSupplier], rules: dict[str, tuple[str, str]],
@@ -105,5 +110,5 @@ def supplier_rows(seen: list[SeenSupplier], rules: dict[str, tuple[str, str]],
         auto = (automatic or {}).get(tin, Automatic())
         hint, why = (auto.hint, auto.hint_reason) if not atc else ("", "")
         rows.append(SupplierRow(tin, (s.name if s and s.name else rule_name), s.documents if s else 0, atc,
-                                suggestion, company, auto.current, hint, why))
+                                suggestion, company, auto.current, hint, why, auto.best, auto.best_reason))
     return sorted(rows, key=lambda r: (r.name.upper(), r.tin))

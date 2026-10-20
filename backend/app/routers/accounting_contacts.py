@@ -171,11 +171,16 @@ async def _contact_out(db: AsyncSession, company: AACompany, row: AAContact, sub
             outgoing.append(Outgoing2307Out(document_id=d.id, doc_number=d.doc_number, doc_date=d.doc_date, atc=atc,
                                             amount=tax, year=d.period[0], quarter=d.period[1],
                                             output_id=outputs.get(d.period)))
+    from app.routers.accounting_atc import supplier_automatic
+
     account, atc = await _supplier_defaults(db, company.id, row.tin)
+    auto = await supplier_automatic(db, company, row.tin) if row.role in ("supplier", "both") else None
     return ContactOut(
         id=row.id, key=row.key, role=row.role, tin=row.tin, registered_name=row.registered_name,
         aliases=list(row.aliases or []), address=row.address, vat_status=row.vat_status,
         payment_terms_days=row.payment_terms_days, default_account=account, default_atc=atc,
+        auto_atc=auto.current if auto else "", best_atc=auto.best if auto else "",
+        best_atc_reason=auto.best_reason if auto else "",
         manual=list(row.manual or []), merged_into_id=row.merged_into_id,
         merged_from=[c.registered_name for c in sub.contacts if c.merged_into_id == row.id],
         as_of=sub.as_of,

@@ -104,7 +104,7 @@ THOUGHT_CHARS = 240
 
 
 def clarify_event(question: str) -> dict:
-    question = _NOT_FOUND_LEAD.sub("", question, count=1) or question
+    question = guard.humanize(_NOT_FOUND_LEAD.sub("", question, count=1) or question)
     return {"type": "clarify", "question": question[:settings.assistant_history_chars]}
 
 
@@ -323,7 +323,7 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
         if stopped_early and await _needs_clarification(ctx, answer, used, coverage):
             yield clarify_event(answer)
             return
-        answer = guard.drop_tool_talk(answer) or answer
+        answer = guard.humanize(guard.drop_tool_talk(answer) or answer)
         caveat = (f"\n\nI only checked {coverage.names()}; other companies weren't checked."
                   if guard.overreach(answer) and not coverage.firm_wide else "")
         answer = cap_answer(answer)

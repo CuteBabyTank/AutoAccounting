@@ -882,7 +882,7 @@ async def test_plain_missing_info_answer_becomes_clarify(monkeypatch, lookup, an
     events, _ = await _events(Script(*replies), monkeypatch, {
         "list_companies": tools.Result({"companies": [{"company_id": "c1"}, {"company_id": "c2"}]})},
         question="How much did we spend?")
-    assert events[-1] == {"type": "clarify", "question": answer}
+    assert events[-1] == {"type": "clarify", "question": guard.humanize(answer)}
 
 
 @pytest.mark.parametrize("answer", [
@@ -919,7 +919,7 @@ async def test_single_company_still_clarifies_missing_period(monkeypatch):
     answer = "Please specify the company name and date range."
     events, _ = await _events(Script(_call("list_companies"), _say(answer)), monkeypatch, {
         "list_companies": tools.Result({"companies": [{"company_id": "c1", "name": "Acme"}]})})
-    assert events[-1] == {"type": "clarify", "question": answer}
+    assert events[-1] == {"type": "clarify", "question": guard.humanize(answer)}
 
 
 # ---- relative windows --------------------------------------------------------------------------------------------
@@ -1169,3 +1169,20 @@ def test_default_args_for_server_lookups():
     assert guard.default_args("filings", "what's overdue?") == {"overdue_only": True}
     assert guard.default_args("filings", "what's due soon?") == {"within_days": 30}
     assert guard.default_args("company_health", "x") == {}
+
+
+def test_humanize_removes_dashes_and_spells_out_dates():
+    assert guard.humanize("Net income — a loss of ₱1,200.00.") == "Net income, a loss of ₱1,200.00."
+    assert guard.humanize("Due 2026-08-10 -- 71 days late") == "Due August 10, 2026, 71 days late"
+    assert guard.humanize("July 1, 2026 – September 30, 2026") == "July 1, 2026 to September 30, 2026"
+    assert guard.humanize("Form 0619-E and 1601-EQ") == "Form 0619-E and 1601-EQ"
+    assert guard.humanize("- A has 30 to review\n  - B has 5") == "- A has 30 to review\n  - B has 5"
+    assert guard.humanize("— first item") == "- first item"
+    assert guard.humanize("Overdue: 5 filings—all for Trading Corp.") == "Overdue: 5 filings, all for Trading Corp."
+
+
+def test_humanize_spaced_hyphen_and_emoji():
+    assert guard.humanize("- 0619-E (due August 10, 2026 - 71 days overdue)") == \
+        "- 0619-E (due August 10, 2026, 71 days overdue)"
+    assert guard.humanize("👉 To act: open the Work board.") == "To act: open the Work board."
+    assert guard.humanize("1. First - then second") == "1. First, then second"

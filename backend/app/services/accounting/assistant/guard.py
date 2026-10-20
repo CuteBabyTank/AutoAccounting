@@ -164,6 +164,34 @@ def default_args(tool: str, question: str) -> dict:
     return {}
 
 
+_MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+           "November", "December")
+_ISO_DATE = re.compile(r"\b(20\d\d)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b")
+_MONTH = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b"
+# A range: an en dash or an unspaced dash between numbers, or any dash before a month ("Jul 1 – Sep 30").
+_RANGE_DASH = re.compile(rf"(\d)(?:\s*–\s*(?=\d|{_MONTH})|—(?=\d)|\s*(?:--|—)\s*(?={_MONTH}))")
+_DASH = re.compile(r"\s*(?:--+|[–—])\s*|\s+-\s+")  # a spaced single hyphen is a dash too ("2026 - 71 days")
+_EMOJI = re.compile("[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F2FF\uFE0F\u200D]+[ \t]?")
+
+
+def humanize(text: str) -> str:
+    """The answer in plain prose: ISO dates spelled out, dash ranges as "to", other dashes as commas.
+    Single hyphens (0619-E, 1601-EQ, list bullets) are left alone."""
+    out = _EMOJI.sub("", text or "")
+    out = _ISO_DATE.sub(lambda m: f"{_MONTHS[int(m.group(2)) - 1]} {int(m.group(3))}, {m.group(1)}", out)
+    out = _RANGE_DASH.sub(r"\1 to ", out)
+    lines = []
+    for line in out.split("\n"):
+        bullet = re.match(r"^(\s*)(?:--|[–—])\s+", line)  # a dash used as a bullet marker
+        if bullet:
+            line = f"{bullet.group(1)}- {line[bullet.end():]}"
+        head, body = re.match(r"^(\s*(?:[-*•]|\d+\.)?\s*)(.*)$", line).groups()
+        body = _DASH.sub(", ", body)
+        body = re.sub(r",\s*([,.;:!?])", r"\1", body).strip(" ,")
+        lines.append(head + body if body else head.rstrip())
+    return "\n".join(lines)
+
+
 def drop_tool_talk(answer: str) -> str:
     """The answer without the sentences that name a tool or argument (kept whole when that would empty it)."""
     if not tool_talk(answer):

@@ -45,9 +45,10 @@ export default function CasperBubble({ point, view, text, kind, leaving, onActio
           <button type="button" onClick={onClose} aria-label="Close Casper's bubble" className="aa-casper-small-button"><X size={14} /></button>
         </div>
         <div aria-live="polite" aria-atomic="true">
-          {kind === "notice" ? (
-            <button type="button" className="aa-casper-bubble-message" onClick={onAction}>
-              {text}<ArrowRight size={14} className="inline-block ml-1 align-middle" />
+          {kind !== "greeting" ? (
+            <button type="button" className="aa-casper-bubble-message" onClick={kind === "notice" ? onAction : undefined}>
+              {text}
+              {kind === "notice" && <ArrowRight size={14} className="inline-block ml-1 align-middle" />}
             </button>
           ) : <div className="aa-casper-bubble-message">{text}</div>}
         </div>

@@ -240,7 +240,6 @@ export default function AssistantDock() {
           <div ref={scroller} className="flex-1 overflow-y-auto px-5 py-6" aria-live="polite">
             {messages.length === 0 ? (
               <div className="flex min-h-full flex-col justify-end pb-2">
-                <div className="mb-3"><BotMascot state={mascotState} size={112} playful /></div>
                 <p className="text-[17px] font-medium text-[var(--text-primary)]">Howdy! I&apos;m Casper.</p>
                 <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">
                   Ask about your clients, figures from the books, what&apos;s due, what needs review, a quarter&apos;s returns or an ATC. I only read your firm&apos;s records and never change them.

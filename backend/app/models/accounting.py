@@ -44,6 +44,9 @@ class AACompany(Base):
     enterprise_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    handler_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     registered_name: Mapped[str] = mapped_column(String(255), nullable=False)
     aliases: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     # Owner / officers: a purchase made out to one of them personally is not the company's expense.
@@ -695,6 +698,7 @@ class AAWorkItem(Base):
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    assigned_auto: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     status_override: Mapped[str] = mapped_column(String(15), nullable=False, default="")
     filed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     filed_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -727,9 +731,13 @@ class AATask(Base):
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    assigned_auto: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="open")       # open | in_progress | done
     priority: Mapped[str] = mapped_column(String(8), nullable=False, default="normal")    # low | normal | high
     created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    completed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -748,6 +756,7 @@ class AAFirmSettings(Base):
     )
     # Only owners and managers may mark returns filed (closing a month is already theirs).
     approve_before_close: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    auto_assign: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     deadline_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)   # notify this many days ahead
     updated_at: Mapped[datetime] = _updated()
 

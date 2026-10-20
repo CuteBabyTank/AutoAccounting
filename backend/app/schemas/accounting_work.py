@@ -20,6 +20,8 @@ class PersonOut(BaseModel):
 
 
 class FirmSettingsOut(BaseModel):
+    auto_assign: bool
+    can_auto_assign: bool
     approve_before_close: bool
     deadline_days: int
     can_edit: bool        # the firm owner (or platform admin) may change these
@@ -27,8 +29,9 @@ class FirmSettingsOut(BaseModel):
 
 
 class FirmSettingsIn(BaseModel):
-    approve_before_close: bool
-    deadline_days: int = Field(default=7, ge=1, le=60)
+    approve_before_close: bool | None = None
+    deadline_days: int | None = Field(default=None, ge=1, le=60)
+    auto_assign: bool | None = None
 
 
 class WorkCardOut(BaseModel):
@@ -50,11 +53,14 @@ class WorkCardOut(BaseModel):
     filed_source: str | None
     assignee_id: uuid.UUID | None
     assignee_name: str = ""
+    assigned_auto: bool = False
     documents: int
     open_reviews: int
 
 
 class CompanySummaryOut(BaseModel):
+    handler_id: uuid.UUID | None = None
+    unassigned_open_items: int = 0
     company_id: uuid.UUID
     company_name: str
     open_reviews: int
@@ -204,6 +210,9 @@ class TaskOut(BaseModel):
     created_by_name: str
     created_at: datetime
     completed_at: datetime | None
+    completed_by: uuid.UUID | None = None
+    completed_by_name: str = ""
+    assigned_auto: bool = False
     overdue: bool
 
 
@@ -229,3 +238,51 @@ class NotificationsOut(BaseModel):
 class NotificationKeysIn(BaseModel):
     keys: list[str] = Field(default_factory=list, max_length=500)
     all: bool = False
+
+
+class HandlerIn(BaseModel):
+    handler_id: uuid.UUID | None
+
+
+class AssignmentPersonOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    count: int
+
+
+class AssignmentOut(BaseModel):
+    total: int
+    people: list[AssignmentPersonOut]
+
+
+class CompletionOut(BaseModel):
+    id: str
+    kind: Literal["task", "filing"]
+    title: str
+    company_id: uuid.UUID | None
+    company_name: str
+    completed_by: uuid.UUID | None
+    completed_by_name: str
+    completed_at: datetime
+    assignee_id: uuid.UUID | None
+    assignee_name: str
+    due_date: date | None
+    on_time: bool | None
+    source: str
+
+
+class HistoryPersonOut(BaseModel):
+    person_id: uuid.UUID | None
+    person_name: str
+    completed: int
+    on_time: int
+    late: int
+    open_now: int
+
+
+class HistoryOut(BaseModel):
+    items: list[CompletionOut]
+    summary: list[HistoryPersonOut]
+    total: int
+    limit: int
+    offset: int

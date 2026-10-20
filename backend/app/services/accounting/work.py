@@ -18,14 +18,17 @@ from app.models.user import User, UserRole
 from app.services.accounting.compute.health import months_not_closed, unreconciled_months
 from app.services.accounting.compute.work import PeriodFacts, card, obligations, skip_obligation, year_bounds
 
-PEOPLE_ROLES = (UserRole.ADMIN, UserRole.ENTERPRISE, UserRole.MANAGER, UserRole.EMPLOYEE)
 
-
-async def firm_people(db: AsyncSession, ent: uuid.UUID) -> list[User]:
-    """The firm owner and its active staff: who a filing or task can be assigned to."""
-    rows = (await db.execute(select(User).where(
-        ((User.id == ent) | (User.enterprise_id == ent)), User.role.in_(PEOPLE_ROLES), User.is_active.is_(True),
-    ))).scalars().all()
+async def firm_people(db: AsyncSession, ent: uuid.UUID, *, lock: bool = False) -> list[User]:
+    """The firm owner and active staff. Assignment writers lock these rows until commit so removal waits."""
+    stmt = select(User).where(
+        (((User.id == ent) & User.role.in_((UserRole.ADMIN, UserRole.ENTERPRISE))) |
+         ((User.enterprise_id == ent) & User.role.in_((UserRole.MANAGER, UserRole.EMPLOYEE)))),
+        User.is_active.is_(True),
+    ).order_by(User.id)
+    if lock:
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    rows = (await db.execute(stmt)).scalars().all()
     return sorted(rows, key=lambda u: (u.id != ent, (u.nickname or u.email).lower()))
 
 
@@ -98,7 +101,8 @@ async def load_cards(db: AsyncSession, ent: uuid.UUID, start: date, end: date, t
             if skip_obligation(ob, added, has_data=has_data):
                 continue
             row = card(ob, fye, pf, {"assignee_id": str(item.assignee_id) if item.assignee_id else None,
-                                     "status_override": item.status_override, "filed_on": item.filed_on}
+                                     "status_override": item.status_override, "filed_on": item.filed_on,
+                                     "assigned_auto": item.assigned_auto}
                        if item is not None else None, today)
             row.update(key=f"{cid}:{ob.year}:{ob.quarter}:{ob.form}", company_id=cid,
                        company_name=company.registered_name)
@@ -133,7 +137,7 @@ async def company_summaries(db: AsyncSession, ent: uuid.UUID, companies: list[AA
     out = {}
     for c in companies:
         out[str(c.id)] = {
-            "company_id": str(c.id), "company_name": c.registered_name,
+            "company_id": str(c.id), "company_name": c.registered_name, "handler_id": c.handler_id,
             "open_reviews": int(reviews.get(c.id, 0)), "unmatched_bank_lines": int(unmatched.get(c.id, 0)),
             "unreconciled_months": len(unreconciled_months(line_months[c.id], recs[c.id], today)),
             "months_not_closed": len(months_not_closed(c.books_start, closes[c.id], today)),

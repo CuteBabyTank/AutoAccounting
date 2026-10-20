@@ -41,6 +41,15 @@ export function shortDate(iso: string): string {
   return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString("en-PH", { day: "numeric", month: "short", year: "numeric" });
 }
 
+/** Completion timestamps use the firm's Philippine calendar; board-only dates have no invented time. */
+export function completionWhen(iso: string, dateOnly = false): string {
+  if (iso.length <= 10) return shortDate(iso);
+  if (dateOnly) return new Date(iso).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium" });
+  return new Date(iso).toLocaleString("en-PH", {
+    timeZone: "Asia/Manila", dateStyle: "medium", timeStyle: "short",
+  });
+}
+
 export function monthLabel(iso: string): string {
   return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString("en-PH", { month: "short", year: "numeric" });
 }

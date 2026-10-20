@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import PrivacyToggle from "@/components/accounting/PrivacyToggle";
 import { ArrowSquareOut, Warning } from "@phosphor-icons/react";
@@ -11,6 +11,7 @@ import { WORK_TOUR } from "@/components/guide/tours";
 import { WORK_SPOTS } from "@/components/guide/tours/spots";
 import CompanyHealth from "@/components/work/CompanyHealth";
 import TaskList from "@/components/work/TaskList";
+import WorkHistory from "@/components/work/WorkHistory";
 import { BTN, Chip, INPUT, STATUS_META, STATUS_ORDER, addDays, dueText, shortDate, todayIso } from "@/components/work/ui";
 import { useGuide } from "@/lib/guides";
 import { firmSettings, safeId, workApi } from "@/lib/work-api";
@@ -18,7 +19,7 @@ import { WORK_TARGET_EVENT, focusName } from "@/lib/focus";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import type { Board, BoardFilters, CompanySummary, FirmSettings, WorkCard, WorkItemInput } from "@/types/work";
 
-type Tab = "filings" | "clients" | "tasks";
+type Tab = "filings" | "clients" | "tasks" | "history";
 type Window = "default" | "next7" | "next30" | "overdue" | "year";
 
 const WINDOWS: { value: Window; label: string }[] = [
@@ -45,6 +46,8 @@ function windowDates(w: Window): Pick<BoardFilters, "start" | "end"> {
   }
 }
 
+const TABS: Tab[] = ["filings", "clients", "tasks", "history"];
+
 const itemKey = (c: WorkCard): Pick<WorkItemInput, "company_id" | "year" | "quarter" | "form"> => ({
   company_id: c.company_id,
   year: c.year,
@@ -64,12 +67,17 @@ export default function WorkBoardPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [assigning, setAssigning] = useState(false);
+  const [handlerBusy, setHandlerBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
   const guide = useGuide("work");
+  const loadId = useRef(0);
 
   useEffect(() => {
     const open = (params: URLSearchParams) => {
       const t = params.get("tab");
-      setTab(t === "clients" || t === "tasks" ? t : "filings");
+      setTab(t === "clients" || t === "tasks" || t === "history" ? t : "filings");
       setCompany(safeId(params.get("company")) ?? "");
     };
     open(new URLSearchParams(window.location.search));
@@ -88,19 +96,23 @@ export default function WorkBoardPage() {
   }, []);
 
   const load = useCallback(async () => {
+    const requestId = ++loadId.current;
+    setLoading(true);
     setError("");
     try {
       // Status / assignee filter on the client so the Clients tab keeps every company's counts.
-      setBoard(await workApi.board({ ...windowDates(win), company_id: company || undefined }));
+      const next = await workApi.board({ ...windowDates(win), company_id: company || undefined });
+      if (requestId === loadId.current) setBoard(next);
     } catch (e) {
-      setError(apiErrorMessage(e, "Couldn't load the work board"));
+      if (requestId === loadId.current) setError(apiErrorMessage(e, "Couldn't load the work board"));
     } finally {
-      setLoading(false);
+      if (requestId === loadId.current) setLoading(false);
     }
   }, [win, company]);
 
   useEffect(() => {
     load();
+    return () => { loadId.current += 1; };
   }, [load]);
 
   const cards = useMemo(() => {
@@ -126,6 +138,49 @@ export default function WorkBoardPage() {
     }
   }
 
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(""), 8000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  async function autoAssign(companyId = company) {
+    setAssigning(true);
+    setError("");
+    try {
+      const result = await workApi.autoAssign({ start: board?.start, end: board?.end, company_id: companyId || undefined });
+      setNotice(result.total ? `Assigned ${result.total}: ${result.people.map((p) => `${p.name} ${p.count}`).join(", ")}` : "No unassigned open items in this window.");
+      setRefreshKey((n) => n + 1);
+      await load();
+    } catch (e) {
+      setError(apiErrorMessage(e, "Couldn't auto-assign work"));
+    } finally {
+      setAssigning(false);
+    }
+  }
+
+  async function setHandler(summary: CompanySummary, handlerId: string | null) {
+    setHandlerBusy(summary.company_id);
+    setError("");
+    try {
+      const result = await workApi.setHandler(summary.company_id, handlerId);
+      setBoard((b) => b ? { ...b, companies: b.companies.map((c) => c.company_id === summary.company_id ? { ...c, handler_id: result.handler_id } : c) } : b);
+      if (handlerId && settings?.auto_assign && summary.unassigned_open_items > 0) {
+        const name = board?.people.find((p) => p.id === handlerId)?.name || "this handler";
+        if (window.confirm(`Also give ${name} this client's ${summary.unassigned_open_items} unassigned open items in the current board window?`)) await autoAssign(summary.company_id);
+      }
+    } catch (e) {
+      setError(apiErrorMessage(e, "Couldn't update the client handler"));
+    } finally {
+      setHandlerBusy(null);
+    }
+  }
+
+  const autoAssignControl = settings?.can_auto_assign && settings.auto_assign ? (
+    <button className={BTN} disabled={assigning || loading || !board} onClick={() => autoAssign()} title="Assign every unassigned open task and not-filed return in the current board window">
+      {assigning ? "Assigning…" : "Auto-assign"}
+    </button>
+  ) : null;
   const canFile = settings?.can_file ?? true;
   const shownCompanies: CompanySummary[] = (board?.companies ?? []).filter((s) => !company || s.company_id === company);
 
@@ -135,7 +190,7 @@ export default function WorkBoardPage() {
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <div className="mr-auto min-w-[16rem] flex-1">
             <h1 className="text-2xl font-bold text-[var(--text-primary)]">Work</h1>
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">Every client&apos;s BIR returns by due date, their health and the firm&apos;s tasks.</p>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">Every client&apos;s BIR returns by due date, their health and the firm&apos;s tasks, assignments and completion history.</p>
           </div>
           <PrivacyToggle />
           <GuideButton open={guide.open} onClick={guide.toggle} />
@@ -144,19 +199,31 @@ export default function WorkBoardPage() {
 
         <div data-tour="work-filters" className="mb-4 flex flex-wrap items-center gap-2">
           <div role="tablist" data-tour="work-tabs" className="flex rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] p-0.5">
-            {(["filings", "clients", "tasks"] as Tab[]).map((t) => (
+            {TABS.map((t) => (
               <button
                 key={t}
                 role="tab"
+                id={`work-tab-${t}`}
+                aria-controls={`work-panel-${t}`}
+                tabIndex={tab === t ? 0 : -1}
+                onKeyDown={(e) => {
+                  const current = TABS.indexOf(t);
+                  const next = e.key === "ArrowRight" ? (current + 1) % TABS.length : e.key === "ArrowLeft" ? (current + TABS.length - 1) % TABS.length : e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : -1;
+                  if (next < 0) return;
+                  e.preventDefault();
+                  setTab(TABS[next]);
+                  document.getElementById(`work-tab-${TABS[next]}`)?.focus();
+                }}
+                data-tour={t === "history" ? "work-history" : undefined}
                 aria-selected={tab === t}
                 onClick={() => setTab(t)}
                 className={`rounded-md px-3 py-1.5 text-sm font-medium ${tab === t ? "bg-[var(--accent-subtle)] text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
               >
-                {t === "filings" ? "Filings" : t === "clients" ? "Clients" : "Tasks"}
+                {t === "filings" ? "Filings" : t === "clients" ? "Clients" : t === "tasks" ? "Tasks" : "History"}
               </button>
             ))}
           </div>
-          {tab !== "tasks" && (
+          {(tab === "filings" || tab === "clients") && (
             <select aria-label="Client" className={INPUT} value={company} onChange={(e) => setCompany(e.target.value)}>
               <option value="">All clients</option>
               {companies.map((c) => <option key={c.id} value={c.id}>{c.registered_name}</option>)}
@@ -177,6 +244,7 @@ export default function WorkBoardPage() {
                 <option value="unassigned">Nobody yet</option>
                 {(board?.people ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
+              {autoAssignControl}
               <Hint align="left">
                 One row per return a client owes, from its company profile: VAT or percentage tax, income tax, withholding
                 and the annual return, plus the 1604-C for employers. Status follows the documents: none yet, documents in,
@@ -186,6 +254,9 @@ export default function WorkBoardPage() {
           )}
         </div>
 
+        {notice && <div role="status" className="fixed bottom-5 left-4 right-4 z-40 flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] px-4 py-3 text-sm text-[var(--text-primary)] shadow-lg sm:left-auto sm:max-w-lg">
+          <span>{notice}</span><button className="ml-auto text-[var(--text-secondary)] hover:text-[var(--text-primary)]" aria-label="Dismiss assignment result" onClick={() => setNotice("")}>×</button>
+        </div>}
         {settings?.approve_before_close && (
           <p className="mb-3 text-xs text-[var(--text-secondary)]">
             Managers approve filing: only managers and the firm owner can mark returns filed or close a month.
@@ -198,7 +269,7 @@ export default function WorkBoardPage() {
         )}
 
         {tab === "filings" && (
-          <section data-tour="work-board" className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
+          <section role="tabpanel" id="work-panel-filings" aria-labelledby="work-tab-filings" data-tour="work-board" className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
             {overdue > 0 && (
               <p className="flex items-center gap-1.5 border-b border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--badge-red-text)]">
                 <Warning size={16} /> {overdue} overdue
@@ -262,6 +333,7 @@ export default function WorkBoardPage() {
                           <option value="">Nobody yet</option>
                           {(board?.people ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
+                        {c.assignee_id && c.assigned_auto && <span className="ml-1.5"><Chip tone="blue" title="Automatically assigned">Auto</Chip></span>}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-xs">
                         {c.filed_on ? (
@@ -313,7 +385,7 @@ export default function WorkBoardPage() {
         )}
 
         {tab === "clients" && (
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+          <div role="tabpanel" id="work-panel-clients" aria-labelledby="work-tab-clients" className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
             {shownCompanies.map((s) => {
               const open = expanded.has(s.company_id);
               const counts: [string, number][] = [
@@ -330,6 +402,13 @@ export default function WorkBoardPage() {
                   <div className="flex items-start gap-2">
                     <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--text-primary)]">{s.company_name}</h2>
                     <Link href={`/accounting?company=${encodeURIComponent(s.company_id)}`} className="text-xs font-medium text-[var(--accent)] hover:underline">Overview</Link>
+                  </div>
+                  <div className="mt-3 flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+                    <label htmlFor={`handler-${s.company_id}`}>Handler</label>
+                    <select id={`handler-${s.company_id}`} className={`${INPUT} min-w-0 flex-1 text-xs`} value={s.handler_id ?? ""} disabled={!settings?.can_auto_assign || handlerBusy !== null || assigning} onChange={(e) => setHandler(s, e.target.value || null)}>
+                      <option value="">No handler</option>
+                      {(board?.people ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {issues.length === 0 ? (
@@ -363,10 +442,14 @@ export default function WorkBoardPage() {
         )}
 
         {tab === "tasks" && (
-          <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
-            <TaskList companies={companies} people={board?.people ?? []} onChanged={load} />
+          <section role="tabpanel" id="work-panel-tasks" aria-labelledby="work-tab-tasks" className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
+            <TaskList companies={companies} people={board?.people ?? []} onChanged={load} refreshKey={refreshKey} autoAssignControl={autoAssignControl && <div className="flex flex-wrap items-center gap-2">
+              {autoAssignControl}
+              <span className="text-xs text-[var(--text-secondary)]">{company ? board?.companies.find((c) => c.company_id === company)?.company_name || "Selected client" : "All clients"}{board ? ` · due ${shortDate(board.start)}–${shortDate(board.end)}` : ""}</span>
+            </div>} />
           </section>
         )}
+        {tab === "history" && <div role="tabpanel" id="work-panel-history" aria-labelledby="work-tab-history"><WorkHistory people={board?.people ?? []} companies={companies} /></div>}
       </div>
     </div>
   );

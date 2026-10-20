@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle, Circle, PencilSimple, Plus, Trash } from "@phosphor-icons/react";
 import TaskForm from "@/components/work/TaskForm";
 import { workApi } from "@/lib/work-api";
@@ -8,7 +8,7 @@ import { focusName } from "@/lib/focus";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import { useAuth } from "@/lib/auth";
 import type { Person, Task, TaskFilters, TaskInput } from "@/types/work";
-import { BTN, Chip, INPUT, shortDate } from "@/components/work/ui";
+import { BTN, Chip, INPUT, completionWhen, shortDate } from "@/components/work/ui";
 
 interface Props {
   companies: { id: string; registered_name: string }[];
@@ -18,6 +18,8 @@ interface Props {
   defaults?: Partial<TaskInput>;
   compact?: boolean;
   onChanged?: () => void;
+  refreshKey?: number;
+  autoAssignControl?: React.ReactNode;
 }
 
 const PRIORITY_TONE = { high: "red", normal: "gray", low: "gray" } as const;
@@ -28,7 +30,7 @@ function periodText(t: Task): string {
 }
 
 /** The firm's to-dos: tick to complete, edit, or add one about a client, document or period. */
-export default function TaskList({ companies, people, fixed, defaults, compact, onChanged }: Props) {
+export default function TaskList({ companies, people, fixed, defaults, compact, onChanged, refreshKey = 0, autoAssignControl }: Props) {
   const { user } = useAuth();
   const canManage = user?.role === "admin" || user?.role === "enterprise" || user?.role === "manager";
   const [tasks, setTasks] = useState<Task[] | null>(null);
@@ -37,20 +39,25 @@ export default function TaskList({ companies, people, fixed, defaults, compact, 
   const [editing, setEditing] = useState<Task | "new" | null>(null);
   const [error, setError] = useState("");
   const fixedKey = JSON.stringify(fixed ?? {});
+  const loadId = useRef(0);
 
   const load = useCallback(async () => {
+    const requestId = ++loadId.current;
+    setError("");
     try {
       const filters: TaskFilters = { ...JSON.parse(fixedKey), status };
       if (assignee) filters.assignee = assignee;
-      setTasks(await workApi.tasks(filters));
+      const next = await workApi.tasks(filters);
+      if (requestId === loadId.current) setTasks(next);
     } catch (e) {
-      setError(apiErrorMessage(e, "Couldn't load the tasks"));
+      if (requestId === loadId.current) setError(apiErrorMessage(e, "Couldn't load the tasks"));
     }
   }, [fixedKey, status, assignee]);
 
   useEffect(() => {
     load();
-  }, [load]);
+    return () => { loadId.current += 1; };
+  }, [load, refreshKey]);
 
   const changed = () => {
     load();
@@ -93,6 +100,7 @@ export default function TaskList({ companies, people, fixed, defaults, compact, 
             {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         )}
+        {autoAssignControl}
         <button className={`${BTN} ml-auto`} onClick={() => setEditing("new")}>
           <Plus size={16} /> Add task
         </button>
@@ -130,6 +138,8 @@ export default function TaskList({ companies, people, fixed, defaults, compact, 
                     {periodText(t) && <span>· {periodText(t)}</span>}
                     {t.document_label && <span>· {t.document_label}</span>}
                     <span>· {t.assignee_name || "Nobody yet"}</span>
+                    {t.assignee_id && t.assigned_auto && <Chip tone="blue" title="Automatically assigned">Auto</Chip>}
+                    {t.status === "done" && <span>· Completed by {t.completed_by_name || "Unknown"}{t.completed_at ? ` on ${completionWhen(t.completed_at)}` : ""}</span>}
                   </div>
                 </div>
                 <button onClick={() => setEditing(t)} aria-label={`Edit ${t.title}`} className="rounded p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]">

@@ -7,7 +7,7 @@ import { apiErrorMessage } from "@/lib/accounting-format";
 import type { FirmSettings } from "@/types/work";
 import { INPUT } from "@/components/work/ui";
 
-/** Team page: firm-wide work settings. Everyone sees them; only the firm owner changes them. */
+/** Team page: firm-wide work settings. Everyone sees them; managers can change automatic assignment. */
 export default function FirmSettingsCard() {
   const [settings, setSettings] = useState<FirmSettings | null>(null);
   const [days, setDays] = useState("7");
@@ -23,7 +23,7 @@ export default function FirmSettingsCard() {
       .catch((e) => setError(apiErrorMessage(e, "Couldn't load the firm settings")));
   }, []);
 
-  async function save(next: { approve_before_close: boolean; deadline_days: number }) {
+  async function save(next: Partial<Pick<FirmSettings, "approve_before_close" | "deadline_days" | "auto_assign">>) {
     setBusy(true);
     setError("");
     try {
@@ -43,6 +43,13 @@ export default function FirmSettingsCard() {
   return (
     <div data-tour="work-settings" className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
       <h2 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">Work settings</h2>
+      <label className="mb-3 flex items-start gap-2 text-sm text-[var(--text-primary)]">
+        <input type="checkbox" className="mt-0.5" disabled={!settings.can_auto_assign || busy} checked={settings.auto_assign}
+          onChange={(e) => save({ auto_assign: e.target.checked })} />
+        <span>Automatically assign work
+          <Hint align="right">New unassigned tasks go to their client&apos;s handler, or the available firm member with the fewest open items. Managers can also assign unassigned work from the Work board.</Hint>
+        </span>
+      </label>
       <label className="flex items-start gap-2 text-sm text-[var(--text-primary)]">
         <input
           type="checkbox"
@@ -78,7 +85,7 @@ export default function FirmSettingsCard() {
         />
         <span className="text-[var(--text-secondary)]">days before they&apos;re due</span>
       </div>
-      {!settings.can_edit && <p className="mt-2 text-xs text-[var(--text-secondary)]">Only the firm owner can change these.</p>}
+      {!settings.can_edit && <p className="mt-2 text-xs text-[var(--text-secondary)]">Only the firm owner can change filing approval and deadline reminders.</p>}
       {error && <p className="mt-2 text-sm text-[var(--alert-error-text)]">{error}</p>}
     </div>
   );

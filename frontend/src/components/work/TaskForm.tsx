@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "@phosphor-icons/react";
+import TaskHistory from "@/components/work/TaskHistory";
 import { workApi } from "@/lib/work-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import type { Person, Task, TaskInput } from "@/types/work";
@@ -48,7 +49,13 @@ export default function TaskForm({ task, defaults, companies, people, onClose, o
     setError("");
     try {
       const body = { ...form, title: form.title.trim(), period_quarter: form.period_year ? form.period_quarter : null };
-      onSaved(task ? await workApi.updateTask(task.id, body) : await workApi.createTask(body));
+      if (task) {
+        // Omit unchanged fields so editing notes never turns an automatic assignment into a manual one.
+        const changes = Object.fromEntries(Object.entries(body).filter(([key, value]) => value !== task[key as keyof TaskInput]));
+        onSaved(await workApi.updateTask(task.id, changes));
+      } else {
+        onSaved(await workApi.createTask(body));
+      }
     } catch (err) {
       setError(apiErrorMessage(err, "Couldn't save the task"));
     } finally {
@@ -61,7 +68,7 @@ export default function TaskForm({ task, defaults, companies, people, onClose, o
       <form
         onSubmit={save}
         onClick={(e) => e.stopPropagation()}
-        className="modal-enter w-full max-w-lg rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-5 shadow-xl"
+        className="modal-enter max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-5 shadow-xl"
         aria-label={task ? "Edit task" : "New task"}
       >
         <div className="mb-4 flex items-center">
@@ -161,6 +168,7 @@ export default function TaskForm({ task, defaults, companies, people, onClose, o
             )}
           </div>
         </div>
+        {task && <TaskHistory taskId={task.id} people={people} />}
         {error && <p className="mt-3 text-sm text-[var(--alert-error-text)]">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" className={BTN} onClick={onClose}>Cancel</button>

@@ -1,6 +1,9 @@
 // Work board, client health, tasks, firm settings and notifications.
 import api, { seg } from "@/lib/api";
 import type {
+  AutoAssignResult,
+  WorkHistory,
+  WorkHistoryFilters,
   Board,
   BoardFilters,
   CompanyHealth,
@@ -25,9 +28,15 @@ export const workApi = {
   board: (filters: BoardFilters) => api.get<Board>("/accounting/work/board", { params: filters }).then((r) => r.data),
   /** Only the keys present are changed (null assignee unassigns, "" status goes back to automatic). */
   updateItem: (body: WorkItemInput) => api.put<WorkCard>("/accounting/work/items", body).then((r) => r.data),
+  setHandler: (companyId: string, handlerId: string | null) =>
+    api.put<{ handler_id: string | null }>(`/accounting/work/companies/${seg(companyId)}/handler`, { handler_id: handlerId }).then((r) => r.data),
+  autoAssign: (filters: Pick<BoardFilters, "start" | "end" | "company_id">) =>
+    api.post<AutoAssignResult>("/accounting/work/auto-assign", null, { params: filters }).then((r) => r.data),
+  history: (filters: WorkHistoryFilters) =>
+    api.get<WorkHistory>("/accounting/work/history", { params: filters }).then((r) => r.data),
   people: () => api.get<Person[]>("/accounting/work/people").then((r) => r.data),
   settings: () => api.get<FirmSettings>("/accounting/work/settings").then((r) => r.data),
-  saveSettings: (body: { approve_before_close: boolean; deadline_days: number }) =>
+  saveSettings: (body: Partial<Pick<FirmSettings, "approve_before_close" | "deadline_days" | "auto_assign">>) =>
     api.put<FirmSettings>("/accounting/work/settings", body).then((r) => r.data),
   health: (companyId: string) =>
     api.get<CompanyHealth>(`/accounting/companies/${seg(companyId)}/health`).then((r) => r.data),

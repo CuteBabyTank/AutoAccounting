@@ -44,9 +44,11 @@ def test_column_migrations_are_additive_and_idempotent():
                for s in statements)  # dropping NOT NULL only relaxes a column and is safe to repeat
     assert {s.split()[2] for s in statements if "ADD COLUMN IF NOT EXISTS" in s} == {"aa_documents", "aa_supplier_rules", "aa_companies", "aa_periods",
                                                                                     "aa_audit_events", "aa_accounts", "aa_journal_entries",
-                                                                                    "aa_bank_lines", "aa_opening_items", "users"}
+                                                                                    "aa_bank_lines", "aa_opening_items", "users",
+                                                                                    "aa_firm_settings", "aa_tasks", "aa_work_items"}
     joined = "\n".join(statements)
-    for column in ("operations_start_year", "facts_updated_at", "filed_output_id", "import_batch_id"):
+    for column in ("operations_start_year", "facts_updated_at", "filed_output_id", "import_batch_id", "handler_id",
+                   "auto_assign", "assigned_auto", "completed_by"):
         assert column in joined
 
 

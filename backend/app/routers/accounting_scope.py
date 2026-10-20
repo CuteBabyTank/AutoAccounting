@@ -47,10 +47,13 @@ async def firm_settings(db: AsyncSession, ent: uuid.UUID):
     from app.models.accounting import AAFirmSettings
 
     row = (await db.execute(select(AAFirmSettings).where(AAFirmSettings.enterprise_id == ent))).scalar_one_or_none()
-    return row or AAFirmSettings(enterprise_id=ent, approve_before_close=False, deadline_days=7)
+    return row or AAFirmSettings(enterprise_id=ent, approve_before_close=False, deadline_days=7, auto_assign=True)
 
 
 async def require_filing_rights(db: AsyncSession, user: User, ent: uuid.UUID) -> None:
+    from app.services.accounting.assignment import lock_firm
+
+    await lock_firm(db, ent)  # serialize real filing marks with board auto-assignment
     settings = await firm_settings(db, ent)
     if not may_file(user.role, settings.approve_before_close):
         raise HTTPException(status.HTTP_403_FORBIDDEN, FILING_GUARD_MESSAGE)

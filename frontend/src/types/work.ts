@@ -13,6 +13,8 @@ export interface FirmSettings {
   approve_before_close: boolean;
   deadline_days: number;
   can_edit: boolean;
+  auto_assign: boolean;
+  can_auto_assign: boolean;
   can_file: boolean;
 }
 
@@ -35,6 +37,7 @@ export interface WorkCard {
   filed_source: "return" | "board" | null;
   assignee_id: string | null;
   assignee_name: string;
+  assigned_auto: boolean;
   documents: number;
   open_reviews: number;
 }
@@ -49,6 +52,8 @@ export interface CompanySummary {
   books_on: boolean;
   open_tasks: number;
   overdue_filings: number;
+  handler_id: string | null;
+  unassigned_open_items: number;
 }
 
 export interface Board {
@@ -127,6 +132,7 @@ export interface Task {
   due_date: string | null;
   assignee_id: string | null;
   assignee_name: string;
+  assigned_auto: boolean;
   status: TaskStatus;
   priority: TaskPriority;
   company_id: string | null;
@@ -139,6 +145,8 @@ export interface Task {
   created_by_name: string;
   created_at: string;
   completed_at: string | null;
+  completed_by: string | null;
+  completed_by_name: string;
   overdue: boolean;
 }
 
@@ -178,4 +186,43 @@ export interface AppNotification {
 export interface Notifications {
   items: AppNotification[];
   unread: number;
+}
+
+export interface AutoAssignResult {
+  total: number;
+  people: { id: string; name: string; count: number }[];
+}
+
+export interface WorkHistoryItem {
+  id: string;
+  kind: "task" | "filing";
+  title: string;
+  company_id: string | null;
+  company_name: string;
+  completed_by: string | null;
+  completed_by_name: string;
+  completed_at: string;
+  assignee_id: string | null;
+  assignee_name: string;
+  due_date: string | null;
+  on_time: boolean | null;
+  source: string;
+}
+
+export interface WorkHistory {
+  items: WorkHistoryItem[];
+  summary: { person_id: string | null; person_name: string; completed: number; on_time: number; late: number; open_now: number }[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface WorkHistoryFilters {
+  from: string;
+  to: string;
+  person?: string;
+  company?: string;
+  kind?: "task" | "filing";
+  limit?: number;
+  offset?: number;
 }

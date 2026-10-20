@@ -78,9 +78,14 @@ export const DOCUMENTS_SPOTS: Spot[] = [
 
 export const WORK_SPOTS: Spot[] = [
   {
+    target: "work-history",
+    title: "See who completed what",
+    body: "History tracks completed tasks and filed returns, with per-person totals, on-time and late completions, and open work. Pick a period, person or client to review it.",
+  },
+  {
     target: "work-tabs",
-    title: "Three views of the firm's work",
-    body: "Filings lists every return owed by due date. Clients shows each company's health. Tasks holds anything you need to chase.",
+    title: "Four views of the firm's work",
+    body: "Filings lists every return owed by due date. Clients shows each company's health. Tasks holds anything you need to chase. History shows who completed it and when.",
   },
   {
     target: "work-filters",

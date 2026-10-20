@@ -169,7 +169,7 @@ def card(ob: Obligation, fye: int, facts: PeriodFacts, item: dict | None, today:
         "days_left": days_left(ob.due, today),
         "filed_on": filed[ob.form][:10] if real else (manual.isoformat() if manual else None),
         "filed_source": "return" if real else ("board" if manual else None),
-        "assignee_id": item.get("assignee_id"), "documents": facts.documents, "open_reviews": facts.open_reviews,
+        "assigned_auto": bool(item.get("assigned_auto")), "assignee_id": item.get("assignee_id"), "documents": facts.documents, "open_reviews": facts.open_reviews,
     }
 
 
@@ -178,3 +178,10 @@ def year_bounds(start: date, end: date) -> tuple[int, int]:
     year ends (so up to a year before ``start``), and a fiscal year is named for the year it ends (so up to a year
     after ``end``)."""
     return start.year - 1, end.year + 1
+
+
+def board_window(start: date | None, end: date | None, today: date) -> tuple[date, date]:
+    start, end = start or today - timedelta(days=90), end or today + timedelta(days=45)
+    if end < start or end - start > timedelta(days=800) or start < date(2000, 1, 1) or end > date(2100, 12, 31):
+        raise ValueError("Pick a due window of up to two years (2000–2100)")
+    return start, end

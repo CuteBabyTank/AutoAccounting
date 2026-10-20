@@ -32,6 +32,7 @@ export const ENTITY_LABELS: Record<string, string> = {
 
 const ACTION_LABELS: Record<string, string> = {
   create: "Created",
+  assign: "Assigned",
   reclassify: "Reclassified",
   update: "Edited",
   delete: "Deleted",
@@ -88,6 +89,13 @@ const FIELD_LABELS: Record<string, string> = {
   locked: "Locked",
   coa_template: "Chart template",
   assignee_id: "Assigned to",
+  assignee: "Assigned to",
+  handler: "Client handler",
+  handler_id: "Client handler",
+  assigned_auto: "Automatically assigned",
+  completed_by: "Completed by",
+  completed_at: "Completed at",
+  auto_assign: "Automatic assignment",
   status_override: "Board status",
   filed_on: "Filed on",
   approve_before_close: "Managers approve filing",
@@ -191,7 +199,7 @@ export default function AuditTrail({ events, showEntity = false }: Props) {
         return (
           <li key={e.id} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-sm">
             <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="font-semibold text-[var(--text-primary)]">{actionLabel(e.action)}</span>
+              <span className="font-semibold text-[var(--text-primary)]">{e.action === "assign" && e.reason === "auto-assign" ? "Auto-assigned" : actionLabel(e.action)}</span>
               {showEntity && (
                 <span className="text-[var(--text-secondary)]">
                   {ENTITY_LABELS[e.entity] ?? e.entity}

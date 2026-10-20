@@ -116,7 +116,13 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   PATCH. Documents stored before 2026-10-19: `python -m app.services.accounting.books.receipt_flags [--dry-run]`.
 - **Work board (`routers/accounting_work.py`, `accounting_tasks.py`):** filings owed, their due dates and status are
   derived on read (`compute/work.obligations` reuses `engine.expected_forms`, `annual_form`, `due_dates`); only the
-  assignee, a status override and a board "filed" date live in `aa_work_items`. A board filing does **not** post a
+  assignee (`assigned_auto` marks automatic choices), a status override and a board "filed" date live in
+  `aa_work_items`. Client `handler_id` wins auto assignment; `aa_firm_settings.auto_assign` defaults on.
+  `POST /work/auto-assign` assigns unassigned open tasks/filings in the bounded board window (optionally one client),
+  under a firm row lock; manual assignees are preserved. Tasks keep `completed_by`/`completed_at` until reopened.
+  `GET /work/history` lists task/board/version completions and person summaries (employees see their own); unknown
+  filing actors stay unknown. Backfill existing task actors with `python -m
+  app.services.accounting.books.task_completed_by [--dry-run]`. A board filing does **not** post a
   payment or credit the annual return (only "Mark filed" on a version does). Notifications are derived on read
   (`compute/notifications.build`, incl. recurring entries due); `aa_notification_states` only keeps read / dismissed
   per person and key, and keys carry the count or date so a changed situation reappears. The board loads only the

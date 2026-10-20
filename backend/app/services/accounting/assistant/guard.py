@@ -117,6 +117,87 @@ def overreach(answer: str) -> bool:
     return bool(_OVERREACH.search(answer or ""))
 
 
+_TOOL_TALK = re.compile(
+    r"\b(?:list_companies|get_document|company_health|quarter_returns|tax_reference|ask_clarification|"
+    r"filings|search|report|aging) tool\b|\buse the \w+ tool\b|\b(?:list_companies|get_document|company_health|"
+    r"quarter_returns|tax_reference|ask_clarification|overdue_only|within_days|past_days)\b", re.I)
+
+
+def tool_talk(answer: str) -> str | None:
+    """A tool or argument named in the answer (the model telling the person to do its job), else None."""
+    m = _TOOL_TALK.search(answer or "")
+    return m.group(0) if m else None
+
+
+_TOOL_NAMES = ("list_companies", "get_document", "company_health", "quarter_returns", "tax_reference", "filings",
+               "search", "report", "aging")
+_ARG_TOOL = {"overdue_only": "filings", "within_days": "filings", "past_days": "filings"}
+
+
+def tool_named(talk: str) -> str | None:
+    """The tool a piece of tool talk refers to ("the filings tool" → filings), if any."""
+    low = (talk or "").lower()
+    return next((t for t in _TOOL_NAMES if t in low), None) or _ARG_TOOL.get(low)
+
+
+# Parts of a question that only one tool can answer: (words in the question, the tool).
+_NEEDS = (
+    (re.compile(r"\b(?:overdue|late filings?|past due|due (?:soon|this|next|in)|deadlines?|what'?s due|filings?)\b", re.I),
+     "filings"),
+    (re.compile(r"\b(?:waiting for review|to review|review queue|needs? review|need attention)\b", re.I),
+     "company_health"),
+)
+
+
+def missing_tools(question: str, used: list[str]) -> list[str]:
+    """Tools a part of the question clearly needs that haven't run this turn (two-part questions often lose a part)."""
+    return [tool for words, tool in _NEEDS if words.search(question or "") and tool not in used]
+
+
+_OVERDUE = re.compile(r"\b(?:overdue|late|past due)\b", re.I)
+
+
+def default_args(tool: str, question: str) -> dict:
+    """Arguments for a lookup the server runs itself: firm-wide, overdue or the next 30 days."""
+    if tool == "filings":
+        return {"overdue_only": True} if _OVERDUE.search(question or "") else {"within_days": 30}
+    return {}
+
+
+def drop_tool_talk(answer: str) -> str:
+    """The answer without the sentences that name a tool or argument (kept whole when that would empty it)."""
+    if not tool_talk(answer):
+        return answer
+    lines = []
+    for line in (answer or "").split("\n"):
+        parts = re.split(r"(?<=[.!?])\s+", line)
+        kept = " ".join(p for p in parts if not tool_talk(p))
+        if kept.strip() or not line.strip():
+            lines.append(kept)
+    out = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    return out or answer
+
+
+_FIRM_WORDS = re.compile(
+    r"\b(?:compan(?:y|ies)|clients?|documents?|receipts?|invoices?|filings?|returns?|due|overdue|late|review|"
+    r"vat|ewt|tax|income|revenue|expenses?|profit|loss|p&l|balance|cash|receivables?|payables?|a/r|a/p|aging|"
+    r"supplier|customer|bank|books?|ledger|quarter|month)\b", re.I)
+
+
+_ABOUT_CHAT = re.compile(r"\b(?:did i (?:say|tell|mention)|i (?:said|told|mentioned)|you (?:said|told|mentioned|just)|"
+                         r"earlier|above|previous(?:ly)?|last (?:answer|message|reply))\b", re.I)
+
+
+def firm_question(question: str) -> bool:
+    """A question about the firm's records (needs a fresh lookup), not chit-chat or a question about the chat itself."""
+    return bool(_FIRM_WORDS.search(question or "")) and not _ABOUT_CHAT.search(question or "")
+
+
+def declines(answer: str) -> bool:
+    """A refusal / out-of-scope decline (never pushed back to the tools)."""
+    return bool(_REFUSAL.search(answer or ""))
+
+
 def clarification(answer: str) -> bool:
     """A short missing-info request, excluding refusals."""
     text = answer.strip()

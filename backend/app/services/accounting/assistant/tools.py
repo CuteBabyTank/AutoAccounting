@@ -337,8 +337,8 @@ async def filings(ctx: Ctx, company: str | None = None, start: str | None = None
                    "filings": [{"company": c.company_name, "company_id": str(c.company_id), "form": c.form_label,
                                 "period": c.period_label, "due": c.due_date, "status": c.status,
                                 "overdue": c.overdue, "days_left": c.days_left, "filed_on": c.filed_on,
-                                "assignee": c.assignee_name, "documents": c.documents,
-                                "open_reviews": c.open_reviews} for c in cards[:MAX_LIST * 2]],
+                                "assignee": c.assignee_name, "documents_in_period": c.documents,
+                                "reviews_in_period": c.open_reviews} for c in cards[:MAX_LIST * 2]],
                    "truncated": len(cards) > MAX_LIST * 2})
 
 

@@ -1,7 +1,21 @@
 // The assistant's chat turn is a server-sent event stream, so it uses fetch (axios can't read a stream in the browser).
-import { API_URL, TOKEN_KEY } from "@/lib/api";
+import api, { API_URL, TOKEN_KEY } from "@/lib/api";
 import { markFeaturesStale } from "@/lib/features";
-import type { AssistantEvent } from "@/types/assistant";
+import type { AssistantEvent, AssistantInfo } from "@/types/assistant";
+
+/** The model answering (shown in the composer). */
+export async function assistantInfo(): Promise<AssistantInfo> {
+  return (await api.get<AssistantInfo>("/accounting/assistant/info")).data;
+}
+
+/** "qwen3:4b-instruct" → "Qwen3 4B Instruct"; a hosted name like "qwen-plus" → "Qwen Plus". */
+export function modelLabel(model: string): string {
+  return model
+    .split(/[:\-_/]+/)
+    .filter(Boolean)
+    .map((w) => (/^\d+[a-z]$/i.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(" ");
+}
 
 export interface HistoryMessage {
   role: "user" | "assistant";

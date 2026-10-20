@@ -36,6 +36,15 @@ def _sse(event: dict) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
 
 
+@router.get("/assistant/info")
+async def assistant_info(user: User = Depends(get_current_user)) -> dict:
+    """What the chat shows in its composer: the model answering, and whether it runs on this server's machine."""
+    scope_for(user)
+    base = settings.assistant_llm_base_url.strip()
+    return {"model": settings.assistant_llm_model, "provider": settings.assistant_llm_provider,
+            "ready": bool(base), "local": any(h in base for h in ("localhost", "127.0.0.1", "host.docker.internal"))}
+
+
 @router.post("/assistant/chat")
 async def assistant_chat(body: ChatIn, user: User = Depends(get_current_user)):
     ent = scope_for(user)

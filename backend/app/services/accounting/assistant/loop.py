@@ -4,6 +4,7 @@ Events (one JSON object each, sent as SSE by the router):
   {"type": "start"}
   {"type": "action", "tool", "args"}                       a tool is about to run
   {"type": "observation", "tool", "ok", "summary"}         it ran (summary is a short human line)
+  {"type": "thought", "text"}                              the model's one-line plan before a round of lookups
   {"type": "clarify", "question"}                         missing company or period
   {"type": "final", "answer", "sources", "tools_used", "grounded", "ungrounded_numbers"}
   {"type": "error", "message"}
@@ -16,6 +17,7 @@ tool results (``guard.ungrounded``); a peso figure with no tool behind it is rep
 
 import asyncio
 import json
+import re
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -94,7 +96,15 @@ class Coverage:
         return ", ".join(dict.fromkeys(labels)) or "no companies"
 
 
+# A converted prose answer often opens with a "not found" sentence before the actual question: drop it.
+_NOT_FOUND_LEAD = re.compile(r"^\s*I (?:couldn'?t|could not|can'?t|cannot) find (?:it|that|this)[^.?!]*[.!]\s+", re.I)
+
+
+THOUGHT_CHARS = 240
+
+
 def clarify_event(question: str) -> dict:
+    question = _NOT_FOUND_LEAD.sub("", question, count=1) or question
     return {"type": "clarify", "question": question[:settings.assistant_history_chars]}
 
 
@@ -166,6 +176,10 @@ def history_contents(turns: list[guard.Turn]) -> list[dict]:
 async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, generate: Generate = llm.chat) -> AsyncIterator[dict]:
     started = time.monotonic()
     stopped_early = False
+    before_nudge: str | None = None  # the answer that named a tool, kept in case the extra round finds nothing
+    used_at_nudge = 0
+    forced: list[dict] = []
+    nudged_fresh = False
     turns = guard.trim_history(history)
     contents = [{"role": "system", "content": system_instruction(manila_today())}]
     contents += history_contents(turns) + [{"role": "user", "content": question}]
@@ -181,10 +195,24 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
             if _step and remaining < 1.5 * settings.assistant_llm_timeout_seconds:
                 stopped_early = True
                 break
-            resp = await generate(contents, declarations(), "auto")
+            if forced:  # lookups the server runs itself for a part of the question the model skipped
+                resp, forced = {"content": "", "tool_calls": forced}, []
+            else:
+                resp = await generate(contents, declarations(), "auto")
             calls = resp.get("tool_calls") or []
             if not calls:
                 answer = llm.strip_think(resp.get("content") or "").strip()
+                remaining = settings.assistant_turn_seconds - (time.monotonic() - started)
+                if (not used and not nudged_fresh and turns and guard.firm_question(question)
+                        and not guard.declines(answer) and _step + 1 < MAX_STEPS
+                        and remaining >= 1.5 * settings.assistant_llm_timeout_seconds):
+                    # A firm question answered from the conversation alone: earlier answers may be stale or wrong.
+                    nudged_fresh = True
+                    contents.append({"role": "assistant", "content": answer})
+                    contents.append({"role": "user", "content": "Don't reuse earlier answers: they may be out of "
+                                     "date. Look this question up again with the tools, then answer."})
+                    answer = ""
+                    continue
                 if await _needs_clarification(ctx, answer, used, coverage):
                     yield clarify_event(answer)
                     return
@@ -197,10 +225,38 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                                      "to cover every company, then answer."})
                     answer = ""
                     continue
+                if before_nudge is not None and len(used) == used_at_nudge:
+                    # The extra round looked nothing up: the first answer (minus its tool talk) is the better one.
+                    answer = guard.drop_tool_talk(before_nudge)
+                    break
+                missing = guard.missing_tools(question, used) if used else []
+                if missing and before_nudge is None and _step + 2 < MAX_STEPS \
+                        and remaining >= 1.5 * settings.assistant_llm_timeout_seconds:
+                    # A small model often answers half of a two-part question: look the other half up for it.
+                    before_nudge, used_at_nudge = guard.drop_tool_talk(answer), len(used)
+                    forced = [{"id": f"auto_{i}", "type": "function",
+                               "function": {"name": tool, "arguments": json.dumps(guard.default_args(tool, question))}}
+                              for i, tool in enumerate(missing)]
+                    answer = ""
+                    continue
+                named = guard.tool_talk(answer)
+                if named and before_nudge is None and _step + 1 < MAX_STEPS \
+                        and remaining >= 1.5 * settings.assistant_llm_timeout_seconds:
+                    tool = guard.tool_named(named)
+                    before_nudge, used_at_nudge = answer, len(used)  # once; kept if the extra round finds nothing
+                    contents.append({"role": "assistant", "content": answer})
+                    contents.append({"role": "user", "content": (
+                        f"Call {tool} now for the part of the question you haven't answered" if tool else
+                        "Call the tools for the parts of the question you haven't answered") +
+                        ", then answer the whole question without naming tools or arguments."})
+                    answer = ""
+                    continue
                 break
+            plan = llm.strip_think(resp.get("content") or "").strip()
+            if plan:  # the model's own one-line plan before its lookups: shown in the chat's step list
+                yield {"type": "thought", "text": guard.sanitize(plan)[:THOUGHT_CHARS]}
             # Keep every call paired with an observation, including those beyond the execution cap.
-            contents.append({"role": "assistant", "content": llm.strip_think(resp.get("content") or ""),
-                             "tool_calls": calls})
+            contents.append({"role": "assistant", "content": plan, "tool_calls": calls})
             for index, call in enumerate(calls):
                 if time.monotonic() - started >= settings.assistant_turn_seconds:
                     raise TimeoutError
@@ -267,6 +323,7 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
         if stopped_early and await _needs_clarification(ctx, answer, used, coverage):
             yield clarify_event(answer)
             return
+        answer = guard.drop_tool_talk(answer) or answer
         caveat = (f"\n\nI only checked {coverage.names()}; other companies weren't checked."
                   if guard.overreach(answer) and not coverage.firm_wide else "")
         answer = cap_answer(answer)

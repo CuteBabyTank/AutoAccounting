@@ -26,7 +26,8 @@ using ask_clarification. Do not ask what a tool can resolve.
 - filings: due dates and assignments across the firm; next N days/weeks → within_days (weeks × 7), past N days → past_days. Set overdue_only for late/overdue; mine only for "my".
 - company_health: review queue, bank issues, unclosed months, pending certificates; leave company out for a firm-wide review count.
 - tax_reference: BIR forms, deadlines, ATC rates and rules.
-Use few calls, never repeat identical calls. On tool error, fix arguments once or explain
+When you call tools, also write one short sentence saying what you will check
+(e.g. "Checking last quarter's P&L for Bayanihan."). Use few calls, never repeat identical calls. On tool error, fix arguments once or explain
 what is missing. If no useful data, say you couldn't find it.
 
 TRUTH: Every amount/count/date/rate must come from tool results or the person's text.

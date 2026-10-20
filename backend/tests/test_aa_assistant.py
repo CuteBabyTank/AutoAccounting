@@ -1066,3 +1066,106 @@ async def test_report_invalid_period_is_tool_error(monkeypatch):
     monkeypatch.setattr(tools, "resolve_company", resolve)
     with pytest.raises(tools.ToolError, match="period must be one of"):
         await tools.report(_ctx(), kind="pnl", period="next_year")
+
+
+def test_clarify_event_drops_a_not_found_lead():
+    q = "I couldn't find it. Please specify which company and period you're referring to."
+    assert loop.clarify_event(q)["question"] == "Please specify which company and period you're referring to."
+    assert loop.clarify_event("Which company do you mean?")["question"] == "Which company do you mean?"
+
+
+async def test_model_plan_is_streamed_as_a_thought(monkeypatch):
+    plan = {**_call("list_companies"), "content": "<think>x</think>Checking the firm's companies."}
+    events, _ = await _events(Script(plan, _say("You have 2 companies.")), monkeypatch,
+                              {"list_companies": tools.Result({"companies": [1, 2]})}, question="Which companies?")
+    assert [e for e in events if e["type"] == "thought"] == [{"type": "thought", "text": "Checking the firm's companies."}]
+    assert [e["type"] for e in events][-1] == "final"
+
+
+async def test_no_thought_event_without_a_plan(monkeypatch):
+    events, _ = await _events(Script(_call("list_companies"), _say("You have 2 companies.")), monkeypatch,
+                              {"list_companies": tools.Result({"companies": [1, 2]})}, question="Which companies?")
+    assert not [e for e in events if e["type"] == "thought"]
+
+
+def test_tool_talk_spots_tool_names_in_an_answer():
+    assert guard.tool_talk("Please use the filings tool with a due-date window.")
+    assert guard.tool_talk("Try company_health for that.") == "company_health"
+    assert guard.tool_talk("Bayanihan has 5 filings overdue and a report due.") is None
+
+
+async def test_answer_naming_a_tool_gets_one_more_round(monkeypatch):
+    script = Script(_call("company_health"), _say("2 companies need review. For overdue items use the filings tool."),
+                    _call("filings", overdue_only=True), _say("2 companies need review and 5 filings are overdue."))
+    events, calls = await _events(script, monkeypatch, {
+        "company_health": tools.Result({"scope": "firm", "companies": [{"name": "A", "open_reviews": 2}]}),
+        "filings": tools.Result({"count": 5, "overdue_count": 5, "filings": []})},
+        question="Which companies need attention?")
+    assert [c[0] for c in calls] == ["company_health", "filings"]
+    assert events[-1]["answer"] == "2 companies need review and 5 filings are overdue."
+    assert "Call filings now" in script.contents[2][-1]["content"]
+
+
+def test_drop_tool_talk_removes_only_the_offending_sentence():
+    text = "No overdue filings were found. For a list, use the filings tool with a window.\n\n- A: 2 documents"
+    assert guard.drop_tool_talk(text) == "No overdue filings were found.\n\n- A: 2 documents"
+    assert guard.drop_tool_talk("Use the filings tool.") == "Use the filings tool."
+    assert guard.drop_tool_talk("All good.") == "All good."
+
+
+async def test_firm_question_answered_from_history_alone_is_looked_up_again(monkeypatch):
+    history = [{"role": "user", "text": "What's overdue?"}, {"role": "assistant", "text": "Nothing is overdue."}]
+    script = Script(_say("Nothing is overdue."), _call("filings", overdue_only=True), _say("5 filings are overdue."))
+    events, calls = await _events(script, monkeypatch, {"filings": tools.Result({"count": 5, "filings": []})},
+                                  question="And what's overdue now?", history=history)
+    assert [c[0] for c in calls] == ["filings"]
+    assert events[-1]["answer"] == "5 filings are overdue."
+
+
+async def test_chit_chat_after_history_is_not_pushed_to_tools(monkeypatch):
+    history = [{"role": "user", "text": "What's overdue?"}, {"role": "assistant", "text": "5 filings."}]
+    events, calls = await _events(Script(_say("You're welcome!")), monkeypatch, {}, question="thanks!", history=history)
+    assert calls == [] and events[-1]["answer"] == "You're welcome!"
+
+
+def test_tool_named_maps_talk_to_a_tool():
+    assert guard.tool_named("filings tool") == "filings"
+    assert guard.tool_named("overdue_only") == "filings"
+    assert guard.tool_named("use the magic tool") is None
+
+
+async def test_nudge_that_finds_nothing_keeps_the_first_answer(monkeypatch):
+    first = "- A: 30 documents to review.\n\nFor overdue items, use the filings tool."
+    script = Script(_call("company_health"), _say(first), _say("I couldn't find overdue filings."))
+    events, calls = await _events(script, monkeypatch, {
+        "company_health": tools.Result({"scope": "firm", "companies": [{"name": "A", "open_reviews": 30}]})},
+        question="Which companies need attention?")
+    assert [c[0] for c in calls] == ["company_health"]
+    assert events[-1]["answer"] == "- A: 30 documents to review."
+    assert "Call filings now" in script.contents[2][-1]["content"]
+
+
+def test_missing_tools_by_question_part():
+    q = "Which companies have documents waiting for review, and what's overdue?"
+    assert guard.missing_tools(q, ["company_health"]) == ["filings"]
+    assert guard.missing_tools(q, ["company_health", "filings"]) == []
+    assert guard.missing_tools("What's net income?", ["report"]) == []
+    assert guard.missing_tools("Who owes us money?", ["list_companies"]) == []
+
+
+async def test_two_part_question_gets_its_missing_part_looked_up(monkeypatch):
+    script = Script(_call("company_health"), _say("A has 30 documents to review."),
+                    _say("A has 30 documents to review and 5 filings are overdue."))
+    events, calls = await _events(script, monkeypatch, {
+        "company_health": tools.Result({"scope": "firm", "companies": [{"name": "A", "open_reviews": 30}]}),
+        "filings": tools.Result({"count": 5, "overdue_count": 5, "filings": []})},
+        question="Which companies have documents waiting for review, and what's overdue?")
+    assert calls == [("company_health", {}), ("filings", {"overdue_only": True})]
+    assert [e["tool"] for e in events if e["type"] == "action"] == ["company_health", "filings"]
+    assert events[-1]["answer"].endswith("5 filings are overdue.")
+
+
+def test_default_args_for_server_lookups():
+    assert guard.default_args("filings", "what's overdue?") == {"overdue_only": True}
+    assert guard.default_args("filings", "what's due soon?") == {"within_days": 30}
+    assert guard.default_args("company_health", "x") == {}

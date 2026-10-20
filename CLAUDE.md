@@ -233,7 +233,14 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   `finally`. Assignee reads are owner/staff only; sources are revalidated by entity and company. Foreign UUIDs use
   the same not-found response as missing UUIDs. `python -m scripts.assistant_isolation_check` creates two throwaway
   firms, checks real tools plus positive controls without an LLM, and removes fixture users/rows in `finally`.
-  Feature switch `assistant`; UI `components/assistant/AssistantPanel.tsx`, stream client `lib/assistant-api.ts`.
+  Feature switch `assistant`. UI: `components/assistant/AssistantDock.tsx`, mounted in the AuthGate shell beside
+  `<main>` (it pushes the page over at md+, a sheet on phones; launcher bottom-right, Ctrl/Cmd-J), `ThinkingTrail.tsx`
+  (live steps from `thought` / `action` / `observation` events, folded to "Ran N lookups" after) and `AnswerText.tsx`;
+  stream client + `GET /assistant/info` (model name) in `lib/assistant-api.ts`. Small-model safety nets in `loop.run`:
+  a firm question answered from history alone is looked up again; a part of the question a tool clearly owns
+  (`guard.missing_tools`: overdue/due → filings, review → company_health) is looked up by the server itself
+  (`guard.default_args`); an answer naming a tool gets one targeted extra round, else the tool sentence is dropped
+  (`guard.drop_tool_talk`). The Next dev indicator sits bottom-left (`next.config.ts`) so it doesn't cover the launcher.
   Per-person rate limit: 40 turns / 10 minutes. Sources are limited to 12; list results to 25 (filings 50), GL lines 30.
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.
 - **Frontend token** lives in `sessionStorage` (`autoaccounting_token`). The axios interceptor attaches it, and on 401 it is cleared and AuthGate redirects.

@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: false,
   poweredByHeader: false,
   // The dev-only "N" badge defaults to bottom-left, on top of the sidebar's Sign out.
-  devIndicators: { position: "bottom-right" },
+  devIndicators: { position: "bottom-left" }, // bottom-right is the assistant launcher
   productionBrowserSourceMaps: false,
   compiler: {
     removeConsole: process.env.NODE_ENV === "production" ? { exclude: ["error", "warn"] } : false,

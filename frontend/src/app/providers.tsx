@@ -6,10 +6,14 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, ReactNode } from "react";
 import Sidebar from "@/components/layout/Sidebar";
 import AppFlow from "@/components/layout/AppFlow";
+import AssistantDock from "@/components/assistant/AssistantDock";
 import { PUBLIC_ROUTES, canAccess, roleHome } from "@/lib/roles";
 import { FeatureOff, FeaturesProvider, useFeatures, type FeatureKey } from "@/lib/features";
 
 /** Pages a maintenance switch can take down (most specific first). */
+// Staff of a firm (the assistant reads firm data; an unverified sign-in has none).
+const FIRM_ROLES = ["admin", "enterprise", "manager", "employee"];
+
 const PAGE_FEATURES: { path: string; exact?: boolean; key: FeatureKey; label: string }[] = [
   { path: "/accounting/work", key: "work", label: "The work board" },
   { path: "/accounting/companies", key: "companies", label: "Companies" },
@@ -78,6 +82,8 @@ function AuthGate({ children }: { children: ReactNode }) {
           {content}
         </div>
       </main>
+      {/* Docked beside the page (it pushes the page over); firm staff only, behind its maintenance switch. */}
+      {user && FIRM_ROLES.includes(user.role) && features.on("assistant") && <AssistantDock />}
     </div>
   );
 }

@@ -16,14 +16,34 @@ interface Props {
 
 const ROW = "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)]";
 
+/** The fiscal year today falls in, numbered like the folders (by the year it ends). */
+function currentFiscalYear(fiscalYearEndMonth: number, today = new Date()): number {
+  return today.getMonth() + 1 <= fiscalYearEndMonth ? today.getFullYear() : today.getFullYear() + 1;
+}
+
 export default function FolderTree({ tree, selected, onSelect, canManage, onAddCompany }: Props) {
+  // Bank account rows that are expanded.
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // One company open at a time, and in it one year: opening another folds the previous one.
+  const [openCompany, setOpenCompany] = useState<string | null>(null);
+  // The year a person opened per company (null = all folded); none yet = the current fiscal year.
+  const [openYear, setOpenYear] = useState<Record<string, number | null>>({});
   const { on } = useFeatures();
 
+  // Whatever gets selected (a click, a search result, a notification) opens its company and year.
   useEffect(() => {
     if (!selected) return;
-    setOpen((prev) => (prev.has(selected.companyId) ? prev : new Set(prev).add(selected.companyId)));
+    setOpenCompany(selected.companyId);
+    if (selected.year !== null) setOpenYear((prev) => ({ ...prev, [selected.companyId]: selected.year }));
   }, [selected]);
+
+  const yearOpen = (c: TreeCompany, year: number) => {
+    if (c.id in openYear) return openYear[c.id] === year;
+    const current = currentFiscalYear(c.fiscal_year_end_month);
+    return year === (c.years.some((y) => y.year === current) ? current : c.years[0]?.year);
+  };
+  const toggleYear = (c: TreeCompany, year: number) =>
+    setOpenYear((prev) => ({ ...prev, [c.id]: yearOpen(c, year) ? null : year }));
 
   const toggle = (id: string) =>
     setOpen((prev) => {
@@ -122,28 +142,47 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
     <li key={c.id}>
       <button
         onClick={() => {
-          // Opening a company shows its overview (unless something in it is already open); clicking again folds it.
-          if (!open.has(c.id) && selected?.companyId !== c.id) {
-            onSelect({ companyId: c.id, year: null, quarter: null, view: "overview" });
+          // Opening a company shows its overview (unless something in it is already open) and folds the one that
+          // was open; clicking it again folds it.
+          if (openCompany === c.id) {
+            setOpenCompany(null);
+            return;
           }
-          toggle(c.id);
+          if (selected?.companyId !== c.id) onSelect({ companyId: c.id, year: null, quarter: null, view: "overview" });
+          setOpenCompany(c.id);
         }}
+        aria-expanded={openCompany === c.id}
         className={`${ROW} text-[var(--text-primary)]`}
       >
-        {open.has(c.id) ? <CaretDown size={12} /> : <CaretRight size={12} />}
+        {openCompany === c.id ? <CaretDown size={12} /> : <CaretRight size={12} />}
         <Buildings size={15} className="shrink-0 text-[var(--text-secondary)]" />
         <span className="truncate font-medium">{c.registered_name}</span>
       </button>
-      {open.has(c.id) && (
+      {openCompany === c.id && (
         <ul className="ml-4 border-l border-[var(--border)] pl-2">
           <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "overview" }, "Overview", null, 0)}</li>
           {c.years.length === 0 && c.undated_count === 0 && (
             <li className="px-2 py-1 text-xs text-[var(--text-secondary)]">No documents yet</li>
           )}
-          {c.years.map((y) => (
+          {c.years.map((y) => {
+            const expanded = yearOpen(c, y.year);
+            const toReview = y.quarters.reduce((n, q) => n + q.review_count, 0);
+            return (
             <li key={y.year}>
-              <div className="px-2 pt-1.5 text-xs font-semibold text-[var(--text-secondary)]">{y.year}</div>
-              <ul>
+              <button
+                type="button"
+                onClick={() => toggleYear(c, y.year)}
+                aria-expanded={expanded}
+                className="flex w-full items-center gap-1 rounded-md px-2 pb-0.5 pt-1.5 text-left text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              >
+                {expanded ? <CaretDown size={10} /> : <CaretRight size={10} />}
+                <span className="flex-1">{y.year}</span>
+                {/* Folded years still say what's waiting in them. */}
+                {!expanded && toReview > 0 && (
+                  <span className="rounded-full bg-[var(--badge-yellow-bg)] px-1.5 text-[11px] font-medium text-[var(--badge-yellow-text)]">{toReview}</span>
+                )}
+              </button>
+              {expanded && <ul>
                 {c.books_start && on("books") && (
                   <li>{leaf({ companyId: c.id, year: y.year, quarter: null, view: "books" }, "Books", null, 0)}</li>
                 )}
@@ -157,9 +196,10 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
                     {leaf({ companyId: c.id, year: q.year, quarter: q.quarter }, q.label, q.document_count, q.review_count, q)}
                   </li>
                 ))}
-              </ul>
+              </ul>}
             </li>
-          ))}
+            );
+          })}
           {c.books_start && on("reports") && (
             <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "reports" }, "Reports", null, 0)}</li>
           )}

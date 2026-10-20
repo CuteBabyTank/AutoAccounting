@@ -6,7 +6,7 @@
   pointer-events: none;
   vertical-align: middle;
 }
-.aa-bot-art, .aa-bot-image, .aa-bot-game {
+.aa-bot-art, .aa-bot-image, .aa-bot-neck, .aa-bot-game {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -16,24 +16,52 @@
 /* Helmet outline ends at rows 184–186; overlap in the shoulders hides the join.
    Moving down keeps the body's copy of that outline covered throughout the nod. */
 .aa-bot-head {
+  transform-origin: 46.5% 72%;
   clip-path: polygon(0 0, 100% 0, 100% 62%, 77% 62%, 74% 67%, 70% 71%, 63% 74%, 30% 74%, 24% 70%, 20% 66%, 16% 62%, 0 62%);
 }
 .aa-bot-body {
   clip-path: polygon(0 61%, 16% 61%, 19% 64%, 24% 67%, 31% 69%, 63% 69%, 70% 67%, 74% 64%, 77% 61%, 100% 61%, 100% 100%, 0 100%);
 }
+/* Follow the helmet's lower outline (rows 154–185), excluding shoulder pixels.
+   The stationary neck backs the removed outline, so a tilt cannot open a gap. */
+.aa-bot-art[data-image-state="idle"] .aa-bot-head {
+  clip-path: polygon(0 0, 100% 0, 100% 60%, 77% 60%, 75% 65%, 72% 68%, 68% 71%, 63% 73%, 33% 73%, 28% 71.5%, 24% 69%, 21% 66%, 18% 62%, 16% 59%, 0 59%);
+}
+.aa-bot-art[data-image-state="idle"] .aa-bot-body {
+  clip-path: polygon(0 60%, 16% 60%, 18% 64%, 21% 68%, 24% 71%, 29% 73%, 34% 74%, 62% 74%, 68% 72%, 73% 69%, 76% 65%, 78% 60%, 100% 60%, 100% 100%, 0 100%);
+}
 /* Carry the thinking hand to row 193, following its outline above the chest. */
 .aa-bot-art[data-image-state="thinking"] .aa-bot-head {
-  clip-path: polygon(0 0, 100% 0, 100% 62%, 77% 62%, 74% 67%, 70% 71%, 63% 74%, 42% 74%, 39.5% 75.4%, 35% 75.4%, 31% 74%, 28% 69%, 24% 69%, 20% 66%, 16% 62%, 0 62%);
+  clip-path: polygon(0 0, 100% 0, 100% 60%, 76% 60%, 74% 65%, 71% 68%, 67% 71%, 61% 73%, 43% 73%, 42% 75%, 35% 76%, 31% 74%, 28% 69%, 24% 69%, 21% 66%, 18% 62%, 16% 59%, 0 59%);
 }
 .aa-bot-art[data-image-state="thinking"] .aa-bot-body {
-  clip-path: polygon(0 61%, 16% 61%, 19% 64%, 24% 67%, 28% 69%, 31% 73%, 43% 73%, 44% 69%, 63% 69%, 70% 67%, 74% 64%, 77% 61%, 100% 61%, 100% 100%, 0 100%);
+  clip-path: polygon(0 60%, 17% 60%, 19% 65%, 23% 69%, 28% 72%, 31% 76%, 42% 76%, 44% 74%, 61% 74%, 67% 72%, 72% 69%, 75% 65%, 77% 60%, 100% 60%, 100% 100%, 0 100%);
 }
-.aa-bot-art[data-image-state="idle"] .aa-bot-head { animation: aa-bot-head-nod 3.6s var(--ease-in-out) infinite; }
-.aa-bot-art[data-image-state="thinking"] .aa-bot-head { animation: aa-bot-head-nod 1.6s var(--ease-in-out) infinite; }
+/* Split the existing ! from the helmet so only the notification pulses. */
+.aa-bot-art[data-image-state="done"] .aa-bot-head {
+  clip-path: polygon(0 0, 70% 0, 70% 12%, 72% 26%, 78% 31%, 78% 36%, 100% 36%, 100% 62%, 77% 62%, 74% 67%, 70% 71%, 63% 74%, 30% 74%, 24% 70%, 20% 66%, 16% 62%, 0 62%);
+}
+.aa-bot-notification {
+  clip-path: polygon(70% 0, 100% 0, 100% 36%, 78% 36%, 78% 31%, 72% 26%, 70% 12%);
+  transform-origin: 82% 22%;
+}
+.aa-bot[data-state="done"] .aa-bot-notification { animation: aa-bot-notification-pulse 650ms ease-out 2; }
+@keyframes aa-bot-notification-pulse {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(1.12); }
+}
+.aa-bot-art[data-image-state="idle"] .aa-bot-head { animation: aa-bot-head-sway 3s ease-in-out infinite; }
+.aa-bot-art[data-image-state="thinking"] .aa-bot-head { animation: aa-bot-head-nod 1.4s ease-in-out infinite; }
 .aa-bot:not([data-scene="rest"]) .aa-bot-head { animation: none; }
+@keyframes aa-bot-head-sway {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(4%) rotate(-4deg); }
+  50% { transform: translateY(7%) rotate(0deg); }
+  75% { transform: translateY(3%) rotate(4deg); }
+}
 @keyframes aa-bot-head-nod {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(2%); }
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(3%) rotate(-1.5deg); }
 }
 .aa-bot-game { overflow: visible; animation: aa-bot-game-in 5.6s var(--ease-out) both; }
 @keyframes aa-bot-game-in {

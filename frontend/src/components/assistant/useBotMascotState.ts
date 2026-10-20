@@ -24,14 +24,14 @@ export default function useBotMascotState(busy: boolean) {
     setSettled("idle");
     setCancelled(true);
   }, [clear]);
-  const finish = useCallback((success: boolean) => {
+  const finish = useCallback((success: boolean, doneMs = 2500) => {
     clear();
     setCancelled(true);
     setSettled(success ? "done" : "idle");
     if (success) timer.current = setTimeout(() => {
       timer.current = null;
       setSettled("idle");
-    }, 2500);
+    }, doneMs);
   }, [clear]);
 
   return { state: busy && !cancelled ? "thinking" as const : settled, start, finish, reset };

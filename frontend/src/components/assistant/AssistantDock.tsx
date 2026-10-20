@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { ArrowUp, LockSimple, Plus, SidebarSimple, Stop, Warning } from "@phosphor-icons/react";
 import AnswerText from "@/components/assistant/AnswerText";
 import BotMascot from "@/components/assistant/BotMascot";
+import CasperLauncher from "@/components/assistant/CasperLauncher";
+import type { CasperNotice, CasperOutcome } from "@/components/assistant/casper-lines";
 import ThinkingTrail from "@/components/assistant/ThinkingTrail";
 import useBotMascotState from "@/components/assistant/useBotMascotState";
 import { SearchRow } from "@/components/search/SearchResults";
@@ -63,6 +65,9 @@ export default function AssistantDock() {
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [casperNotice, setCasperNotice] = useState<CasperNotice | null>(null);
+  const openRef = useRef(open);
+  useEffect(() => { openRef.current = open; }, [open]);
   const { state: mascotState, start: startMascot, finish: finishMascot, reset: resetMascot } = useBotMascotState(busy);
   const [info, setInfo] = useState<AssistantInfo | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -91,7 +96,7 @@ export default function AssistantDock() {
   }, [messages, busy, mounted]);
   useEffect(() => {
     const el = scroller.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
   }, [messages, open]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -133,6 +138,7 @@ export default function AssistantDock() {
       const ctrl = new AbortController();
       abort.current = ctrl;
       let succeeded = false;
+      let outcome: CasperOutcome = "error";
       const push = (step: AssistantStep) => update(reply.id, (m) => ({ ...m, steps: [...(m.steps ?? []), step] }));
       const onEvent = (e: AssistantEvent) => {
         if (e.type === "thought") {
@@ -149,12 +155,14 @@ export default function AssistantDock() {
           });
         } else if (e.type === "clarify") {
           succeeded = true;
+          outcome = "clarify";
           update(reply.id, (m) => ({
             ...m, text: e.question, clarification: true, pending: false, doneAt: Date.now(), sources: [], ungrounded: [],
             replies: e.replies ?? [],
           }));
         } else if (e.type === "final") {
           succeeded = true;
+          outcome = "done";
           update(reply.id, (m) => {
             const looked = (m.steps ?? []).some((s) => s.kind === "tool");
             const check: AssistantStep[] = !looked
@@ -169,6 +177,7 @@ export default function AssistantDock() {
           });
         } else if (e.type === "error") {
           succeeded = false;
+          outcome = "error";
           resetMascot();
           update(reply.id, (m) => ({ ...m, text: e.message, error: true, pending: false, doneAt: Date.now() }));
         }
@@ -182,7 +191,9 @@ export default function AssistantDock() {
           m.pending ? { ...m, pending: false, doneAt: Date.now(), text: m.text || "Stopped.", error: !m.text } : m,
         );
         setBusy(false);
-        finishMascot(succeeded && !ctrl.signal.aborted);
+        const notify = !openRef.current && !ctrl.signal.aborted;
+        finishMascot(succeeded && !ctrl.signal.aborted, notify ? 8200 : 2500);
+        if (notify) setCasperNotice({ id: reply.id, kind: outcome });
         abort.current = null;
       }
     },
@@ -203,24 +214,11 @@ export default function AssistantDock() {
 
   if (!mounted) return null;
 
-  const launcher = !open && (
-    <button
-      type="button"
-      onClick={() => setOpen(true)}
-      aria-label="Open the assistant (Ctrl J)"
-      title="Assistant (Ctrl J)"
-      data-tour="assistant"
-      className="aa-launcher nav-press fixed bottom-5 right-5 z-[55] flex h-[72px] w-[72px] items-center justify-center rounded-full text-[var(--text-primary)] md:bottom-6 md:right-6"
-    >
-      <BotMascot state={mascotState} size={72} playful />
-    </button>
-  );
-
   const model = info?.model ? modelLabel(info.model) : "";
 
   return (
     <>
-      {launcher}
+      <CasperLauncher open={open} state={mascotState} notice={casperNotice} onOpen={() => setOpen(true)} onAsk={(question) => { setOpen(true); void send(question); }} />
       {open && (
         <aside
           aria-label="Assistant"
@@ -243,9 +241,9 @@ export default function AssistantDock() {
             {messages.length === 0 ? (
               <div className="flex min-h-full flex-col justify-end pb-2">
                 <div className="mb-3"><BotMascot state={mascotState} size={112} playful /></div>
-                <p className="text-[17px] font-medium text-[var(--text-primary)]">Ask about your clients</p>
+                <p className="text-[17px] font-medium text-[var(--text-primary)]">Howdy! I&apos;m Casper.</p>
                 <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">
-                  Figures from the books, what&apos;s due, what needs review, a quarter&apos;s returns or an ATC. It only reads your firm&apos;s records and never changes them.
+                  Ask about your clients, figures from the books, what&apos;s due, what needs review, a quarter&apos;s returns or an ATC. I only read your firm&apos;s records and never change them.
                 </p>
                 <ul className="mt-5 divide-y divide-[var(--border-sidebar)] border-y border-[var(--border-sidebar)]">
                   {SUGGESTIONS.map((q) => (

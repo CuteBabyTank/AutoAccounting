@@ -111,10 +111,20 @@ export default function BotMascot({ state, size, playful = false }: BotMascotPro
     <span className="aa-bot" data-state={state} data-scene={activeScene} data-paused={paused} style={{ width: size, height: size }} aria-hidden="true">
       {STATES.map((imageState) => (
         <span key={imageState} className="aa-bot-art" data-image-state={imageState} style={{ opacity: imageState === state ? 1 : 0 }}>
+          {imageState !== "done" && (
+            <svg className="aa-bot-neck" viewBox="0 0 256 256" fill="none" aria-hidden="true">
+              {/* Hidden upper chest: the source helmet must not remain on the body. */}
+              <path d="M48 152H190L196 175L197 190H42L43 175Z" fill={imageState === "idle" ? "#d7e7ec" : "#d4e6ec"} stroke={imageState === "idle" ? "#1a4d72" : "#044773"} strokeWidth="5" strokeLinejoin="round" />
+            </svg>
+          )}
           {["body", "head"].map((layer) => (
             // eslint-disable-next-line @next/next/no-img-element -- same-frame local art, clipped into overlapping layers
             <img key={layer} className={`aa-bot-image aa-bot-${layer}`} src={`/assistant/bot-${imageState}.png`} width={256} height={256} alt="" aria-hidden="true" draggable={false} />
           ))}
+          {imageState === "done" && (
+            // eslint-disable-next-line @next/next/no-img-element -- isolate the existing exclamation mark for its pulse
+            <img className="aa-bot-image aa-bot-notification" src="/assistant/bot-done.png" width={256} height={256} alt="" aria-hidden="true" draggable={false} />
+          )}
         </span>
       ))}
       {game && <GameBreak outcome={activeScene} />}

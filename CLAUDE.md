@@ -233,7 +233,9 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   `finally`. Assignee reads are owner/staff only; sources are revalidated by entity and company. Foreign UUIDs use
   the same not-found response as missing UUIDs. `python -m scripts.assistant_isolation_check` creates two throwaway
   firms, checks real tools plus positive controls without an LLM, and removes fixture users/rows in `finally`.
-  Feature switch `assistant`. UI: `components/assistant/AssistantDock.tsx`, mounted in the AuthGate shell beside
+  Feature switch `assistant`. Casper is the assistant mascot (`components/assistant/CasperLauncher.tsx`,
+  `CasperBubble.tsx`, `casper-lines.ts`, `casper-position.ts`, `Casper.css`). UI:
+  `components/assistant/AssistantDock.tsx`, mounted in the AuthGate shell beside
   `<main>` (it pushes the page over at md+, a sheet on phones; launcher bottom-right, Ctrl/Cmd-J), `ThinkingTrail.tsx`
   (live steps from `thought` / `action` / `observation` events, folded to "Ran N lookups" after) and `AnswerText.tsx`;
   stream client + `GET /assistant/info` (model name) in `lib/assistant-api.ts`. Small-model safety nets in `loop.run`:

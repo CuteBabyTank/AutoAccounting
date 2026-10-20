@@ -4,7 +4,7 @@ import type { SearchItem } from "@/types/search";
 export type AssistantEvent =
   | { type: "start" }
   | { type: "thought"; text: string }
-  | { type: "clarify"; question: string }
+  | { type: "clarify"; question: string; replies?: string[] }
   | { type: "action"; tool: string; args: Record<string, unknown>; label?: string }
   | { type: "observation"; tool: string; ok: boolean; summary: string }
   | {
@@ -14,6 +14,8 @@ export type AssistantEvent =
       tools_used: string[];
       grounded: boolean;
       ungrounded_numbers: string[];
+      /** One-tap answers when it ends by asking something: "Yes", or the companies to choose from. */
+      replies?: string[];
     }
   | { type: "error"; message: string };
 
@@ -37,6 +39,7 @@ export interface AssistantMessage {
   sources?: SearchItem[];
   ungrounded?: string[];
   clarification?: boolean;
+  replies?: string[];
   error?: boolean;
   pending?: boolean;
 }

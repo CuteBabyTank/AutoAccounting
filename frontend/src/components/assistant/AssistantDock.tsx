@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowUp, Brain, LockSimple, Plus, SidebarSimple, Stop, Warning } from "@phosphor-icons/react";
+import { ArrowUp, LockSimple, Plus, SidebarSimple, Stop, Warning } from "@phosphor-icons/react";
 import AnswerText from "@/components/assistant/AnswerText";
+import BotMascot from "@/components/assistant/BotMascot";
 import ThinkingTrail from "@/components/assistant/ThinkingTrail";
+import useBotMascotState from "@/components/assistant/useBotMascotState";
 import { SearchRow } from "@/components/search/SearchResults";
 import { assistantInfo, modelLabel, streamChat } from "@/lib/assistant-api";
 import { openResult } from "@/lib/search-nav";
@@ -61,6 +63,7 @@ export default function AssistantDock() {
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const { state: mascotState, start: startMascot, finish: finishMascot, reset: resetMascot } = useBotMascotState(busy);
   const [info, setInfo] = useState<AssistantInfo | null>(null);
   const abort = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -118,6 +121,7 @@ export default function AssistantDock() {
     async (raw: string) => {
       const question = raw.trim();
       if (!question || busy) return;
+      startMascot();
       const history = messages.filter((m) => !m.error && m.text).map((m) => ({ role: m.role, text: m.text }));
       const now = Date.now();
       const reply: AssistantMessage = {
@@ -128,6 +132,7 @@ export default function AssistantDock() {
       setBusy(true);
       const ctrl = new AbortController();
       abort.current = ctrl;
+      let succeeded = false;
       const push = (step: AssistantStep) => update(reply.id, (m) => ({ ...m, steps: [...(m.steps ?? []), step] }));
       const onEvent = (e: AssistantEvent) => {
         if (e.type === "thought") {
@@ -143,10 +148,13 @@ export default function AssistantDock() {
             return { ...m, steps };
           });
         } else if (e.type === "clarify") {
+          succeeded = true;
           update(reply.id, (m) => ({
             ...m, text: e.question, clarification: true, pending: false, doneAt: Date.now(), sources: [], ungrounded: [],
+            replies: e.replies ?? [],
           }));
         } else if (e.type === "final") {
+          succeeded = true;
           update(reply.id, (m) => {
             const looked = (m.steps ?? []).some((s) => s.kind === "tool");
             const check: AssistantStep[] = !looked
@@ -155,11 +163,13 @@ export default function AssistantDock() {
                 ? [{ kind: "check", tool: "Some figures couldn't be traced to the books", summary: e.ungrounded_numbers.join(", "), ok: false }]
                 : [{ kind: "check", tool: "Checked the figures against what it found", summary: "", ok: true }];
             return {
-              ...m, text: e.answer, sources: e.sources, ungrounded: e.ungrounded_numbers, pending: false,
+              ...m, text: e.answer, sources: e.sources, ungrounded: e.ungrounded_numbers, pending: false, replies: e.replies ?? [],
               doneAt: Date.now(), steps: [...(m.steps ?? []), ...check],
             };
           });
         } else if (e.type === "error") {
+          succeeded = false;
+          resetMascot();
           update(reply.id, (m) => ({ ...m, text: e.message, error: true, pending: false, doneAt: Date.now() }));
         }
       };
@@ -172,14 +182,19 @@ export default function AssistantDock() {
           m.pending ? { ...m, pending: false, doneAt: Date.now(), text: m.text || "Stopped.", error: !m.text } : m,
         );
         setBusy(false);
+        finishMascot(succeeded && !ctrl.signal.aborted);
         abort.current = null;
       }
     },
-    [busy, info?.model, messages, update],
+    [busy, info?.model, messages, update, startMascot, finishMascot, resetMascot],
   );
 
-  const stop = () => abort.current?.abort();
+  const stop = () => {
+    resetMascot();
+    abort.current?.abort();
+  };
   const newChat = () => {
+    resetMascot();
     abort.current?.abort();
     setMessages([]);
     setText("");
@@ -195,9 +210,9 @@ export default function AssistantDock() {
       aria-label="Open the assistant (Ctrl J)"
       title="Assistant (Ctrl J)"
       data-tour="assistant"
-      className="aa-launcher nav-press fixed bottom-5 right-5 z-[55] flex h-14 w-14 items-center justify-center rounded-full border border-[var(--border-sidebar)] bg-[var(--bg-secondary)] text-[var(--text-primary)] md:bottom-6 md:right-6"
+      className="aa-launcher nav-press fixed bottom-5 right-5 z-[55] flex h-[72px] w-[72px] items-center justify-center rounded-full border border-[var(--border-sidebar)] bg-[var(--bg-secondary)] text-[var(--text-primary)] md:bottom-6 md:right-6"
     >
-      <Brain size={28} weight="light" />
+      <BotMascot state={mascotState} size={64} playful />
     </button>
   );
 
@@ -212,6 +227,7 @@ export default function AssistantDock() {
           className="aa-dock lp-skin fixed inset-0 z-[60] flex flex-col bg-[var(--bg-secondary)] md:static md:z-auto md:h-screen md:w-[400px] md:shrink-0 md:border-l md:border-[var(--border-sidebar)] xl:w-[440px]"
         >
           <header className="flex h-14 shrink-0 items-center gap-1 border-b border-[var(--border-sidebar)] pl-5 pr-2">
+            <BotMascot state={mascotState} size={36} />
             <h2 className="min-w-0 flex-1 truncate text-[15px] font-medium text-[var(--text-primary)]" title={titleOf(messages)}>
               {titleOf(messages)}
             </h2>
@@ -226,7 +242,7 @@ export default function AssistantDock() {
           <div ref={scroller} className="flex-1 overflow-y-auto px-5 py-6" aria-live="polite">
             {messages.length === 0 ? (
               <div className="flex min-h-full flex-col justify-end pb-2">
-                <Brain size={30} weight="light" className="mb-3 text-[var(--accent)]" />
+                <div className="mb-3"><BotMascot state={mascotState} size={112} playful /></div>
                 <p className="text-[17px] font-medium text-[var(--text-primary)]">Ask about your clients</p>
                 <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">
                   Figures from the books, what&apos;s due, what needs review, a quarter&apos;s returns or an ATC. It only reads your firm&apos;s records and never changes them.
@@ -247,7 +263,7 @@ export default function AssistantDock() {
               </div>
             ) : (
               <div className="space-y-7">
-                {messages.map((m) =>
+                {messages.map((m, i) =>
                   m.role === "user" ? (
                     <div key={m.id} className="flex flex-col items-end">
                       <p className="max-w-[88%] whitespace-pre-wrap rounded-[20px] bg-[var(--text-primary)] px-4 py-2.5 text-[14.5px] leading-relaxed text-[var(--bg-secondary)]">
@@ -266,10 +282,15 @@ export default function AssistantDock() {
                       ) : m.clarification ? (
                         <div className="border-l-2 border-[var(--accent)] pl-3">
                           <AnswerText text={m.text} />
-                          <p className="mt-1.5 text-xs text-[var(--text-secondary)]">Reply below and it will carry on.</p>
+                          {!m.replies?.length && (
+                            <p className="mt-1.5 text-xs text-[var(--text-secondary)]">Reply below and it will carry on.</p>
+                          )}
                         </div>
                       ) : (
                         <AnswerText text={m.text} />
+                      )}
+                      {!m.pending && !m.error && i === messages.length - 1 && !busy && m.replies && m.replies.length > 0 && (
+                        <QuickReplies replies={m.replies} onPick={send} onType={() => input.current?.focus()} />
                       )}
                       {!m.pending && m.ungrounded && m.ungrounded.length > 0 && (
                         <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-[var(--alert-warning-bg)] px-3 py-2 text-xs leading-relaxed text-[var(--alert-warning-text)]">
@@ -354,5 +375,35 @@ export default function AssistantDock() {
         </aside>
       )}
     </>
+  );
+}
+
+
+/** One-tap answers under a question: "Yes" plus "No, I'll type it", or one button per choice plus "Something else".
+ * Typing in the composer works just the same. */
+function QuickReplies({ replies, onPick, onType }: { replies: string[]; onPick: (text: string) => void; onType: () => void }) {
+  const yesNo = replies.length === 1;
+  const chip =
+    "rounded-full border px-3.5 py-1.5 text-[13.5px] leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]";
+  return (
+    <div className="aa-replies mt-3 flex flex-wrap gap-2" role="group" aria-label="Quick replies">
+      {replies.map((r) => (
+        <button
+          key={r}
+          type="button"
+          onClick={() => onPick(r)}
+          className={`${chip} border-[var(--accent)] bg-[var(--accent)]/[0.07] font-medium text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white`}
+        >
+          {r}
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={onType}
+        className={`${chip} border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--text-tertiary)] hover:text-[var(--text-primary)]`}
+      >
+        {yesNo ? "No, I'll type it" : "Something else"}
+      </button>
+    </div>
   );
 }

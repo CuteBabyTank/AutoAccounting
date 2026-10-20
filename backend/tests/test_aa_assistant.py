@@ -3,6 +3,7 @@ the agent loop driven by a scripted model (no network, no DB)."""
 
 import inspect
 import json
+import re
 from datetime import date
 
 import pytest
@@ -125,6 +126,10 @@ class Script:
         self.modes.append(tool_choice)
         self.contents.append([dict(m) for m in contents])
         return self.replies.pop(0)
+
+
+def _sans_replies(event: dict) -> dict:
+    return {k: v for k, v in event.items() if k != "replies"}
 
 
 async def _db_rollback():
@@ -322,7 +327,7 @@ def test_precheck_preserves_normal_firm_questions():
 async def test_clarification_skips_grounding(monkeypatch):
     script = Script(_call("ask_clarification", question="Which period did you mean: 2025 or 2026?"))
     events, calls = await _events(script, monkeypatch, {})
-    assert events[-1] == {"type": "clarify", "question": "Which period did you mean: 2025 or 2026?"}
+    assert _sans_replies(events[-1]) == {"type": "clarify", "question": "Which period did you mean: 2025 or 2026?"}
     assert not calls
 
 
@@ -468,10 +473,43 @@ def test_every_search_group_has_firm_predicate():
     from app.routers import accounting_search as search
     from app.services.accounting.search import parse_query
     q = parse_query("PrivateSupplier", date(2026, 10, 20))
+    ent = uuid.uuid4()
     for kind in search.GROUP_TYPES:
-        query = getattr(search, {"bank_line": "bank_query", "journal_entry": "journal_query"}.get(kind, f"{kind}_query"))(uuid.uuid4(), q, search.Filters(), 10)
-        sql = str(query.compile(dialect=postgresql.dialect())).split("WHERE")[1]
-        assert "enterprise_id =" in sql, kind
+        build = getattr(search, {"bank_line": "bank_query", "journal_entry": "journal_query"}.get(kind, f"{kind}_query"))
+        for query in (build(ent, q, search.Filters(), 10), search.count_query(kind, ent, q, search.Filters())):
+            compiled = query.compile(dialect=postgresql.dialect())
+            sql = str(compiled).split("WHERE")[1]
+            table = {"document": "aa_documents", "contact": "aa_contacts", "bank_line": "aa_bank_lines",
+                     "journal_entry": "aa_journal_entries", "task": "aa_tasks", "company": "aa_companies"}[kind]
+            assert f"{table}.enterprise_id =" in sql, kind
+            assert ent in compiled.params.values(), kind
+
+
+@pytest.mark.parametrize("text", ["PrivateSupplier", "1,500.00", "123-456-789", "Oct 15, 2026", "duplicate", ""])
+def test_search_counts_reuse_item_filters_and_bound_work(text):
+    import uuid
+    from sqlalchemy.dialects import postgresql
+    from app.routers import accounting_search as search
+    from app.services.accounting.search import parse_query
+
+    ent = uuid.uuid4()
+    q = parse_query(text, date(2026, 10, 20))
+    f = search.Filters(company_id=uuid.uuid4(), date_from=date(2026, 7, 1), date_to=date(2026, 9, 30), review=True)
+    for kind in search.GROUP_TYPES:
+        build = getattr(search, {"bank_line": "bank_query", "journal_entry": "journal_query"}.get(kind, f"{kind}_query"))
+        query = build(ent, q, f, 41)
+        items = query.compile(dialect=postgresql.dialect())
+        count = search.count_query(kind, ent, q, f).compile(dialect=postgresql.dialect())
+        def unnumbered(sql: str) -> str:  # bind names are numbered per statement (ORDER BY binds shift them)
+            return re.sub(r"%\((\w+?)_\d+\)s", r"%(\1)s", sql)
+
+        item_where = str(items).split("WHERE ", 1)[1].split(" ORDER BY", 1)[0]
+        assert unnumbered(item_where) in unnumbered(str(count)), kind
+        assert "count(*)" in str(count) and "LIMIT" in str(count) and 1001 in count.params.values(), kind
+        assert str(count).index("LIMIT") < str(count).rindex(") AS"), kind
+        where = query.whereclause.compile(dialect=postgresql.dialect())
+        assert all(count.params[k] == v for k, v in where.params.items()), kind
+        assert "ORDER BY" not in str(count), kind
 
 
 def test_scoped_nested_loader_sql_filters_every_entity():
@@ -567,12 +605,23 @@ async def test_foreign_sources_are_removed():
 async def test_search_passes_server_ent_to_all_groups(monkeypatch):
     from app.routers import accounting_search as search
     received = []
+    counted = []
     async def group(db, kind, ent, q, filters, cap):
         received.append((kind, ent))
         return []
+    build_count = search.count_query
+    def count_query(kind, ent, q, filters):
+        counted.append((kind, ent))
+        return build_count(kind, ent, q, filters)
+    async def execute(stmt):
+        return SimpleNamespace(scalar_one=lambda: 0)
     monkeypatch.setattr(search, "_group", group)
-    await tools.search(_ctx(), query="PrivateSupplier")
+    monkeypatch.setattr(search, "count_query", count_query)
+    ctx = _ctx()
+    ctx.db.execute = execute
+    await tools.search(ctx, query="PrivateSupplier")
     assert received == [(kind, "e1") for kind in search.GROUP_TYPES]
+    assert counted == received
 
 
 async def test_shared_handlers_receive_the_resolved_firm(monkeypatch):
@@ -882,7 +931,7 @@ async def test_plain_missing_info_answer_becomes_clarify(monkeypatch, lookup, an
     events, _ = await _events(Script(*replies), monkeypatch, {
         "list_companies": tools.Result({"companies": [{"company_id": "c1"}, {"company_id": "c2"}]})},
         question="How much did we spend?")
-    assert events[-1] == {"type": "clarify", "question": guard.humanize(answer)}
+    assert _sans_replies(events[-1]) == {"type": "clarify", "question": guard.humanize(answer)}
 
 
 @pytest.mark.parametrize("answer", [
@@ -919,7 +968,7 @@ async def test_single_company_still_clarifies_missing_period(monkeypatch):
     answer = "Please specify the company name and date range."
     events, _ = await _events(Script(_call("list_companies"), _say(answer)), monkeypatch, {
         "list_companies": tools.Result({"companies": [{"company_id": "c1", "name": "Acme"}]})})
-    assert events[-1] == {"type": "clarify", "question": guard.humanize(answer)}
+    assert _sans_replies(events[-1]) == {"type": "clarify", "question": guard.humanize(answer)}
 
 
 # ---- relative windows --------------------------------------------------------------------------------------------
@@ -1186,3 +1235,195 @@ def test_humanize_spaced_hyphen_and_emoji():
         "- 0619-E (due August 10, 2026, 71 days overdue)"
     assert guard.humanize("👉 To act: open the Work board.") == "To act: open the Work board."
     assert guard.humanize("1. First - then second") == "1. First, then second"
+
+
+def test_quick_replies_for_yes_no_and_choices():
+    names = ["Bayanihan Hardware (bank smoke test)", "Bayanihan Hardware Trading Corp.", "Other Co"]
+    text = ("I found two: Bayanihan Hardware (bank smoke test) and Bayanihan Hardware Trading Corp. "
+            "Could you please confirm which one you meant?")
+    assert guard.asks_person(text)
+    assert guard.named_options(text, names) == names[:2]
+    assert guard.quick_replies("Do you want the Q3 figures instead?") == ["Yes"]
+    assert guard.quick_replies("Please confirm if you meant Bayanihan.") == ["Yes"]
+    assert not guard.asks_person("Net income was ₱5,000.00.")
+
+
+def test_plan_line_is_dropped_from_the_answer():
+    assert guard.drop_plan_lead("Checking last quarter's P&L. Net loss was ₱1.00.") == "Net loss was ₱1.00."
+    assert guard.drop_plan_lead("Checking last quarter's P&L.") == "Checking last quarter's P&L."
+
+
+def test_which_company_and_promised_lookups():
+    assert guard.asks_which_company("Could you please confirm which company you'd like me to check?")
+    assert not guard.asks_which_company("Do you want the Q3 figures?")
+    assert guard.promises_lookup("You likely meant A. I'll retrieve the net income for that company's last quarter.")
+    assert not guard.promises_lookup("Net income was ₱5,000.00.")
+
+
+async def test_promised_lookup_is_carried_out(monkeypatch):
+    script = Script(_say("You meant A. Let me check its P&L."), _call("report", kind="pl", company="A"),
+                    _say("A made ₱5,000.00."))
+    events, calls = await _events(script, monkeypatch, {"report": tools.Result({"net_income": "5000.00"})},
+                                  question="Net income for A last quarter?")
+    assert [c[0] for c in calls] == ["report"]
+    assert events[-1]["answer"] == "A made ₱5,000.00."
+
+
+def test_period_from_question():
+    assert guard.period_from("What was net income for Bayanihan last quarter?") == "last_quarter"
+    assert guard.period_from("Sales this year so far") == "this_year"
+    assert guard.period_from("Net income in Q2 2026") is None
+
+
+async def test_report_without_period_uses_the_one_asked_for(monkeypatch):
+    script = Script(_call("report", kind="pnl", company="A"), _say("A made ₱5,000.00."))
+    events, calls = await _events(script, monkeypatch, {"report": tools.Result({"net_income": "5000.00"})},
+                                  question="Net income for A last quarter?")
+    assert calls == [("report", {"kind": "pnl", "company": "A", "period": "last_quarter"})]
+
+
+def test_topic_joins_a_reply_to_the_question_it_answers():
+    turns = [guard.Turn("user", "What was net income last quarter?"),
+             guard.Turn("assistant", "Which company would you like me to check?")]
+    assert guard.topic("Bayanihan Hardware Trading Corp.", turns) == \
+        "What was net income last quarter?\nBayanihan Hardware Trading Corp."
+    assert guard.topic("thanks", [guard.Turn("user", "x"), guard.Turn("assistant", "Done.")]) == "thanks"
+    assert guard.promises_lookup("Checking last quarter's P&L for Bayanihan Hardware Trading Corp.")
+
+
+async def test_company_reply_after_which_company_gets_last_quarter(monkeypatch):
+    history = [{"role": "user", "text": "What was net income last quarter?"},
+               {"role": "assistant", "text": "Which company would you like me to check?"}]
+    script = Script(_say("Checking last quarter's P&L for A."), _call("report", kind="pnl", company="A"),
+                    _say("A made ₱5,000.00."))
+    events, calls = await _events(script, monkeypatch, {"report": tools.Result({"net_income": "5000.00"})},
+                                  question="A", history=history)
+    assert calls == [("report", {"kind": "pnl", "company": "A", "period": "last_quarter"})]
+    assert events[-1]["answer"] == "A made ₱5,000.00."
+
+
+async def test_search_shows_only_the_best_ten_across_kinds(monkeypatch):
+    from app.routers import accounting_search
+
+    async def fake_group(db, kind, ent, q, f, cap):
+        return [{"type": kind, "id": f"{kind}{i}", "title": f"{kind} {i}", "matched": ["name"],
+                 "score": 100 - 2 * i - (1 if kind == "contact" else 0) if kind != "task" else 1}
+                for i in reversed(range(14 if kind != "task" else 4))]
+
+    counts = iter([30, 14, 4])
+    async def execute(stmt):
+        n = next(counts)
+        return SimpleNamespace(scalar_one=lambda: n)
+
+    monkeypatch.setattr(accounting_search, "_group", fake_group)
+    monkeypatch.setattr(accounting_search, "groups_for", lambda q, f, wanted: ["document", "contact", "task"])
+    ctx = _ctx()
+    ctx.db.execute = execute
+    result = await tools.search(ctx, query="ace hardware")
+    shown = [i for g in result.data["groups"] for i in g["items"]]
+    assert len(shown) == result.data["shown"] == 10 and len(result.sources) == 10
+    assert [i["id"] for i in result.sources] == [f"{kind}{i}" for i in range(5) for kind in ("document", "contact")]
+    assert all("score" not in i and "matched" not in i for i in shown)
+    assert {g["type"]: g["total"] for g in result.data["groups"]} == {"document": 30, "contact": 14, "task": 4}
+    assert result.data["groups"][-1]["items"] == []  # totals survive even when a kind has no top-ranked hit
+    assert result.data["total_matches"] == 48
+    assert "Showing the 10 best of 48 matches" in result.data["note"]
+    assert all("more" not in g and not g.get("total_capped") for g in result.data["groups"])
+    observed = loop.observation(tools.as_json(result.data))
+    assert json.loads(observed)["total_matches"] == 48
+    assert guard.ungrounded("Found 48 matches, including 14 contacts.", [observed]) == []
+    script = Script(_call("search", query="ace hardware"), _say("Found 48 matches."))
+    events, _ = await _events(script, monkeypatch, {"search": result},
+                              question="How many records match Ace Hardware?")
+    assert events[-1]["type"] == "final" and events[-1]["grounded"] is True
+    assert json.loads(next(m["content"] for m in script.contents[-1] if m["role"] == "tool"))["total_matches"] == 48
+
+
+@pytest.mark.parametrize("count", [0, 3, 10, 30, 1000, 1001])
+async def test_search_totals_caps_and_note(monkeypatch, count):
+    from app.routers import accounting_search
+
+    async def fake_group(db, kind, ent, q, f, cap):
+        return [{"type": kind, "id": str(i), "score": i} for i in range(min(count, cap))]
+    async def execute(stmt):
+        return SimpleNamespace(scalar_one=lambda: count)
+
+    monkeypatch.setattr(accounting_search, "_group", fake_group)
+    ctx = _ctx()
+    ctx.db.execute = execute
+    data = (await tools.search(ctx, query="ace", types=["document"])).data
+    assert data["total_matches"] == min(count, 1000)
+    assert data["shown"] == min(count, 10)
+    assert data["groups"][0]["total"] == min(count, 1000)
+    assert bool(data.get("total_capped")) == (count > 1000)
+    assert bool(data["groups"][0].get("total_capped")) == (count > 1000)
+    assert ("note" in data) == (count > 10)
+    if count > 1000:
+        assert "at least 1000" in data["note"]
+
+
+async def test_search_overall_total_sums_capped_and_exact_counts(monkeypatch):
+    from app.routers import accounting_search
+
+    async def fake_group(db, kind, ent, q, f, cap):
+        return [{"type": kind, "id": kind, "score": 1}]
+    counts = iter([1001, 52])
+    async def execute(stmt):
+        n = next(counts)
+        return SimpleNamespace(scalar_one=lambda: n)
+
+    monkeypatch.setattr(accounting_search, "_group", fake_group)
+    ctx = _ctx()
+    ctx.db.execute = execute
+    data = (await tools.search(ctx, query="ace", types=["document", "contact"])).data
+    assert data["total_matches"] == 1052 and data["total_capped"] is True
+    assert [(g["total"], g.get("total_capped", False)) for g in data["groups"]] == [(1000, True), (52, False)]
+    assert "at least 1052" in data["note"]
+
+
+def test_truncated_search_observation_keeps_all_totals():
+    data = {"total_matches": 82, "shown": 10, "groups": [
+        {"type": "document", "total": 30, "items": [{"title": "x" * 9000}]},
+        {"type": "contact", "total": 52, "items": []}]}
+    observed = loop.observation(data)
+    parsed = json.loads(observed)
+    assert len(observed) <= loop.OBSERVATION_CHARS
+    assert parsed["total_matches"] == 82
+    assert [g["total"] for g in parsed["groups"]] == [30, 52]
+    assert guard.ungrounded("Found 82 matches, including 52 contacts.", [observed]) == []
+
+
+def test_search_counts_fit_the_smallest_observation_budget(monkeypatch):
+    from app.routers.accounting_search import GROUP_TYPES
+
+    monkeypatch.setattr(loop, "OBSERVATION_CHARS", 200)
+    data = {"total_matches": 6000, "shown": 10, "total_capped": True, "groups": [
+        {"type": kind, "total": 1000, "total_capped": True, "items": [{"title": "x" * 9000}]}
+        for kind in GROUP_TYPES]}
+    observed = loop.observation(data)
+    parsed = json.loads(observed)
+    assert len(observed) <= 200
+    assert parsed["total_matches"] == ">=6000" and parsed["shown"] == 10
+    assert parsed["totals"] == {kind: ">=1000" for kind in GROUP_TYPES}
+    assert guard.ungrounded("Found at least 6000 matches, at least 1000 of each kind.", [observed]) == []
+
+
+async def test_search_with_no_searchable_query_reports_zero():
+    assert (await tools.search(_ctx(), query="a")).data == {"total_matches": 0, "shown": 0, "groups": []}
+
+
+async def test_global_search_route_keeps_existing_response(monkeypatch):
+    from app.routers import accounting_search
+
+    best = {"type": "document", "id": "best", "score": 10}
+    async def fake_group(db, kind, ent, q, f, cap):
+        return [best, {"type": "document", "id": "other", "score": 1}]
+    def unexpected_count(*args):
+        pytest.fail("The global-search route must not run assistant count queries")
+
+    monkeypatch.setattr(accounting_search, "_group", fake_group)
+    monkeypatch.setattr(accounting_search, "scope_for", lambda user: "e1")
+    monkeypatch.setattr(accounting_search, "count_query", unexpected_count)
+    result = await accounting_search.search(q="ace", types="document", limit=1, user=None, db=None)
+    assert result == {"query": "ace", "too_short": False,
+                      "groups": [{"type": "document", "items": [best], "more": True}]}

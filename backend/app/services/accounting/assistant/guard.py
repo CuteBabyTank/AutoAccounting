@@ -105,8 +105,8 @@ _OVERREACH = re.compile(
     r"|\bevery compan|\bonly compan|\bno compan|\bthe rest of the compan"
     r"|\bother companies (?:have|don't|do not)", re.I)
 _MISSING_INFO = re.compile(
-    r"\bplease (?:specify|provide|tell me|clarify)|\bwhich (?:company|period|quarter|month|year|client)"
-    r"|\bcould you (?:specify|tell)", re.I)
+    r"\bplease (?:specify|provide|tell me|clarify|confirm)|\bwhich (?:company|period|quarter|month|year|client)"
+    r"|\bcould you (?:specify|tell|confirm)|\bdid you mean\b", re.I)
 _REFUSAL = re.compile(r"\bcan'?t\b|\bcannot\b|\bunable\b|\boutside (?:the )?scope\b|\bonly help\b", re.I)
 _COMPANY_INFO = re.compile(r"\b(?:company|client)\b", re.I)
 _PERIOD_INFO = re.compile(r"\b(?:period|quarter|month|year|date|range|time)s?\b", re.I)
@@ -192,6 +192,21 @@ def humanize(text: str) -> str:
     return "\n".join(lines)
 
 
+_SAID_PERIOD = (
+    (re.compile(r"\b(?:last|previous|prior) quarter\b", re.I), "last_quarter"),
+    (re.compile(r"\b(?:this|current) quarter\b", re.I), "this_quarter"),
+    (re.compile(r"\b(?:last|previous|prior) month\b", re.I), "last_month"),
+    (re.compile(r"\b(?:this|current) month\b", re.I), "this_month"),
+    (re.compile(r"\b(?:last|previous|prior) (?:fiscal )?year\b", re.I), "last_year"),
+    (re.compile(r"\b(?:this|current) (?:fiscal )?year\b|\bytd\b|\byear to date\b", re.I), "this_year"),
+)
+
+
+def period_from(question: str) -> str | None:
+    """The relative report period the person named ("last quarter" → last_quarter), if any."""
+    return next((p for words, p in _SAID_PERIOD if words.search(question or "")), None)
+
+
 def drop_tool_talk(answer: str) -> str:
     """The answer without the sentences that name a tool or argument (kept whole when that would empty it)."""
     if not tool_talk(answer):
@@ -226,6 +241,57 @@ def declines(answer: str) -> bool:
     return bool(_REFUSAL.search(answer or ""))
 
 
+_YES_NO = re.compile(
+    r"\b(?:please confirm|can you confirm|could you confirm|confirm (?:if|whether|that)|did you mean|do you mean|"
+    r"is that (?:right|correct)|should i|shall i|do you want|would you like|want me to)\b", re.I)
+_YES_NO_START = re.compile(r"(?:^|[.!?]\s+)(?:do|did|is|are|should|shall|would|can|could|was|were)\b[^.!?]*\?\s*$", re.I)
+
+
+def quick_replies(text: str) -> list[str]:
+    """One-tap replies for a yes/no question at the end of an answer ("Yes"); the person can still type."""
+    tail = (text or "").strip()[-400:]
+    return ["Yes"] if _YES_NO.search(tail) or _YES_NO_START.search(tail) else []
+
+
+def asks_person(text: str) -> bool:
+    """Whether the text ends by asking the person something (a question mark, or "please confirm / which …")."""
+    tail = (text or "").strip()[-300:]
+    return tail.endswith("?") or bool(_YES_NO.search(tail) or _MISSING_INFO.search(tail))
+
+
+_WHICH = re.compile(r"\bwhich (?:one|company|companies|client|clients)\b|\bwhat (?:company|client)\b", re.I)
+
+
+def asks_which_company(text: str) -> bool:
+    """A question asking the person to pick a company (not a yes/no)."""
+    return bool(_WHICH.search((text or "").strip()[-300:]))
+
+
+_PROMISE = re.compile(r"\b(?:let me (?:check|look|pull|get|retrieve|find)|i'?ll (?:check|look|pull|get|retrieve|find|now)|"
+                      r"i will (?:check|look|pull|get|retrieve|find)|checking|looking up|pulling up)\b[^.!?]*[.!]?\s*$", re.I)
+
+
+def promises_lookup(answer: str) -> bool:
+    """An answer that ends by saying it will look something up, without having done so."""
+    return bool(_PROMISE.search((answer or "").strip()[-250:]))
+
+
+def named_options(text: str, names: list[str]) -> list[str]:
+    """The firm's company names the text mentions, in the order it mentions them (the choices in "which one?")."""
+    low = (text or "").lower()
+    found = [(low.find(n.lower()), n) for n in names if n and n.lower() in low]
+    return [n for _, n in sorted(found)]
+
+
+_PLAN_LEAD = re.compile(r"^\s*(?:checking|looking up|let me (?:check|look)|i'?ll check)\b[^.!?\n]*[.!]\s+", re.I)
+
+
+def drop_plan_lead(answer: str) -> str:
+    """An answer that opens with the model's own "Checking …" plan line, minus that line (kept if it's all there is)."""
+    out = _PLAN_LEAD.sub("", answer or "", count=1)
+    return out if out.strip() else answer
+
+
 def clarification(answer: str) -> bool:
     """A short missing-info request, excluding refusals."""
     text = answer.strip()
@@ -242,6 +308,16 @@ def company_only_clarification(answer: str) -> bool:
 class Turn:
     role: str   # user | assistant
     text: str
+
+
+def topic(question: str, turns: list[Turn]) -> str:
+    """The question in context: a short reply to the assistant's own question ("Bayanihan Trading", "yes") is read
+    together with the person's question before it, so period and lookup checks still see what was asked."""
+    if len(question or "") > 80 or len(turns) < 2 or turns[-1].role != "assistant" \
+            or not asks_person(turns[-1].text):
+        return question
+    earlier = next((t.text for t in reversed(turns[:-1]) if t.role == "user"), "")
+    return f"{earlier}\n{question}" if earlier else question
 
 
 def trim_history(history: list[dict] | None) -> list[Turn]:

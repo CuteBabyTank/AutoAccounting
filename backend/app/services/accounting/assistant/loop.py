@@ -5,8 +5,8 @@ Events (one JSON object each, sent as SSE by the router):
   {"type": "action", "tool", "args"}                       a tool is about to run
   {"type": "observation", "tool", "ok", "summary"}         it ran (summary is a short human line)
   {"type": "thought", "text"}                              the model's one-line plan before a round of lookups
-  {"type": "clarify", "question"}                         missing company or period
-  {"type": "final", "answer", "sources", "tools_used", "grounded", "ungrounded_numbers"}
+  {"type": "clarify", "question", "replies"}                         missing company or period
+  {"type": "final", "answer", "sources", "tools_used", "grounded", "ungrounded_numbers", "replies"}
   {"type": "error", "message"}
 
 At most ``MAX_STEPS`` model turns with tools; then one turn with tools off forces an answer. A repeated call (same
@@ -103,8 +103,41 @@ _NOT_FOUND_LEAD = re.compile(r"^\s*I (?:couldn'?t|could not|can'?t|cannot) find 
 THOUGHT_CHARS = 240
 
 
+MAX_REPLIES = 6
+
+
+async def firm_company_names(ctx: tools.Ctx) -> list[str]:
+    """The firm's company names (this firm only), for turning a "which one?" question into buttons."""
+    from sqlalchemy import select
+
+    from app.models.accounting import AACompany
+
+    if not hasattr(ctx.db, "execute"):
+        return []
+    try:
+        rows = await ctx.db.execute(select(AACompany.registered_name).where(AACompany.enterprise_id == ctx.ent)
+                                    .order_by(AACompany.registered_name))
+        return [n for n in rows.scalars().all() if n]
+    except Exception:  # replies are a convenience: never fail the turn over them
+        logger.warning("assistant_replies_lookup_failed", exc_info=True)
+        return []
+
+
+async def with_replies(ctx: tools.Ctx, event: dict) -> dict:
+    """Add one-tap replies to an answer or question that ends by asking the person to choose."""
+    text = event.get("question") or event.get("answer") or ""
+    if not guard.asks_person(text):
+        return {**event, "replies": []}
+    every = await firm_company_names(ctx)
+    names = guard.named_options(text, every)
+    if len(names) < 2 and guard.asks_which_company(text):
+        names = every if 2 <= len(every) <= MAX_REPLIES else []  # too many to list: the person types the name
+        return {**event, "replies": names}
+    return {**event, "replies": names[:MAX_REPLIES] if len(names) >= 2 else guard.quick_replies(text)}
+
+
 def clarify_event(question: str) -> dict:
-    question = guard.humanize(_NOT_FOUND_LEAD.sub("", question, count=1) or question)
+    question = guard.humanize(guard.drop_plan_lead(_NOT_FOUND_LEAD.sub("", question, count=1) or question))
     return {"type": "clarify", "question": question[:settings.assistant_history_chars]}
 
 
@@ -130,11 +163,24 @@ def declarations() -> list[dict]:
 def observation(data: dict) -> str:
     text = guard.sanitize(json.dumps(data, ensure_ascii=False))
     if len(text) > OBSERVATION_CHARS:
+        totals = {}
+        if "total_matches" in data:  # search counts must survive even when record text fills the observation
+            totals = {k: v for k, v in data.items() if k != "groups"}
+            totals["groups"] = [{k: v for k, v in g.items() if k != "items"} for g in data.get("groups", [])]
+            totals = json.loads(guard.sanitize(json.dumps(totals, ensure_ascii=False)))
+            if len(json.dumps({**totals, "truncated": True, "result": ""})) > OBSERVATION_CHARS:
+                # The minimum budget is 200 characters; compact counts still fit for all six kinds.
+                found = totals["total_matches"]
+                return json.dumps({
+                    "total_matches": f">={found}" if totals.get("total_capped") else found,
+                    "shown": totals["shown"], "totals": {
+                        g["type"]: f">={g['total']}" if g.get("total_capped") else g["total"] for g in totals["groups"]},
+                    "truncated": True}, ensure_ascii=False, separators=(",", ":"))
         fragment = text[:OBSERVATION_CHARS - 100]
-        capped = json.dumps({"truncated": True, "result": fragment}, ensure_ascii=False)
+        capped = json.dumps({**totals, "truncated": True, "result": fragment}, ensure_ascii=False)
         while len(capped) > OBSERVATION_CHARS:
             fragment = fragment[:len(fragment) // 2]
-            capped = json.dumps({"truncated": True, "result": fragment}, ensure_ascii=False)
+            capped = json.dumps({**totals, "truncated": True, "result": fragment}, ensure_ascii=False)
         return capped
     return text
 
@@ -147,7 +193,11 @@ def summarize(name: str, data: dict) -> str:
         return f"{len(data.get('companies', []))} companies"
     if name == "search":
         n = sum(len(g["items"]) for g in data.get("groups", []))
-        return f"{n} match{'es' if n != 1 else ''}" if n else data.get("note", "No matches")
+        total = data.get("total_matches") or n
+        if not n:
+            return data.get("note", "No matches")
+        found = f"{total}+" if data.get("total_capped") else str(total)
+        return f"{found} match{'es' if total != 1 else ''}" + (f", showing the best {n}" if total > n else "")
     if name == "get_document":
         return " · ".join(str(p) for p in (data.get("document_title") or data.get("doc_type"), data.get("doc_number"),
                                            data.get("company")) if p)
@@ -181,6 +231,7 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
     forced: list[dict] = []
     nudged_fresh = False
     turns = guard.trim_history(history)
+    topic = guard.topic(question, turns)  # a reply to "which company?" carries the question it answers
     contents = [{"role": "system", "content": system_instruction(manila_today())}]
     contents += history_contents(turns) + [{"role": "user", "content": question}]
     observed: list[str] = []
@@ -203,7 +254,7 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
             if not calls:
                 answer = llm.strip_think(resp.get("content") or "").strip()
                 remaining = settings.assistant_turn_seconds - (time.monotonic() - started)
-                if (not used and not nudged_fresh and turns and guard.firm_question(question)
+                if (not used and not nudged_fresh and turns and guard.firm_question(topic)
                         and not guard.declines(answer) and _step + 1 < MAX_STEPS
                         and remaining >= 1.5 * settings.assistant_llm_timeout_seconds):
                     # A firm question answered from the conversation alone: earlier answers may be stale or wrong.
@@ -214,7 +265,7 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                     answer = ""
                     continue
                 if await _needs_clarification(ctx, answer, used, coverage):
-                    yield clarify_event(answer)
+                    yield await with_replies(ctx, clarify_event(answer))
                     return
                 remaining = settings.assistant_turn_seconds - (time.monotonic() - started)
                 if (guard.overreach(answer) and not coverage.firm_wide and _step + 1 < MAX_STEPS
@@ -229,14 +280,22 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                     # The extra round looked nothing up: the first answer (minus its tool talk) is the better one.
                     answer = guard.drop_tool_talk(before_nudge)
                     break
-                missing = guard.missing_tools(question, used) if used else []
+                missing = guard.missing_tools(topic, used) if used else []
                 if missing and before_nudge is None and _step + 2 < MAX_STEPS \
                         and remaining >= 1.5 * settings.assistant_llm_timeout_seconds:
                     # A small model often answers half of a two-part question: look the other half up for it.
                     before_nudge, used_at_nudge = guard.drop_tool_talk(answer), len(used)
                     forced = [{"id": f"auto_{i}", "type": "function",
-                               "function": {"name": tool, "arguments": json.dumps(guard.default_args(tool, question))}}
+                               "function": {"name": tool, "arguments": json.dumps(guard.default_args(tool, topic))}}
                               for i, tool in enumerate(missing)]
+                    answer = ""
+                    continue
+                if guard.promises_lookup(answer) and before_nudge is None and _step + 1 < MAX_STEPS \
+                        and remaining >= 1.5 * settings.assistant_llm_timeout_seconds:
+                    before_nudge, used_at_nudge = answer, len(used)
+                    contents.append({"role": "assistant", "content": answer})
+                    contents.append({"role": "user", "content": "Go ahead: call the tool now instead of saying you "
+                                     "will, then give the answer."})
                     answer = ""
                     continue
                 named = guard.tool_talk(answer)
@@ -269,12 +328,16 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                 except (ValueError, TypeError):
                     args = {}
                     invalid = "Invalid JSON arguments: send a JSON object."
+                if name == "report" and not invalid and not (args.get("period") or args.get("start") or args.get("end")):
+                    said = guard.period_from(topic)  # the model dropped the period the person asked for
+                    if said:
+                        args = {**args, "period": said}
                 if index >= MAX_CALLS_PER_STEP:
                     invalid = "Too many calls in one round; use fewer tools."
                 if name == "ask_clarification" and not invalid:
                     question_text = llm.strip_think(str(args.get("question") or "")).strip()
                     if question_text:
-                        yield clarify_event(question_text)
+                        yield await with_replies(ctx, clarify_event(question_text))
                         return
                     invalid = "Ask one short clarification question."
                 key = f"{name}:{json.dumps(args, sort_keys=True, default=str)}"
@@ -321,9 +384,9 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
         if not answer:
             answer = "I couldn't put an answer together from what I found. Try asking more specifically."
         if stopped_early and await _needs_clarification(ctx, answer, used, coverage):
-            yield clarify_event(answer)
+            yield await with_replies(ctx, clarify_event(answer))
             return
-        answer = guard.humanize(guard.drop_tool_talk(answer) or answer)
+        answer = guard.humanize(guard.drop_plan_lead(guard.drop_tool_talk(answer) or answer))
         caveat = (f"\n\nI only checked {coverage.names()}; other companies weren't checked."
                   if guard.overreach(answer) and not coverage.firm_wide else "")
         answer = cap_answer(answer)
@@ -336,8 +399,8 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
         answer = cap_answer(answer)
         logger.info("assistant_turn user=%s tools=%s steps=%d ungrounded=%d ms=%d", ctx.user.id, ",".join(used),
                     len(used), len(loose), int((time.monotonic() - started) * 1000))
-        yield {"type": "final", "answer": answer, "sources": sources, "tools_used": used,
-               "grounded": not loose, "ungrounded_numbers": loose}
+        yield await with_replies(ctx, {"type": "final", "answer": answer, "sources": sources, "tools_used": used,
+                                       "grounded": not loose, "ungrounded_numbers": loose})
     except (TimeoutError, httpx.TimeoutException, httpx.ConnectError):
         raise
     except Exception:

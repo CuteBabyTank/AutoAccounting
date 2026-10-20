@@ -1,0 +1,91 @@
+/* Same-frame mascot art, with all overlays in the original 256px coordinate space. */
+.aa-bot {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  pointer-events: none;
+  vertical-align: middle;
+}
+.aa-bot-image, .aa-bot-wave, .aa-bot-game {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.aa-bot-image { transition: opacity 200ms var(--ease-out); }
+.aa-bot[data-state="thinking"] { animation: aa-bot-bob 1.8s var(--ease-in-out) infinite; }
+@keyframes aa-bot-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4%); }
+}
+.aa-bot-wave { overflow: visible; animation: aa-bot-wave-in 1.8s var(--ease-out) both; }
+.aa-bot-hand {
+  transform-box: view-box;
+  transform-origin: 82% 75%;
+  animation: aa-bot-wave 500ms var(--ease-in-out) 150ms 3;
+}
+@keyframes aa-bot-wave-in {
+  0%, 100% { opacity: 0; transform: translateY(4%); }
+  12%, 85% { opacity: 1; transform: translateY(0); }
+}
+@keyframes aa-bot-wave {
+  0%, 100% { transform: rotate(-12deg); }
+  50% { transform: rotate(16deg); }
+}
+.aa-bot-game { overflow: visible; animation: aa-bot-game-in 5.6s var(--ease-out) both; }
+@keyframes aa-bot-game-in {
+  0%, 100% { opacity: 0; }
+  4%, 96% { opacity: 1; }
+}
+.aa-bot-controller { animation: aa-bot-controller 5.6s var(--ease-out) both; }
+@keyframes aa-bot-controller {
+  0%, 100% { opacity: 0; transform: translateY(5%); }
+  5%, 94% { opacity: 1; transform: translateY(0); }
+}
+.aa-bot-piece { animation: aa-bot-drop 900ms steps(6, end) var(--aa-piece-delay) both; }
+@keyframes aa-bot-drop {
+  0% { opacity: 0; transform: translateY(-63px); }
+  1% { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.aa-bot-board { animation: aa-bot-board-out 160ms var(--ease-out) 4s both; }
+@keyframes aa-bot-board-out {
+  to { opacity: 0; }
+}
+.aa-bot-line { animation: aa-bot-line-clear 300ms linear 3.8s both; }
+@keyframes aa-bot-line-clear {
+  0%, 35%, 70%, 100% { opacity: 0; }
+  15%, 50% { opacity: 1; }
+}
+.aa-bot-result { animation: aa-bot-result 200ms var(--ease-out) 4.1s both; }
+@keyframes aa-bot-result {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.aa-bot-topout { animation: aa-bot-result 200ms steps(2, end) 3.65s both; }
+.aa-bot[data-scene="lose"] { animation: aa-bot-shake 300ms var(--ease-in-out) 4.1s; }
+@keyframes aa-bot-shake {
+  0%, 100% { transform: translateX(0); }
+  25%, 75% { transform: translateX(-2%); }
+  50% { transform: translateX(2%); }
+}
+.aa-bot-sparkles {
+  transform-origin: 47% 40%;
+  animation: aa-bot-sparkles 700ms var(--ease-out) 4.1s both;
+}
+@keyframes aa-bot-sparkles {
+  0% { opacity: 0; transform: scale(.95); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.15) translateY(-4%); }
+}
+.aa-bot-sweat { animation: aa-bot-sweat 850ms var(--ease-out) 4.4s both; }
+@keyframes aa-bot-sweat {
+  0% { opacity: 0; transform: translateY(-3%); }
+  25%, 75% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(4%); }
+}
+.aa-bot[data-paused="true"], .aa-bot[data-paused="true"] * { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .aa-bot, .aa-bot * { animation: none !important; transition: none; }
+  .aa-bot-wave, .aa-bot-game { display: none; }
+}

@@ -28,6 +28,7 @@ router = APIRouter()
 GROUP_TYPES = ("document", "contact", "bank_line", "journal_entry", "task", "company")
 _UNDATED = frozenset({"contact", "company"})
 MAX_LIMIT = 50
+SEARCH_COUNT_CAP = 1000
 _CANDIDATES = 4  # rows fetched per result shown, ranked in Python
 
 
@@ -159,6 +160,16 @@ def company_query(ent: uuid.UUID, q: SearchQuery, f: Filters, cap: int) -> Selec
     match = _any(_text(q, c.registered_name, cast(c.aliases, Text)), _tin(q, c.tin))
     return (select(c).where(c.enterprise_id == ent, *_company(f, c.id), match)
             .order_by(_exact(c.registered_name, q), c.registered_name).limit(cap))
+
+
+def count_query(kind: str, ent: uuid.UUID, q: SearchQuery, f: Filters) -> Select:
+    """Count the same joins and filters without sorting or loading records, stopping just past the cap."""
+    build = {"document": document_query, "contact": contact_query, "bank_line": bank_query,
+             "journal_entry": journal_query, "task": task_query, "company": company_query}[kind]
+    query = build(ent, q, f, SEARCH_COUNT_CAP + 1)
+    matches = (select(1).select_from(*query.get_final_froms()).where(query.whereclause)
+               .limit(SEARCH_COUNT_CAP + 1).subquery())
+    return select(func.count()).select_from(matches)
 
 
 # ---- result items ----------------------------------------------------------------------------------------------

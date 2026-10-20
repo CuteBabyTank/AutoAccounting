@@ -240,8 +240,15 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   a firm question answered from history alone is looked up again; a part of the question a tool clearly owns
   (`guard.missing_tools`: overdue/due → filings, review → company_health) is looked up by the server itself
   (`guard.default_args`); an answer naming a tool gets one targeted extra round, else the tool sentence is dropped
-  (`guard.drop_tool_talk`). The Next dev indicator sits bottom-left (`next.config.ts`) so it doesn't cover the launcher.
-  Per-person rate limit: 40 turns / 10 minutes. Sources are limited to 12; list results to 25 (filings 50), GL lines 30.
+  (`guard.drop_tool_talk`); an answer that only promises a lookup ("Let me check…") gets one more round; a report call
+  with no period takes the one the person said (`guard.period_from`). Answers pass through `guard.humanize` (no dashes,
+  dates spelled out). Quick replies: `final` / `clarify` carry `replies` (`loop.with_replies`): the firm's company
+  names when it asks "which company?" (named ones, else all when ≤ 6), else `["Yes"]` for a yes/no; the dock shows
+  them as buttons plus "No, I'll type it" / "Something else". A short reply is read with the question it answers
+  (`guard.topic`). The Next dev indicator sits bottom-left (`next.config.ts`) so it doesn't cover the launcher.
+  Per-person rate limit: 40 turns / 10 minutes. Search sends the model the best 10 hits across all record kinds
+  (`tools.SEARCH_K`) with true per-kind and overall totals (counts above 1000 per kind are marked as at least 1000);
+  sources are limited to 12; list results to 25 (filings 50), GL lines 30.
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.
 - **Frontend token** lives in `sessionStorage` (`autoaccounting_token`). The axios interceptor attaches it, and on 401 it is cleared and AuthGate redirects.
 

@@ -26,6 +26,7 @@ from app.services.accounting.report_export import jsonable
 from app.services.accounting.search import like_pattern
 
 MAX_LIST = 25      # rows of a list shown to the model
+SEARCH_K = 10      # search hits shown to the model, best first across all record kinds
 MAX_GL_LINES = 30  # postings across a GL detail
 OVERDUE_LOOKBACK_DAYS = 365
 
@@ -137,7 +138,7 @@ _TYPES = ("document", "contact", "bank_line", "journal_entry", "task", "company"
 
 async def search(ctx: Ctx, query: str = "", company: str | None = None, types: list[str] | None = None,
                  date_from: str | None = None, date_to: str | None = None, review_only: bool = False) -> Result:
-    from app.routers.accounting_search import Filters, _group, groups_for, rank
+    from app.routers.accounting_search import SEARCH_COUNT_CAP, Filters, _group, count_query, groups_for, rank
     from app.services.accounting.search import parse_query
 
     company_id = (await resolve_company(ctx, company)).id if company else None
@@ -145,18 +146,37 @@ async def search(ctx: Ctx, query: str = "", company: str | None = None, types: l
     f = Filters(company_id=company_id, date_from=_date(date_from, "date_from"), date_to=_date(date_to, "date_to"),
                 review=bool(review_only))
     wanted = [t for t in (types or []) if t in _TYPES] or None
-    limit = 8
-    groups, sources = [], []
+    hits: list[tuple[str, dict]] = []
+    totals: dict[str, dict] = {}
     for kind in groups_for(q, f, wanted):
-        items, more = rank(await _group(ctx.db, kind, ctx.ent, q, f, limit * 4 + 1), limit)
-        if items:
-            groups.append({"type": kind, "more": more, "items": [
-                {k: v for k, v in i.items() if k not in ("score", "matched")} for i in items]})
-            sources += items
-    if not groups:
-        why = "Type at least two characters." if q.too_short and not review_only else "No matches."
-        return Result({"groups": [], "note": why})
-    return Result({"groups": groups}, sources)
+        count = (await ctx.db.execute(count_query(kind, ctx.ent, q, f))).scalar_one()
+        totals[kind] = {"total": min(count, SEARCH_COUNT_CAP)}
+        if count > SEARCH_COUNT_CAP:
+            totals[kind]["total_capped"] = True
+        items, _ = rank(await _group(ctx.db, kind, ctx.ent, q, f, SEARCH_K * 4 + 1), SEARCH_K)
+        hits += [(kind, i) for i in items]
+    # Only the best SEARCH_K across every kind reach the model: more context costs tokens and adds little.
+    hits.sort(key=lambda h: -(h[1].get("score") or 0))
+    hits = hits[:SEARCH_K]
+    groups: list[dict] = []
+    for kind, item in hits:
+        group = next((g for g in groups if g["type"] == kind), None)
+        if group is None:
+            groups.append(group := {"type": kind, **totals[kind], "items": []})
+        group["items"].append({k: v for k, v in item.items() if k not in ("score", "matched")})
+    groups += [{"type": kind, **total, "items": []} for kind, total in totals.items()
+               if not any(g["type"] == kind for g in groups)]
+    sources = [i for _, i in hits]
+    total_matches = sum(t["total"] for t in totals.values())
+    capped = any(t.get("total_capped") for t in totals.values())
+    data: dict = {"total_matches": total_matches, "shown": len(hits)}
+    if capped:
+        data["total_capped"] = True
+    if total_matches > len(hits):
+        found = f"at least {total_matches}" if capped else str(total_matches)
+        data["note"] = (f"Showing the {len(hits)} best of {found} matches. Use these totals for any count; "
+                        "narrow by company, type or date to see others.")
+    return Result({**data, "groups": groups}, sources)
 
 
 # ---- get_document -------------------------------------------------------------------------------------------------

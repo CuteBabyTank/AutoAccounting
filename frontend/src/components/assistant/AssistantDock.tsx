@@ -218,7 +218,7 @@ export default function AssistantDock() {
 
   return (
     <>
-      <CasperLauncher open={open} state={mascotState} notice={casperNotice} onOpen={() => setOpen(true)} onAsk={(question) => { setOpen(true); void send(question); }} />
+      <CasperLauncher open={open} state={mascotState} notice={casperNotice} onOpen={() => setOpen(true)} />
       {open && (
         <aside
           aria-label="Assistant"

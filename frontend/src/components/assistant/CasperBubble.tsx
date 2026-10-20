@@ -2,25 +2,20 @@
 
 import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { ArrowRight, ArrowCounterClockwise, X } from "@phosphor-icons/react";
-import { CASPER_LINES } from "./casper-lines";
 import { placeCasperBubble, type CasperPoint, type CasperViewport } from "./casper-position";
 
 interface CasperBubbleProps {
   point: CasperPoint;
   view: CasperViewport;
   text: string;
-  index?: number;
-  notice: boolean;
+  kind: "greeting" | "notice" | "menu";
   leaving: boolean;
-  onNext: () => void;
   onAction: () => void;
   onClose: () => void;
   onReset: () => void;
-  onHover: (hovered: boolean) => void;
-  onFocus: (focused: boolean) => void;
 }
 
-export default function CasperBubble({ point, view, text, index, notice, leaving, onNext, onAction, onClose, onReset, onHover, onFocus }: CasperBubbleProps) {
+export default function CasperBubble({ point, view, text, kind, leaving, onAction, onClose, onReset }: CasperBubbleProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(180);
   const width = Math.min(view.width < 768 ? 228 : 260, view.width - 16);
@@ -42,31 +37,25 @@ export default function CasperBubble({ point, view, text, index, notice, leaving
       data-side={place.side}
       data-leaving={leaving}
       style={{ left: place.x, top: place.y, width, "--casper-tail": `${place.tail}px` } as CSSProperties}
-      onMouseEnter={() => onHover(true)}
-      onMouseLeave={() => onHover(false)}
-      onFocusCapture={() => onFocus(true)}
-      onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onFocus(false); }}
-      onClick={(e) => { if (!(e.target as Element).closest("button")) onAction(); }}
+      onClick={(e) => { if (kind === "notice" && !(e.target as Element).closest("button")) onAction(); }}
     >
       <div ref={ref} className="aa-casper-bubble-content" style={{ maxHeight: place.maxHeight }}>
         <div className="aa-casper-bubble-heading">
-          <span>Casper <span className="aa-casper-bubble-caption">{notice ? "has news" : index === undefined ? "at your service" : "says hello"}</span></span>
+          <span>Casper <span className="aa-casper-bubble-caption">{kind === "notice" ? "has news" : kind === "menu" ? "at your service" : "says hello"}</span></span>
           <button type="button" onClick={onClose} aria-label="Close Casper's bubble" className="aa-casper-small-button"><X size={14} /></button>
         </div>
         <div aria-live="polite" aria-atomic="true">
-          <button type="button" className="aa-casper-bubble-message" onClick={onAction}>
-            {text}
-            {(notice || (index !== undefined && CASPER_LINES[index].question)) && <ArrowRight size={14} className="inline-block ml-1 align-middle" />}
-          </button>
-        </div>
-        <div className="aa-casper-bubble-footer">
-          {index !== undefined && (
-            <button type="button" onClick={onNext} aria-label={`Next Casper tip (${index + 1} of ${CASPER_LINES.length})`} className="aa-casper-dots">
-              {CASPER_LINES.map((_, i) => <span key={i} data-active={i === index} />)}
+          {kind === "notice" ? (
+            <button type="button" className="aa-casper-bubble-message" onClick={onAction}>
+              {text}<ArrowRight size={14} className="inline-block ml-1 align-middle" />
             </button>
-          )}
-          <button type="button" className="aa-casper-reset" onClick={onReset}><ArrowCounterClockwise size={12} /> Reset position</button>
+          ) : <div className="aa-casper-bubble-message">{text}</div>}
         </div>
+        {kind !== "greeting" && (
+          <div className="aa-casper-bubble-footer">
+            <button type="button" className="aa-casper-reset" onClick={onReset}><ArrowCounterClockwise size={12} /> Reset position</button>
+          </div>
+        )}
       </div>
     </div>
   );

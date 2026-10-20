@@ -42,9 +42,6 @@
 .aa-casper-small-button:hover, .aa-casper-options:hover { background: var(--bg-hover); color: var(--text-primary); }
 .aa-casper-bubble-message { display: block; width: 100%; padding: 7px 0 10px; text-align: left; font-size: 14px; line-height: 1.5; border-radius: 4px; }
 .aa-casper-bubble-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px; }
-.aa-casper-dots { display: flex; align-items: center; gap: 4px; min-height: 24px; padding: 4px 0; border-radius: 4px; }
-.aa-casper-dots span { width: 5px; height: 5px; border-radius: 50%; background: var(--border); }
-.aa-casper-dots span[data-active="true"] { background: var(--accent); }
 .aa-casper-reset { display: flex; align-items: center; gap: 4px; min-height: 24px; font-size: 11px; color: var(--text-secondary); border-radius: 4px; }
 .aa-casper-reset:hover { color: var(--accent); }
 .aa-casper-bubble button:focus-visible, .aa-casper-options:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

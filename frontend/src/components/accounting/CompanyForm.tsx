@@ -47,8 +47,21 @@ interface Props {
   onSaved: (company: Company) => void;
 }
 
+/** First day of the fiscal year today is in (fiscal year Y ends in its year-end month of calendar year Y). */
+function fiscalYearStart(fyEnd: number, today = new Date()): string {
+  const endYear = today.getMonth() + 1 <= fyEnd ? today.getFullYear() : today.getFullYear() + 1;
+  const startYear = fyEnd === 12 ? endYear : endYear - 1;
+  return `${startYear}-${String((fyEnd % 12) + 1).padStart(2, "0")}-01`;
+}
+
 export default function CompanyForm({ initial, companyId, onClose, onSaved }: Props) {
-  const [form, setForm] = useState<CompanyInput>({ ...EMPTY, ...initial });
+  // Books are on by default for a new company, from the start of its fiscal year; clearing the date keeps it returns-only.
+  const [form, setForm] = useState<CompanyInput>(() => {
+    const start = { ...EMPTY, ...initial };
+    if (!companyId && initial?.books_start === undefined) start.books_start = fiscalYearStart(start.fiscal_year_end_month);
+    return start;
+  });
+  const [booksTouched, setBooksTouched] = useState(Boolean(companyId) || initial?.books_start !== undefined);
   const [aliases, setAliases] = useState((initial?.aliases ?? []).join(", "));
   const [owners, setOwners] = useState((initial?.owner_names ?? []).join(", "));
   const [saving, setSaving] = useState(false);
@@ -223,7 +236,10 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
           )}
           <div>
             <label className={LABEL}>Fiscal year ends</label>
-            <select className={INPUT} value={form.fiscal_year_end_month} onChange={(e) => set("fiscal_year_end_month", Number(e.target.value))}>
+            <select className={INPUT} value={form.fiscal_year_end_month} onChange={(e) => {
+              const fyEnd = Number(e.target.value);
+              setForm((f) => ({ ...f, fiscal_year_end_month: fyEnd, books_start: booksTouched ? f.books_start : fiscalYearStart(fyEnd) }));
+            }}>
               {MONTHS.map((m, i) => (
                 <option key={m} value={i + 1}>{m}</option>
               ))}
@@ -261,10 +277,13 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
                   type="date"
                   className={INPUT}
                   value={form.books_start ?? ""}
-                  onChange={(e) => set("books_start", e.target.value || null)}
+                  onChange={(e) => {
+                    setBooksTouched(true);
+                    set("books_start", e.target.value || null);
+                  }}
                 />
                 <span className="mt-0.5 block text-[11px] text-[var(--text-secondary)]">
-                  Leave empty to keep returns only. Enter the opening balances as of this date in Books.
+                  Clear it to keep returns only. Enter the opening balances as of this date in Books.
                 </span>
               </div>
               <div>

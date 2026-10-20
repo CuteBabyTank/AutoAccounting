@@ -63,6 +63,11 @@ export const DOCUMENTS_SPOTS: Spot[] = [
     body: "Whatever you open on the left shows here: documents to check, the quarter's BIR returns, books, bank and reports.",
   },
   {
+    target: "books-off",
+    title: "Returns only, or full books?",
+    body: "This client gets BIR returns only. Turn on books to also keep their journals, ledger and financial statements, and to get Reports.",
+  },
+  {
     target: "getting-started",
     title: "Your first steps",
     body: "This checklist ticks itself off as you go, and hides once you're set up.",

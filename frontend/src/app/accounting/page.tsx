@@ -17,6 +17,7 @@ import AuditLogPanel from "@/components/accounting/AuditLogPanel";
 import BankPanel from "@/components/accounting/BankPanel";
 import ContactsPanel from "@/components/accounting/ContactsPanel";
 import CompanyOverviewPanel from "@/components/accounting/CompanyOverviewPanel";
+import BooksOffCard from "@/components/accounting/BooksOffCard";
 import PeriodPanel from "@/components/accounting/PeriodPanel";
 import ReportsPanel from "@/components/accounting/ReportsPanel";
 import ReclassifyPanel from "@/components/accounting/ReclassifyPanel";
@@ -557,6 +558,22 @@ export default function AccountingPage() {
               ) : (
                 <p className="py-6 text-sm text-[var(--text-secondary)]">Set a Books start on the company to import opening balances and journals.</p>
               );
+            })()}
+            {selected?.view === "overview" && (() => {
+              const c = companies.find((x) => x.id === selected.companyId);
+              return c && !c.books_start && on("books") ? (
+                <BooksOffCard
+                  key={`books-off-${c.id}`}
+                  company={c}
+                  tree={tree.find((t) => t.id === c.id)}
+                  canManage={canManage}
+                  onTurnedOn={(start) => {
+                    setNotice(`Books are on from ${start}. Open Books to enter the opening balances, or import a trial balance under Import.`);
+                    loadCompanies().catch(() => undefined);
+                    loadTree().catch(() => undefined);
+                  }}
+                />
+              ) : null;
             })()}
             {selected?.view === "overview" && (
               <CompanyOverviewPanel

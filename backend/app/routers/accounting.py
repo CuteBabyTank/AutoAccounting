@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import re
 import shutil
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -46,6 +46,7 @@ from app.services.accounting import audit, move_company, pipeline
 from app.services.accounting.books.links import relink_receipts
 from app.services.accounting.books.chart import locked_message
 from app.services.accounting.books.loader import ensure_chart, touch_books
+from app.services.accounting.books.books_start import default_books_start
 from app.services.accounting.compute.reclassify import document_main_account
 from app.services.accounting.review_rules import BULK_MAX, LOCKED_REASON, bulk_targets, flag_locked, sync_receipt_flag
 from app.services.accounting import duplicates
@@ -116,8 +117,10 @@ async def create_company(
     ent = _scope(user)
     _require_manager(user)
     template = body.coa_template.strip()
-    company = AACompany(id=uuid.uuid4(), enterprise_id=ent, created_by=user.id,
-                        **body.model_dump(exclude={"coa_template"}))
+    fields = body.model_dump(exclude={"coa_template"})
+    if "books_start" not in body.model_fields_set:  # books are on unless the request turns them off (null)
+        fields["books_start"] = default_books_start(body.fiscal_year_end_month, None, date.today())
+    company = AACompany(id=uuid.uuid4(), enterprise_id=ent, created_by=user.id, **fields)
     db.add(company)
     try:
         await db.flush()  # the TIN clash surfaces here, before the event is added

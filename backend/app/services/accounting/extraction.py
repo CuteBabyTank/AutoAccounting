@@ -7,7 +7,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.ocr import clean_text
-from app.services.accounting.parsing import normalize_tin, parse_doc_date, parse_money
+from app.services.accounting.parsing import normalize_tin, parse_doc_date, parse_money, printed_branch
 
 KINDS = ("invoice", "receipt", "bir2307", "payroll", "import", "statement", "other")
 NATURES = ("goods_for_resale", "raw_materials", "capital_goods", "services", "import", "payroll", "other")
@@ -23,14 +23,15 @@ Look at this first page and identify the two parties.
 Reply with ONLY valid JSON, no markdown fences, no explanation:
 {"document_title": "<title printed on the document, e.g. SALES INVOICE, OFFICIAL RECEIPT, BIR FORM 2307>",
  "kind": "<invoice|receipt|bir2307|payroll|import|statement|other>",
- "seller": {"name": "<issuer / seller / payee>", "tin": "<TIN as printed>"},
- "buyer": {"name": "<customer / buyer / payor>", "tin": "<TIN as printed>"},
+ "seller": {"name": "<issuer / seller / payee>", "tin": "<TIN as printed, every digit incl. the branch code>"},
+ "buyer": {"name": "<customer / buyer / payor>", "tin": "<TIN as printed, every digit incl. the branch code>"},
  "date": "<document date as YYYY-MM-DD, or empty>"}
 
 Rules:
 - On a BIR Form 2307 the payee is the seller and the payor is the buyer.
 - On a payroll register the employer is the buyer; leave seller empty.
-- Use "" for anything not printed. Never guess a TIN."""
+- Copy a TIN with ALL its digits, including the branch code after the 9-digit number (010-234-567-000 or
+  010-234-567-00000), never only the first 9. Use "" for anything not printed. Never guess a TIN."""
 
 EXTRACT_PROMPT = """You are extracting accounting data from Philippine business documents for a bookkeeper.
 The file may contain ONE or MANY separate documents (for example a scan of 40 receipts, one per page,
@@ -84,6 +85,9 @@ Rules:
   repeats a document already in this file (a second copy or a rescan). Only merge pages that continue one document.
 - For a bank statement list every transaction line in order, across all its pages, in "statement".lines.
 - Amounts are plain numbers without currency symbols; use 0 when not shown.
+- Copy a TIN with ALL its digits as printed, including the branch code after the 9-digit number (e.g.
+  "010-234-567-000" or "010-234-567-00000"). Never stop at the first 9 digits and never add a branch code that
+  isn't printed.
 - Use "" for text that is not printed. Never invent a TIN or a document number."""
 
 
@@ -110,6 +114,8 @@ class Party:
     tin: str = ""          # 9-digit base, "" when unknown
     branch: str = "00000"
     address: str = ""
+    # The branch digits as printed ("000" stays "000"), "" when none: display only, so not part of equality.
+    printed_branch: str = field(default="", compare=False)
 
 
 @dataclass(frozen=True)
@@ -172,6 +178,7 @@ def _party(obj) -> Party:
         name=_text(obj.get("name"), 255),
         tin=tin,
         branch=branch or "00000",
+        printed_branch=printed_branch(str(obj.get("tin") or "")) if tin else "",
         address=_text(obj.get("address"), 500),
     )
 

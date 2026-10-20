@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import AmountInput from "@/components/AmountInput";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
@@ -207,9 +208,11 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
                         <option value="Y">Yes</option>
                         <option value="N">No</option>
                       </select>
+                    ) : k.startsWith("nt_") || k.startsWith("t_") || k.startsWith("tax_") ? (
+                      <AmountInput className={INPUT} value={String(editing.data[k] ?? "")}
+                        onValueChange={(v) => setEditing({ ...editing, data: { ...editing.data, [k]: v } })} />
                     ) : (
                       <input className={INPUT} type={DATE_KEYS.has(k) ? "date" : "text"} value={String(editing.data[k] ?? "")}
-                        inputMode={k.startsWith("nt_") || k.startsWith("t_") || k.startsWith("tax_") ? "decimal" : undefined}
                         onChange={(e) => setEditing({ ...editing, data: { ...editing.data, [k]: e.target.value } })} />
                     )}
                   </label>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import AmountInput from "@/components/AmountInput";
 import { Plus, Trash } from "@phosphor-icons/react";
 import type { Account, JournalEntryInput, JournalLine } from "@/types/accounting";
 
@@ -83,8 +84,8 @@ export default function JournalEntryForm({ accounts, initial, busy, onCancel, on
                   ))}
                 </select>
               </td>
-              <td className="py-0.5 pr-2"><input className={INPUT} inputMode="decimal" value={l.debit} onChange={(e) => setLine(i, { debit: e.target.value, credit: e.target.value ? "" : l.credit })} /></td>
-              <td className="py-0.5 pr-2"><input className={INPUT} inputMode="decimal" value={l.credit} onChange={(e) => setLine(i, { credit: e.target.value, debit: e.target.value ? "" : l.debit })} /></td>
+              <td className="py-0.5 pr-2"><AmountInput className={INPUT} aria-label="Debit" value={l.debit} onValueChange={(v) => setLine(i, { debit: v, credit: v ? "" : l.credit })} /></td>
+              <td className="py-0.5 pr-2"><AmountInput className={INPUT} aria-label="Credit" value={l.credit} onValueChange={(v) => setLine(i, { credit: v, debit: v ? "" : l.debit })} /></td>
               <td className="py-0.5 pr-2"><input className={INPUT} maxLength={255} value={l.party_name} onChange={(e) => setLine(i, { party_name: e.target.value })} /></td>
               <td>
                 {lines.length > 2 && (

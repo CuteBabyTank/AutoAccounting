@@ -178,6 +178,10 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   links are cleared (`CLEARED_FIELDS`), the file stays put, both companies get relink + rematch + duplicates, and the
   audit log gets `move_out` / `move_in`. Refused (409, `move_problem`) for statements, assets, confirmed bank matches,
   write-offs and 2307s marked received; a new way to tie a document to its company needs a `MoveFacts` guard.
+- **TIN branch codes:** `seller_tin` / `buyer_tin` stay the 9-digit base everything matches on; the branch digits as
+  printed ("000") live in `seller_branch` / `buyer_branch` (extraction: `Party.printed_branch`; forms still pad via
+  `normalize_tin`). The panel shows / edits the full TIN (`formatTin(tin, branch)`). Documents read before
+  2026-10-20: `python -m app.services.accounting.books.tin_branches [--dry-run]`.
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.
 - **Frontend token** lives in `sessionStorage` (`autoaccounting_token`). The axios interceptor attaches it, and on 401 it is cleared and AuthGate redirects.
 

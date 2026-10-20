@@ -179,10 +179,13 @@ class AADocument(Base):
     period_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     seller_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     seller_tin: Mapped[str] = mapped_column(String(9), nullable=False, default="")
+    # Branch code digits as printed after the TIN ("000"); the 9-digit TIN alone is what everything matches on.
+    seller_branch: Mapped[str] = mapped_column(String(5), nullable=False, default="", server_default="")
     seller_address: Mapped[str] = mapped_column(Text, nullable=False, default="")
     seller_vat_registered: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     buyer_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     buyer_tin: Mapped[str] = mapped_column(String(9), nullable=False, default="")
+    buyer_branch: Mapped[str] = mapped_column(String(5), nullable=False, default="", server_default="")
     buyer_address: Mapped[str] = mapped_column(Text, nullable=False, default="")
     gross_amount: Mapped[Decimal] = _money()
     vatable_amount: Mapped[Decimal] = _money()

@@ -488,8 +488,8 @@ async def retry_upload(
 # --- Tree, folders, documents --------------------------------------------------
 
 _PLAIN_FIELDS = (
-    "category", "account", "doc_number", "doc_date", "seller_name", "seller_tin", "seller_address", "buyer_name",
-    "buyer_tin", "gross_amount", "vatable_amount", "vat_amount", "exempt_amount",
+    "category", "account", "doc_number", "doc_date", "seller_name", "seller_tin", "seller_branch", "seller_address",
+    "buyer_name", "buyer_tin", "buyer_branch", "gross_amount", "vatable_amount", "vat_amount", "exempt_amount",
     "zero_rated_amount", "withholding_amount", "vat_treatment", "reviewed", "excluded", "ewt_atc",
     "paid_on", "paid_via", "payment_ref",
 )

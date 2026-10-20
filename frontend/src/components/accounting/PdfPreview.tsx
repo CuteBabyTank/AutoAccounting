@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import AmountInput from "@/components/AmountInput";
 import { createPortal } from "react-dom";
 import { ArrowCounterClockwise, ArrowSquareOut, DownloadSimple, X } from "@phosphor-icons/react";
 import { apiErrorMessage, saveBlob } from "@/lib/accounting-format";
@@ -197,12 +198,19 @@ export default function PdfPreview({ title, docs, render, onExport, exportLabel,
                   return (
                     <label key={f.key} className="block">
                       <span className="mb-0.5 block text-xs text-[var(--text-secondary)]">{f.label}</span>
-                      <input
-                        className={`${INPUT} ${f.kind === "amount" ? "text-right tabular-nums" : ""} ${changed ? "border-[var(--accent)] bg-[var(--accent-subtle)]" : "border-[var(--border)]"}`}
-                        inputMode={f.kind === "amount" ? "decimal" : undefined}
-                        value={value}
-                        onChange={(e) => setField(f, e.target.value)}
-                      />
+                      {f.kind === "amount" ? (
+                        <AmountInput
+                          className={`${INPUT} text-right tabular-nums ${changed ? "border-[var(--accent)] bg-[var(--accent-subtle)]" : "border-[var(--border)]"}`}
+                          value={value}
+                          onValueChange={(v) => setField(f, v)}
+                        />
+                      ) : (
+                        <input
+                          className={`${INPUT} ${changed ? "border-[var(--accent)] bg-[var(--accent-subtle)]" : "border-[var(--border)]"}`}
+                          value={value}
+                          onChange={(e) => setField(f, e.target.value)}
+                        />
+                      )}
                       {changed && (
                         <span className="mt-0.5 block text-[11px] text-[var(--text-secondary)]">Was {f.value || "blank"}</span>
                       )}

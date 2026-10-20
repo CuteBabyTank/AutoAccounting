@@ -160,10 +160,13 @@ export interface AADocument {
   period_locked: boolean;
   seller_name: string;
   seller_tin: string;
+  /** Branch code as printed after the TIN ("000"), "" when none. */
+  seller_branch: string;
   seller_address: string;
   seller_vat_registered: boolean | null;
   buyer_name: string;
   buyer_tin: string;
+  buyer_branch: string;
   buyer_address: string;
   gross_amount: string;
   vatable_amount: string;

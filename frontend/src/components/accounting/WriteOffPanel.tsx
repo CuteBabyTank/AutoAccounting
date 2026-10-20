@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import AmountInput from "@/components/AmountInput";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { extrasApi } from "@/lib/extras-api";
@@ -104,7 +105,7 @@ export default function WriteOffPanel({ companyId, asOf, onClose, onDone }: Prop
           At least <input className={`${INPUT} w-20`} inputMode="numeric" value={minDays} onChange={(e) => setMinDays(e.target.value)} /> days past due
         </label>
         <label className="flex items-center gap-1 text-[var(--text-secondary)]">
-          Balance up to ₱ <input className={`${INPUT} w-28`} inputMode="decimal" placeholder="any" value={maxBalance} onChange={(e) => setMaxBalance(e.target.value)} />
+          Balance up to ₱ <AmountInput className={`${INPUT} w-28`} placeholder="any" value={maxBalance} onValueChange={setMaxBalance} />
         </label>
         <span className="text-xs text-[var(--text-secondary)]">Open as of {asOf}{data?.last_closed ? ` · books closed through ${data.last_closed}` : ""}</span>
       </div>

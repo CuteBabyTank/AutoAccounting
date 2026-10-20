@@ -89,9 +89,16 @@ export const BOOK_LABELS: Record<string, string> = {
   GL: "General Ledger",
 };
 
-export function formatTin(tin: string): string {
+/** "010-234-567", or with the branch code as printed: ("010234567", "000") → "010-234-567-000". */
+export function formatTin(tin: string, branch = ""): string {
   const d = (tin || "").replace(/\D/g, "");
-  return d.length >= 9 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6, 9)}` : d;
+  return d.length >= 9 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6, 9)}${branch ? `-${branch}` : ""}` : d;
+}
+
+/** The branch code digits typed after the 9-digit TIN ("010-234-567-000" → "000"). */
+export function tinBranch(text: string): string {
+  const digits = text.replace(/\D/g, "");
+  return digits.length > 9 ? digits.slice(9, 14) : "";
 }
 
 export function formatPeso(value: string | number): string {

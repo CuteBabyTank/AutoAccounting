@@ -5,9 +5,10 @@ import { ArrowsLeftRight, X } from "@phosphor-icons/react";
 import AssetSection from "@/components/accounting/AssetSection";
 import AuditTrail, { formatWhen } from "@/components/accounting/AuditTrail";
 import DuplicateCompare from "@/components/accounting/DuplicateCompare";
+import AmountInput from "@/components/AmountInput";
 import MoveDocumentDialog from "@/components/accounting/MoveDocumentDialog";
 import { accountingApi } from "@/lib/accounting-api";
-import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, EWT_ATC_OPTIONS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, formatPeso, reasonDetail } from "@/lib/accounting-format";
+import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, EWT_ATC_OPTIONS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, formatPeso, reasonDetail, formatTin, tinBranch } from "@/lib/accounting-format";
 import type { AADocument, Account, AuditEvent, DocumentPatch, DuplicatePair, PaymentLinks } from "@/types/accounting";
 import PageViewer from "@/components/accounting/PageViewer";
 
@@ -34,10 +35,10 @@ function toDraft(doc: AADocument): Draft {
     category: doc.category,
     account: doc.account,
     seller_name: doc.seller_name,
-    seller_tin: doc.seller_tin,
+    seller_tin: formatTin(doc.seller_tin, doc.seller_branch),
     seller_address: doc.seller_address,
     buyer_name: doc.buyer_name,
-    buyer_tin: doc.buyer_tin,
+    buyer_tin: formatTin(doc.buyer_tin, doc.buyer_branch),
     gross_amount: doc.gross_amount,
     vatable_amount: doc.vatable_amount,
     vat_amount: doc.vat_amount,
@@ -188,7 +189,11 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
       if (value === initial[key]) continue;
       if (key === "doc_date" || key === "paid_on") patch[key] = value || null;
       else if (AMOUNT_KEYS.has(key)) patch[key] = value.trim() || "0";
-      else patch[key] = value;
+      else if (key === "seller_tin" || key === "buyer_tin") {
+        // The server keeps the 9-digit TIN; the branch code as typed goes beside it.
+        patch[key] = value;
+        patch[key === "seller_tin" ? "seller_branch" : "buyer_branch"] = tinBranch(value);
+      } else patch[key] = value;
     }
     if (Object.keys(patch).length === 0) return true;
     setBusy(true);
@@ -241,12 +246,16 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
   const field = (key: string, label: string, type = "text") => (
     <div>
       <label className={LABEL}>{label}</label>
-      <input
-        type={type}
-        className={INPUT}
-        value={draft[key] ?? ""}
-        onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
-      />
+      {AMOUNT_KEYS.has(key) ? (
+        <AmountInput className={INPUT} value={draft[key] ?? ""} onValueChange={(v) => setDraft((d) => ({ ...d, [key]: v }))} />
+      ) : (
+        <input
+          type={type}
+          className={INPUT}
+          value={draft[key] ?? ""}
+          onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+        />
+      )}
     </div>
   );
 

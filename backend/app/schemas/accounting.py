@@ -255,10 +255,12 @@ class DocumentOut(BaseModel):
     period_locked: bool
     seller_name: str
     seller_tin: str
+    seller_branch: str = ""
     seller_address: str
     seller_vat_registered: bool | None
     buyer_name: str
     buyer_tin: str
+    buyer_branch: str = ""
     buyer_address: str
     gross_amount: Decimal
     vatable_amount: Decimal
@@ -324,9 +326,11 @@ class DocumentPatch(BaseModel):
     period_quarter: int | None = Field(default=None, ge=1, le=4)
     seller_name: str | None = Field(default=None, max_length=255)
     seller_tin: str | None = None
+    seller_branch: str | None = Field(default=None, pattern=r"^\d{0,5}$")
     seller_address: str | None = Field(default=None, max_length=500)
     buyer_name: str | None = Field(default=None, max_length=255)
     buyer_tin: str | None = None
+    buyer_branch: str | None = Field(default=None, pattern=r"^\d{0,5}$")
     gross_amount: Decimal | None = _money_field()
     vatable_amount: Decimal | None = _money_field()
     vat_amount: Decimal | None = _money_field()

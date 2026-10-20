@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AmountInput from "@/components/AmountInput";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import type { Asset } from "@/types/accounting";
@@ -116,7 +117,7 @@ export default function OpeningAssets({ companyId, year, openingPpe, onChanged }
           </div>
           <div>
             <label className={LABEL}>Net book value at the books&apos; start</label>
-            <input inputMode="decimal" className={INPUT} value={cost} onChange={(e) => setCost(e.target.value)} />
+            <AmountInput className={INPUT} value={cost} onValueChange={setCost} />
           </div>
           <div>
             <label className={LABEL}>Remaining life (years)</label>

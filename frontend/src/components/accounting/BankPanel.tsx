@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import AmountInput from "@/components/AmountInput";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
@@ -299,8 +300,8 @@ export default function BankPanel({ companyId, account, month, canManage, onChan
                         {l.candidates.length > 0 && (
                           <label className="flex items-center gap-2 text-[var(--text-secondary)]">
                             Part payment only?
-                            <input className={`${INPUT} w-28`} inputMode="decimal" placeholder={formatPeso(Math.abs(Number(l.amount)))} value={partial}
-                              onChange={(e) => setPartial(e.target.value.replace(/[^\d.]/g, ""))} />
+                            <AmountInput className={`${INPUT} w-28`} placeholder={formatPeso(Math.abs(Number(l.amount)))} value={partial}
+                              onValueChange={(v) => setPartial(v.replace(/[^\d.]/g, ""))} />
                           </label>
                         )}
                         <div className="flex flex-wrap items-center gap-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { ACCOUNT_LABELS, CATEGORY_LABELS, REASON_LABELS } from "@/lib/accounting-format";
+import { ACCOUNT_LABELS, CATEGORY_LABELS, REASON_LABELS, formatPeso } from "@/lib/accounting-format";
 import type { AuditEvent } from "@/types/accounting";
 
 export const ENTITY_LABELS: Record<string, string> = {
@@ -104,8 +104,10 @@ const FIELD_LABELS: Record<string, string> = {
   account: "Account",
   seller_name: "Seller",
   seller_tin: "Seller TIN",
+  seller_branch: "Seller branch code",
   buyer_name: "Buyer",
   buyer_tin: "Buyer TIN",
+  buyer_branch: "Buyer branch code",
   gross_amount: "Total",
   vatable_amount: "VATable",
   vat_amount: "VAT",
@@ -135,8 +137,14 @@ const FIELD_LABELS: Record<string, string> = {
 
 const humanize = (key: string) => FIELD_LABELS[key] ?? (key.charAt(0).toUpperCase() + key.slice(1)).replace(/_/g, " ");
 
+/** Money fields in the log ("gross_amount", "cost" …) read like the rest of the app: 118,004.32. */
+const isAmountKey = (key: string) => key.endsWith("_amount") || ["amount", "cost", "budget", "debit", "credit"].includes(key);
+
 function formatValue(key: string, value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
+  if (isAmountKey(key) && (typeof value === "number" || (typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value)))) {
+    return formatPeso(value);
+  }
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (key === "category" && typeof value === "string") return CATEGORY_LABELS[value] ?? value;
   if (key === "account" && typeof value === "string") return ACCOUNT_LABELS[value] ?? value;
@@ -147,7 +155,7 @@ function formatValue(key: string, value: unknown): string {
         .map((l) => {
           const line = l as Record<string, string>;
           const debit = Number(line.debit ?? 0);
-          return `${line.account_code} ${debit ? `Dr ${line.debit}` : `Cr ${line.credit}`}`;
+          return `${line.account_code} ${debit ? `Dr ${formatPeso(line.debit)}` : `Cr ${formatPeso(line.credit ?? 0)}`}`;
         })
         .join(" · ");
     }

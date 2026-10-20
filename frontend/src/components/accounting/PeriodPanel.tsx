@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import AmountInput from "@/components/AmountInput";
 import { CaretDown, CaretRight, FileXls, Spinner } from "@phosphor-icons/react";
 import OutputViewer from "@/components/accounting/OutputViewer";
 import PrepareReturns from "@/components/accounting/PrepareReturns";
@@ -236,12 +237,11 @@ export default function PeriodPanel({ companyId, year, quarter, refreshKey, onCh
             {FIELDS.filter((f) => f.show(period)).map((f) => (
               <label key={f.key} className="block">
                 <span className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">{f.label}</span>
-                <input
-                  inputMode="decimal"
+                <AmountInput
                   className={INPUT}
                   value={draft[f.key] ?? ""}
                   placeholder={f.optional ? "Not provided" : "0.00"}
-                  onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                  onValueChange={(v) => setDraft((d) => ({ ...d, [f.key]: v }))}
                 />
                 {f.hint && <span className="mt-0.5 block text-[11px] text-[var(--text-secondary)]">{f.hint}</span>}
               </label>
@@ -301,13 +301,12 @@ export default function PeriodPanel({ companyId, year, quarter, refreshKey, onCh
                         <td className="py-1 pr-3 text-[var(--text-primary)]">{label}</td>
                         {payroll.map((month, i) => (
                           <td key={i} className="py-1 pr-2">
-                            <input
-                              inputMode="decimal"
+                            <AmountInput
                               className={INPUT}
                               aria-label={`${label}, month ${i + 1}`}
                               value={month[key]}
-                              onChange={(e) =>
-                                setPayroll((all) => all.map((m, j) => (j === i ? { ...m, [key]: e.target.value } : m)))
+                              onValueChange={(v) =>
+                                setPayroll((all) => all.map((m, j) => (j === i ? { ...m, [key]: v } : m)))
                               }
                             />
                           </td>

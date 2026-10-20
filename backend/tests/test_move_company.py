@@ -12,9 +12,9 @@ BUYER = CompanyProfile("201345678", "Mabuhay Builders Inc.", (), True, 12)
 def _sales_invoice(**over):
     fields = dict(
         page_start=1, page_end=1, document_title="SALES INVOICE", doc_type="invoice", doc_number="0005",
-        doc_date=date(2026, 10, 3), seller_name="BAYANIHAN HARDWARE TRADING CORP.", seller_tin="010234567",
+        doc_date=date(2026, 10, 3), seller_name="BAYANIHAN HARDWARE TRADING CORP.", seller_tin="010234567", seller_branch="000",
         seller_address="123 Rizal Ave., Marikina City", seller_vat_registered=True,
-        buyer_name="MABUHAY BUILDERS INC.", buyer_tin="201345678", buyer_address="45 Sumulong Hwy., Antipolo",
+        buyer_name="MABUHAY BUILDERS INC.", buyer_tin="201345678", buyer_branch="", buyer_address="45 Sumulong Hwy., Antipolo",
         gross_amount=Decimal("118004.32"), vatable_amount=Decimal("105361.00"), vat_amount=Decimal("12643.32"),
         exempt_amount=Decimal("0"), zero_rated_amount=Decimal("0"), withholding_amount=Decimal("0"), confidence=95.0,
         raw={"kind": "invoice", "nature": "goods_for_resale", "payment_terms": "credit",
@@ -36,6 +36,7 @@ def test_hand_edits_survive_the_move():
     ext = extracted_from_document(_sales_invoice(doc_number="0005-A", gross_amount=Decimal("1.00")))
     assert ext.doc_number == "0005-A" and ext.gross_amount == Decimal("1.00")
     assert ext.nature == "goods_for_resale" and ext.payment_terms == "credit"  # what Gemini read is kept
+    assert ext.seller.printed_branch == "000"
 
 
 def test_document_with_nothing_read_still_moves():

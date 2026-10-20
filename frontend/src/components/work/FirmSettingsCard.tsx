@@ -41,7 +41,7 @@ export default function FirmSettingsCard() {
   if (!settings) return error ? <p className="mb-6 text-sm text-[var(--alert-error-text)]">{error}</p> : null;
   const locked = !settings.can_edit || busy;
   return (
-    <div className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
+    <div data-tour="work-settings" className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
       <h2 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">Work settings</h2>
       <label className="flex items-start gap-2 text-sm text-[var(--text-primary)]">
         <input

@@ -27,8 +27,10 @@ import RecentUploadMove from "@/components/accounting/RecentUploadMove";
 import DuplicateBanner from "@/components/accounting/DuplicateBanner";
 import GettingStarted from "@/components/guide/GettingStarted";
 import Hint from "@/components/guide/Hint";
-import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
+import { GuideButton } from "@/components/guide/GuideTour";
+import PageGuide from "@/components/guide/PageGuide";
 import { DOCUMENTS_TOUR } from "@/components/guide/tours";
+import { DOCUMENTS_SPOTS } from "@/components/guide/tours/spots";
 import { accountingApi } from "@/lib/accounting-api";
 import { OPEN_COMPANY_EVENT, safeId } from "@/lib/work-api";
 import { OPEN_TARGET_EVENT, parseTarget } from "@/lib/search-nav";
@@ -312,7 +314,7 @@ export default function AccountingPage() {
             </p>
           </div>
           <GuideButton open={guide.open} onClick={guide.toggle} />
-          <div className="flex items-center gap-1">
+          <div data-tour="company-picker" className="flex items-center gap-1">
             <CompanyPicker companies={companies} value={picker} onChange={choosePicker} />
             <Hint align="left">
               Auto-detect reads each document&apos;s TIN and name to find the company. Pick a company instead when every file
@@ -321,7 +323,7 @@ export default function AccountingPage() {
           </div>
         </div>
 
-        <GuideTour open={guide.open} onClose={guide.dismiss} label="Documents" slides={DOCUMENTS_TOUR} />
+        <PageGuide open={guide.open} onClose={guide.dismiss} label="Documents" spots={DOCUMENTS_SPOTS} slides={DOCUMENTS_TOUR} />
         <GettingStarted
           tree={tree}
           canManage={canManage}
@@ -362,7 +364,7 @@ export default function AccountingPage() {
         )}
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[250px_minmax(0,1fr)]">
-          <aside className="h-fit rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3">
+          <aside data-tour="folders" className="h-fit rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3">
             <label className="relative mb-2 block">
               <span className="sr-only">Search companies or TINs</span>
               <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
@@ -385,10 +387,10 @@ export default function AccountingPage() {
             />
           </aside>
 
-          <section className="relative min-h-[420px] rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
+          <section data-tour="workspace" className="relative min-h-[420px] rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
             {folder && <DuplicateBanner folder={folder} onResolved={refreshAfterDocChange} />}
             {selected?.view !== "import" && (
-              <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-dashed border-[var(--border)] px-4 py-3">
+              <div data-tour="upload" className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-dashed border-[var(--border)] px-4 py-3">
                 <UploadSimple size={20} className="shrink-0 text-[var(--text-secondary)]" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-[var(--text-primary)]">

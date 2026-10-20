@@ -6,8 +6,10 @@ import { useAuth } from "@/lib/auth";
 import Hint from "@/components/guide/Hint";
 import ChecklistTemplates from "@/components/work/ChecklistTemplates";
 import FirmSettingsCard from "@/components/work/FirmSettingsCard";
-import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
+import { GuideButton } from "@/components/guide/GuideTour";
+import PageGuide from "@/components/guide/PageGuide";
 import { TEAM_TOUR } from "@/components/guide/tours";
+import { TEAM_SPOTS } from "@/components/guide/tours/spots";
 import { useGuide } from "@/lib/guides";
 import { teamApi } from "@/lib/api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
@@ -79,12 +81,12 @@ export default function TeamPage() {
           <GuideButton open={guide.open} onClick={guide.toggle} />
         </div>
 
-        <GuideTour open={guide.open} onClose={guide.dismiss} label="Team" slides={TEAM_TOUR} />
+        <PageGuide open={guide.open} onClose={guide.dismiss} label="Team" spots={TEAM_SPOTS} slides={TEAM_TOUR} />
         <FirmSettingsCard />
         <ChecklistTemplates />
 
         {usage && (
-          <div className="mb-6 grid gap-3 sm:grid-cols-2">
+          <div data-tour="usage" className="mb-6 grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
               <p className="flex items-center gap-1 text-xs text-[var(--text-secondary)]">
                 Pages extracted in {MONTHS[usage.month - 1]}
@@ -108,7 +110,7 @@ export default function TeamPage() {
           </div>
         )}
 
-        <form onSubmit={addMember} className="mb-4 flex flex-wrap items-center gap-2">
+        <form onSubmit={addMember} data-tour="add-member" className="mb-4 flex flex-wrap items-center gap-2">
           <input
             type="email"
             value={email}
@@ -134,7 +136,7 @@ export default function TeamPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
+        <div data-tour="members" className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-[var(--text-secondary)]">

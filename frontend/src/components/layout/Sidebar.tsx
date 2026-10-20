@@ -248,6 +248,7 @@ export default function Sidebar() {
                   href={item.href}
                   aria-current={active ? "page" : undefined}
                   aria-label={item.label}
+                  data-tour={`nav-${item.id}`}
                   className={`aa-item nav-press flex items-center gap-3 h-11 px-3 rounded-xl mb-1 text-[15px] whitespace-nowrap overflow-hidden ${
                     active
                       ? "aa-item--active text-[var(--text-sidebar)] font-medium"
@@ -383,6 +384,7 @@ export default function Sidebar() {
             setDrawerOpen(false);
           }}
           aria-label="Show guides"
+          data-tour="show-guides"
           title="Bring back every page guide you've hidden"
           className="aa-item nav-press flex items-center gap-3 w-full h-10 px-3 rounded-xl text-sm whitespace-nowrap overflow-hidden text-[var(--text-sidebar-muted)] hover:text-[var(--text-sidebar)]"
         >

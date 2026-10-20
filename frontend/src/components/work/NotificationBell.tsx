@@ -134,6 +134,7 @@ export default function NotificationBell({ variant, fadeStyle, onOpenChange }: P
         onClick={() => setOpen((o) => !o)}
         aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}
         aria-expanded={open}
+        data-tour="bell"
         className="aa-item nav-press relative flex items-center gap-3 w-full h-10 px-3 rounded-xl text-sm whitespace-nowrap overflow-hidden text-[var(--text-sidebar-muted)] hover:text-[var(--text-sidebar)]"
       >
         <Bell size={20} weight="light" className="shrink-0" />
@@ -149,6 +150,7 @@ export default function NotificationBell({ variant, fadeStyle, onOpenChange }: P
         onClick={() => setOpen((o) => !o)}
         aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}
         aria-expanded={open}
+        data-tour="bell"
         className="nav-press relative ml-auto flex items-center justify-center w-11 h-11 rounded-lg text-[var(--text-sidebar)] hover:bg-[var(--bg-sidebar-hover)]"
       >
         <Bell size={22} />

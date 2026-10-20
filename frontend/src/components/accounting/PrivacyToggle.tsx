@@ -10,6 +10,7 @@ export default function PrivacyToggle({ className = "" }: { className?: string }
     <button
       type="button"
       aria-pressed={hidden}
+      data-tour="privacy"
       onClick={toggle}
       title={hidden ? "Show amounts" : "Hide amounts while you share your screen"}
       className={`inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] ${className}`}

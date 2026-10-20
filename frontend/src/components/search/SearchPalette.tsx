@@ -136,6 +136,7 @@ export default function SearchPalette({ variant, fadeStyle }: Props) {
     variant === "rail" ? (
       <button
         onClick={() => setOpen(true)}
+        data-tour="search"
         aria-label="Search (press / or Ctrl K)"
         title="Search (/ or Ctrl K)"
         className="aa-item nav-press flex items-center gap-3 w-full h-10 px-3 rounded-xl text-sm whitespace-nowrap overflow-hidden text-[var(--text-sidebar-muted)] hover:text-[var(--text-sidebar)]"
@@ -149,6 +150,7 @@ export default function SearchPalette({ variant, fadeStyle }: Props) {
     ) : (
       <button
         onClick={() => setOpen(true)}
+        data-tour="search"
         aria-label="Search"
         className="nav-press ml-auto flex items-center justify-center w-11 h-11 rounded-lg text-[var(--text-sidebar)] hover:bg-[var(--bg-sidebar-hover)]"
       >

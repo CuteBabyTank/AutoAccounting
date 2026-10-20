@@ -5,8 +5,10 @@ import Link from "next/link";
 import PrivacyToggle from "@/components/accounting/PrivacyToggle";
 import { ArrowSquareOut, Warning } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
-import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
+import { GuideButton } from "@/components/guide/GuideTour";
+import PageGuide from "@/components/guide/PageGuide";
 import { WORK_TOUR } from "@/components/guide/tours";
+import { WORK_SPOTS } from "@/components/guide/tours/spots";
 import CompanyHealth from "@/components/work/CompanyHealth";
 import TaskList from "@/components/work/TaskList";
 import { BTN, Chip, INPUT, STATUS_META, STATUS_ORDER, addDays, dueText, shortDate, todayIso } from "@/components/work/ui";
@@ -138,10 +140,10 @@ export default function WorkBoardPage() {
           <PrivacyToggle />
           <GuideButton open={guide.open} onClick={guide.toggle} />
         </div>
-        <GuideTour open={guide.open} onClose={guide.dismiss} label="Work" slides={WORK_TOUR} />
+        <PageGuide open={guide.open} onClose={guide.dismiss} label="Work" spots={WORK_SPOTS} slides={WORK_TOUR} />
 
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <div role="tablist" className="flex rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] p-0.5">
+        <div data-tour="work-filters" className="mb-4 flex flex-wrap items-center gap-2">
+          <div role="tablist" data-tour="work-tabs" className="flex rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] p-0.5">
             {(["filings", "clients", "tasks"] as Tab[]).map((t) => (
               <button
                 key={t}
@@ -196,7 +198,7 @@ export default function WorkBoardPage() {
         )}
 
         {tab === "filings" && (
-          <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
+          <section data-tour="work-board" className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
             {overdue > 0 && (
               <p className="flex items-center gap-1.5 border-b border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--badge-red-text)]">
                 <Warning size={16} /> {overdue} overdue

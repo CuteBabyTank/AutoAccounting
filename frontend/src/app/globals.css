@@ -1622,9 +1622,36 @@ tr.aa-focus-flash { outline-offset: -2px; }
   white-space: nowrap;
 }
 .gd-btn--ghost { background: var(--lp-bg-card); color: var(--lp-text); border: 1px solid var(--lp-border); }
+/* On-screen tour (SpotlightTour): the ring's shadow dims everything but the element. */
+.sp-ring {
+  box-shadow: 0 0 0 2px var(--lp-accent), 0 0 0 6px color-mix(in srgb, var(--lp-accent) 22%, transparent), 0 0 0 9999px rgba(8,10,20,.55);
+  transition: top 380ms var(--ease-out), left 380ms var(--ease-out), width 380ms var(--ease-out), height 380ms var(--ease-out);
+  animation: spIn 260ms var(--ease-out) both;
+}
+.sp-ring::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 2px var(--lp-accent);
+  animation: spPulse 1.8s var(--ease-out) 400ms infinite;
+}
+@keyframes spIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes spPulse {
+  0%   { box-shadow: 0 0 0 2px var(--lp-accent); opacity: .9; }
+  100% { box-shadow: 0 0 0 12px var(--lp-accent); opacity: 0; }
+}
+.sp-card {
+  box-shadow: 0 1px 2px rgba(11,11,18,.06), 0 24px 48px -16px rgba(11,11,18,.35);
+  transition: top 380ms var(--ease-out), left 380ms var(--ease-out);
+}
+.sp-wire { stroke-dashoffset: 0; animation: spDraw 420ms var(--ease-out) 160ms both, gdDash 1.2s linear 580ms infinite !important; }
+@keyframes spDraw { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .gd-in { animation: none; }
   .gd-wire path { animation: none; }
+  .sp-ring, .sp-card { transition: none; }
+  .sp-ring::after, .sp-wire { animation: none !important; }
 }
 
 /* Privacy toggle (lib/privacy.ts): blur amounts on dashboards while screen-sharing. */

@@ -39,6 +39,19 @@ export interface Company extends CompanyInput {
   created_at: string;
 }
 
+/** The caller's latest finished upload and where its documents are now (for "wrong company? move them"). */
+export interface RecentUpload {
+  id: string;
+  created_at: string;
+  files: { id: string; original_filename: string; documents: number; companies: CompanyBrief[] }[];
+}
+
+export interface UploadMoveResult {
+  moved: number;
+  refused: { document: string; reason: string }[];
+  upload: RecentUpload | null;
+}
+
 export interface CompanyBrief {
   id: string;
   registered_name: string;

@@ -68,6 +68,8 @@ import type {
   Scope,
   TreeCompany,
   Upload,
+  RecentUpload,
+  UploadMoveResult,
 } from "@/types/accounting";
 
 export const accountingApi = {
@@ -132,6 +134,12 @@ export const accountingApi = {
   pendingUpload: () => api.get<Upload | null>("/accounting/uploads/pending").then((r) => r.data),
   confirmUpload: (id: string, assignments: ConfirmAssignment[]) =>
     api.post<Upload>(`/accounting/uploads/${seg(id)}/confirm`, { assignments }).then((r) => r.data),
+  latestUpload: () => api.get<RecentUpload | null>("/accounting/uploads/latest").then((r) => r.data),
+  /** Move every document of these files of an upload to another company (each re-sorted for it). */
+  moveUpload: (id: string, companyId: string, fileIds: string[]) =>
+    api
+      .post<UploadMoveResult>(`/accounting/uploads/${seg(id)}/move-company`, { company_id: companyId, file_ids: fileIds })
+      .then((r) => r.data),
   /** Read again the files of a finished upload that failed (AI busy, out of quota, timeout). */
   retryUpload: (id: string) => api.post<Upload>(`/accounting/uploads/${seg(id)}/retry`).then((r) => r.data),
   tree: () => api.get<TreeCompany[]>("/accounting/tree").then((r) => r.data),

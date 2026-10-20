@@ -23,6 +23,7 @@ import ReclassifyPanel from "@/components/accounting/ReclassifyPanel";
 import ImportPanel from "@/components/accounting/ImportPanel";
 import AppendPrompt from "@/components/accounting/AppendPrompt";
 import UploadReviewDialog from "@/components/accounting/UploadReviewDialog";
+import RecentUploadMove from "@/components/accounting/RecentUploadMove";
 import DuplicateBanner from "@/components/accounting/DuplicateBanner";
 import GettingStarted from "@/components/guide/GettingStarted";
 import Hint from "@/components/guide/Hint";
@@ -81,6 +82,7 @@ export default function AccountingPage() {
   // the page to show first (a bank line's statement page from a report drill-down)
   const [openDocFocus, setOpenDocFocus] = useState<{ id: string; page: number } | null>(null);
   const [upload, setUpload] = useState<Upload | null>(null);
+  const [uploadsDone, setUploadsDone] = useState(0);   // bumps when an upload finishes (the "Last upload" strip reloads)
   const [reviewOpen, setReviewOpen] = useState(false);
   const [companyForm, setCompanyForm] = useState<{ initial?: Partial<CompanyInput>; id?: string } | null>(null);
   const [notice, setNotice] = useState("");
@@ -199,6 +201,7 @@ export default function AccountingPage() {
       setNotice(parts.join(" · "));
       if (upload.affected_periods?.length) setAppend(upload.affected_periods);
       setPeriodRefresh((n) => n + 1);
+      setUploadsDone((n) => n + 1);
       loadTree().catch(() => undefined);
       loadFolder(selected).catch(() => undefined);
     }
@@ -340,6 +343,9 @@ export default function AccountingPage() {
               <button className="font-semibold underline" onClick={retryFailed}>Try the failed files again</button>
             )}
           </div>
+        )}
+        {!(upload && BUSY.includes(upload.status)) && (
+          <RecentUploadMove reloadKey={uploadsDone} onMoved={refreshAfterDocChange} />
         )}
         {upload && BUSY.includes(upload.status) && (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] px-4 py-2 text-sm text-[var(--text-primary)]">

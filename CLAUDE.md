@@ -178,6 +178,9 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   links are cleared (`CLEARED_FIELDS`), the file stays put, both companies get relink + rematch + duplicates, and the
   audit log gets `move_out` / `move_in`. Refused (409, `move_problem`) for statements, assets, confirmed bank matches,
   write-offs and 2307s marked received; a new way to tie a document to its company needs a `MoveFacts` guard.
+  The "Last upload" strip (`RecentUploadMove`, `GET /uploads/latest`) moves a whole drop: `POST
+  /uploads/{id}/move-company` runs the same `_move_document` per document, lists refusals, and re-files a file whose
+  documents all moved (unless the target already has that sha256).
 - **TIN branch codes:** `seller_tin` / `buyer_tin` stay the 9-digit base everything matches on; the branch digits as
   printed ("000") live in `seller_branch` / `buyer_branch` (extraction: `Party.printed_branch`; forms still pad via
   `normalize_tin`). The panel shows / edits the full TIN (`formatTin(tin, branch)`). Documents read before

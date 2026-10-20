@@ -59,6 +59,7 @@ _WRITE = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 # route template and a real path. First match wins, so specific rows come first.
 ROUTES: tuple[tuple[frozenset[str] | None, re.Pattern[str], str], ...] = tuple(
     (methods, re.compile(pattern), key) for methods, pattern, key in (
+        (None, rf"^{_A}/uploads/(latest|{_ID}/move-company)$", "documents"),   # fixing a drop, not uploading
         (frozenset({"POST"}), rf"^{_A}/uploads", "upload"),
         (None, rf"^{_A}/documents/{_ID}/cwt-2307$", "subledgers"),
         (None, rf"^{_A}/(tree|folders|documents|duplicates|files)(/|$)", "documents"),

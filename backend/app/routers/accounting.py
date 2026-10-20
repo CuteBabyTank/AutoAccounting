@@ -1,6 +1,7 @@
 """AutoAccounting phase 1: company databank, uploads, folder tree, documents."""
 
 import asyncio
+from dataclasses import dataclass
 import re
 import shutil
 import uuid
@@ -385,6 +386,120 @@ async def get_pending_upload(user: User = Depends(get_current_user), db: AsyncSe
         .limit(1)
     )).scalar_one_or_none()
     return await _upload_out(db, ent, upload_id) if upload_id else None
+
+
+class RecentUploadFileOut(BaseModel):
+    id: uuid.UUID
+    original_filename: str
+    documents: int
+    companies: list[CompanyBrief]
+
+
+class RecentUploadOut(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    files: list[RecentUploadFileOut]
+
+
+class UploadMoveIn(BaseModel):
+    company_id: uuid.UUID
+    file_ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+
+
+class MoveRefusalOut(BaseModel):
+    document: str
+    reason: str
+
+
+class UploadMoveOut(BaseModel):
+    moved: int
+    refused: list[MoveRefusalOut]
+    upload: RecentUploadOut | None
+
+
+async def _recent_upload_out(db: AsyncSession, upload: AAUpload) -> RecentUploadOut | None:
+    """The upload's filed files with where their documents are now (None when nothing of it is left)."""
+    files = (await db.execute(select(AAFile).where(
+        AAFile.upload_id == upload.id, AAFile.status == "extracted").order_by(AAFile.created_at))).scalars().all()
+    rows = (await db.execute(
+        select(AADocument.file_id, AACompany.id, AACompany.registered_name, AACompany.tin, func.count(AADocument.id))
+        .join(AACompany, AACompany.id == AADocument.company_id)
+        .where(AADocument.file_id.in_([f.id for f in files]), AADocument.deleted_at.is_(None))
+        .group_by(AADocument.file_id, AACompany.id, AACompany.registered_name, AACompany.tin)
+    )).all() if files else []
+    by_file: dict[uuid.UUID, tuple[int, list[CompanyBrief]]] = {}
+    for file_id, company_id, name, tin, count in rows:
+        total, companies = by_file.get(file_id, (0, []))
+        by_file[file_id] = (total + count, [*companies, CompanyBrief(id=company_id, registered_name=name, tin=tin)])
+    out = [RecentUploadFileOut(id=f.id, original_filename=f.original_filename, documents=by_file[f.id][0],
+                               companies=by_file[f.id][1]) for f in files if f.id in by_file]
+    return RecentUploadOut(id=upload.id, created_at=upload.created_at, files=out) if out else None
+
+
+@router.get("/uploads/latest", response_model=RecentUploadOut | None)
+async def get_latest_upload(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """The caller's latest finished upload and where its documents went, so a drop filed under the wrong company
+    can be moved in one go."""
+    ent = _scope(user)
+    upload = (await db.execute(
+        select(AAUpload)
+        .where(AAUpload.enterprise_id == ent, AAUpload.uploaded_by == user.id, AAUpload.status == "done")
+        .order_by(AAUpload.created_at.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    return await _recent_upload_out(db, upload) if upload else None
+
+
+@router.post("/uploads/{upload_id}/move-company", response_model=UploadMoveOut)
+async def move_upload_to_company(
+    upload_id: uuid.UUID, body: UploadMoveIn, user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move every document of the chosen files of an upload to another company (each re-sorted for it, as a single
+    document move). Documents that can't move yet are listed with the reason; the rest move. A file whose documents
+    all moved is filed under the new company too, so dropping it there again is caught as a duplicate."""
+    ent = _scope(user)
+    upload = (await db.execute(select(AAUpload).where(
+        AAUpload.id == upload_id, AAUpload.enterprise_id == ent))).scalar_one_or_none()
+    if upload is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Upload not found")
+    target = await _company_or_404(db, ent, body.company_id)
+    files = {f.id: f for f in (await db.execute(select(AAFile).where(
+        AAFile.upload_id == upload.id, AAFile.id.in_(body.file_ids)))).scalars().all()}
+    if set(body.file_ids) - set(files):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown file in this upload")
+
+    to = await _move_target(db, ent, target)
+    sources: dict[uuid.UUID, AACompany] = {}
+    moved, refused = 0, []
+    docs = (await db.execute(select(AADocument).where(
+        AADocument.file_id.in_(list(files)), AADocument.deleted_at.is_(None), AADocument.company_id != target.id,
+    ).order_by(AADocument.file_id, AADocument.page_start))).scalars().all()
+    for doc in docs:
+        source = sources.get(doc.company_id) or await _company_or_404(db, ent, doc.company_id)
+        sources[source.id] = source
+        problem = await _move_document(db, ent, user, doc, source, to)
+        if problem:
+            refused.append(MoveRefusalOut(document=audit.document_label(doc), reason=problem))
+        else:
+            moved += 1
+
+    await db.flush()
+    for f in files.values():
+        left = (await db.execute(select(func.count(AADocument.id)).where(
+            AADocument.file_id == f.id, AADocument.deleted_at.is_(None), AADocument.company_id != target.id,
+        ))).scalar_one()
+        if left or f.company_id == target.id:
+            continue
+        # One active copy of a file per company: if the target already has this file, keep the record where it is.
+        clash = (await db.execute(select(AAFile.id).where(
+            AAFile.company_id == target.id, AAFile.sha256 == f.sha256, AAFile.id != f.id,
+            AAFile.status.in_(("extracting", "extracted"))).limit(1))).first()
+        if clash is None:
+            f.company_id = target.id
+    await _refresh_after_move(db, [*sources.values(), target])
+    await db.commit()
+    return UploadMoveOut(moved=moved, refused=refused, upload=await _recent_upload_out(db, upload))
 
 
 @router.get("/uploads/{upload_id}", response_model=UploadOut)
@@ -932,21 +1047,29 @@ class MoveCompanyIn(BaseModel):
     company_id: uuid.UUID
 
 
-@router.post("/documents/{doc_id}/move-company", response_model=DocumentOut)
-async def move_document_to_company(
-    doc_id: uuid.UUID, body: MoveCompanyIn, user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Move a document to another company of the firm, re-sorted for it (side, folder, account, review flags and
-    quarter by its fiscal year). The file stays where it is; only the document moves. Refused (409) while something
-    in the old company still depends on it."""
-    ent = _scope(user)
-    doc = await _document_or_404(db, ent, doc_id)
-    source = await _company_or_404(db, ent, doc.company_id)
-    target = await _company_or_404(db, ent, body.company_id)
-    if target.id == source.id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The document is already in this company")
+@dataclass
+class _MoveTarget:
+    """What re-sorting documents for the target company needs, loaded once per move."""
+    company: AACompany
+    rules: dict[str, tuple[str, str]]
+    other_tins: frozenset[str]
+    lock: tuple | None
 
+
+async def _move_target(db: AsyncSession, ent: uuid.UUID, target: AACompany) -> _MoveTarget:
+    rules = {r.counterparty_tin: (r.category, r.account) for r in (await db.execute(
+        select(AASupplierRule).where(AASupplierRule.company_id == target.id))).scalars().all()}
+    others = frozenset((await db.execute(select(AACompany.tin).where(
+        AACompany.enterprise_id == ent, AACompany.id != target.id, AACompany.tin != ""))).scalars().all())
+    locks = await pipeline._locked_charts(db, [target.id])
+    return _MoveTarget(target, rules, others, locks.get(target.id))
+
+
+async def _move_document(db: AsyncSession, ent: uuid.UUID, user: User, doc: AADocument, source: AACompany,
+                         to: _MoveTarget) -> str | None:
+    """Move one document to ``to.company`` (re-sorted, audited, not committed); the reason it can't, else None.
+    The caller relinks / rematches / refreshes duplicates of both companies afterwards."""
+    target = to.company
     doc_ref = str(doc.id)
     facts = move_company.MoveFacts(
         is_statement=doc.doc_type == "statement",
@@ -967,17 +1090,12 @@ async def move_document_to_company(
     )
     problem = move_company.move_problem(facts)
     if problem:
-        raise HTTPException(status.HTTP_409_CONFLICT, problem)
+        return problem
 
-    rules = {r.counterparty_tin: (r.category, r.account) for r in (await db.execute(
-        select(AASupplierRule).where(AASupplierRule.company_id == target.id))).scalars().all()}
-    others = frozenset((await db.execute(select(AACompany.tin).where(
-        AACompany.enterprise_id == ent, AACompany.id != target.id, AACompany.tin != ""))).scalars().all())
-    fields = move_company.resorted_fields(doc, pipeline.company_profile(target), rules, others)
-    locks = await pipeline._locked_charts(db, [target.id])
-    if target.id in locks:  # classified into a locked account: queue it, as extraction does
+    fields = move_company.resorted_fields(doc, pipeline.company_profile(target), to.rules, to.other_tins)
+    if to.lock is not None:  # classified into a locked account: queue it, as extraction does
         checked = {**fields, "seller_tin": doc.seller_tin, "buyer_tin": doc.buyer_tin}
-        flag_locked(checked, *locks[target.id])
+        flag_locked(checked, *to.lock)
         fields["review_reasons"], fields["needs_review"] = checked["review_reasons"], checked["needs_review"]
 
     before = {"company": source.registered_name, **audit.snapshot(doc, ("category", "period_year", "period_quarter"))}
@@ -992,12 +1110,35 @@ async def move_document_to_company(
     for company, action in ((source, "move_out"), (target, "move_in")):
         audit.record(db, label=audit.document_label(doc), ent=ent, company_id=company.id, user=user,
                      entity="document", entity_id=doc.id, action=action, before=before, after=after)
+    return None
 
+
+async def _refresh_after_move(db: AsyncSession, companies: list[AACompany]) -> None:
     await db.flush()
-    for company in (source, target):
+    for company in companies:
         await relink_receipts(db, company.id)
         await bank_service.rematch(db, company)
         await duplicates.refresh_flags(db, company.id)
+
+
+@router.post("/documents/{doc_id}/move-company", response_model=DocumentOut)
+async def move_document_to_company(
+    doc_id: uuid.UUID, body: MoveCompanyIn, user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move a document to another company of the firm, re-sorted for it (side, folder, account, review flags and
+    quarter by its fiscal year). The file stays where it is; only the document moves. Refused (409) while something
+    in the old company still depends on it."""
+    ent = _scope(user)
+    doc = await _document_or_404(db, ent, doc_id)
+    source = await _company_or_404(db, ent, doc.company_id)
+    target = await _company_or_404(db, ent, body.company_id)
+    if target.id == source.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The document is already in this company")
+    problem = await _move_document(db, ent, user, doc, source, await _move_target(db, ent, target))
+    if problem:
+        raise HTTPException(status.HTTP_409_CONFLICT, problem)
+    await _refresh_after_move(db, [source, target])
     await db.commit()
     return await _document_out(db, doc, target)
 

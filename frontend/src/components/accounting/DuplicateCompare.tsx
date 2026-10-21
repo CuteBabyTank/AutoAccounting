@@ -129,6 +129,7 @@ export default function DuplicateCompare({ pairs: initial, onClose, onResolved }
   const [selected, setSelected] = useState<Side | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [keepReason, setKeepReason] = useState("");
 
   const pair = pairs[Math.min(index, pairs.length - 1)];
 
@@ -168,10 +169,11 @@ export default function DuplicateCompare({ pairs: initial, onClose, onResolved }
   }
 
   async function keepBoth() {
+    if (!keepReason.trim()) { setError("Explain why both documents should be kept."); return; }
     setBusy(true);
     setError("");
     try {
-      await accountingApi.notDuplicate(pair.duplicate.id, pair.original.id);
+      await accountingApi.notDuplicate(pair.duplicate.id, pair.original.id, keepReason.trim());
       onResolved(null);
       advance(pairs.filter((p) => p !== pair));
     } catch (e) {
@@ -182,6 +184,7 @@ export default function DuplicateCompare({ pairs: initial, onClose, onResolved }
 
   const next = () => {
     setSelected(null);
+    setKeepReason("");
     setError("");
     setIndex((i) => (i + 1) % pairs.length);
   };
@@ -221,11 +224,15 @@ export default function DuplicateCompare({ pairs: initial, onClose, onResolved }
           />
         </div>
 
+        <label className="mt-4 block text-xs text-[var(--text-secondary)]">Reason for keeping both
+          <textarea value={keepReason} maxLength={2000} onChange={(e) => setKeepReason(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-2 text-sm text-[var(--text-primary)]" />
+        </label>
         {error && <p className="mt-4 text-sm text-[var(--alert-error-text)]">{error}</p>}
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
           {pairs.length > 1 && <button className={BTN} disabled={busy} onClick={next}>Next pair</button>}
-          <button className={`${BTN} ml-auto`} disabled={busy} onClick={keepBoth}>Not a duplicate, keep both</button>
+          <button className={`${BTN} ml-auto`} disabled={busy || !keepReason.trim()} onClick={keepBoth}>Not a duplicate, keep both</button>
           <button
             className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40"
             disabled={busy || !selected}

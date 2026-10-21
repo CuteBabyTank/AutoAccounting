@@ -8,6 +8,7 @@ import type { Company, CompanyInput } from "@/types/accounting";
 
 const EMPTY: CompanyInput = {
   registered_name: "",
+  owner_name: "",
   aliases: [],
   tin: "",
   branch_code: "00000",
@@ -106,6 +107,11 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
           <div className="sm:col-span-2">
             <label className={LABEL}>Registered name *</label>
             <input className={INPUT} required value={form.registered_name} onChange={(e) => set("registered_name", e.target.value)} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={LABEL}>Owner’s personal name (optional)</label>
+            <input className={INPUT} value={form.owner_name} onChange={(e) => set("owner_name", e.target.value)} />
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">Purchases addressed only to this person default to excluded drawings.</p>
           </div>
           <div className="sm:col-span-2">
             <label className={LABEL}>Trade names / aliases (comma-separated)</label>

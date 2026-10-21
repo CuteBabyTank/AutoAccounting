@@ -29,12 +29,17 @@ export const ACCOUNT_LABELS: Record<string, string> = {
   taxes_licenses: "Taxes and licenses",
   "2307_received": "2307 received",
   "2307_issued": "2307 issued",
+  drawings: "Owner’s drawings",
   other: "Other",
 };
 
 export const ACCOUNTS = Object.keys(ACCOUNT_LABELS);
 
 export const REASON_LABELS: Record<string, string> = {
+  tendered_less_than_total: "Cash tendered is below the total. Check for another payment or an altered receipt; the invoice total is posted.",
+  ewt_expected: "Withholding expected but not shown. Confirm the suggested ATC and amount.",
+  payment_unverified: "Payment has no matching evidence yet (advisory; does not block).",
+  payment_source_unknown: "Payment source is unknown. Ask the client which account paid it.",
   low_confidence: "Low extraction confidence. Check the amounts and date.",
   missing_date: "No readable date, so it can't be filed in a quarter.",
   missing_amount: "No total amount was found.",

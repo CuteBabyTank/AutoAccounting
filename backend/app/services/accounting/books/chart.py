@@ -32,6 +32,7 @@ _STANDARD = (
     ("1100", "Accounts receivable - trade", "asset", False, "ar"),
     ("1200", "Merchandise / materials inventory", "asset", False, "inventory"),
     ("1300", "Input VAT", "asset", False, "input_vat"),
+    ("1310", "VAT difference – for review", "asset", False, "vat_difference"),
     ("1320", "Creditable withholding tax", "asset", False, "cwt"),
     ("1500", "Property and equipment", "asset", False, "ppe"),
     ("1510", "Accumulated depreciation", "asset", True, "accum_dep"),
@@ -120,6 +121,8 @@ class Chart:
         chosen = self._by_code.get(override) if override else None
         if chosen is not None and chosen.active:
             return chosen.code
+        if account == "drawings":
+            return self.code("drawings")
         if account == "capital_goods":
             return self.code("ppe")
         return self._by_key.get(f"doc:{account}") or self.code("doc:other")

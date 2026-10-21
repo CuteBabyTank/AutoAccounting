@@ -22,7 +22,7 @@ def _is_import(line: DocLine) -> bool:
 
 def compute_2550q(lines, inputs: PeriodInputs, carry_in: Decimal) -> VatResult:
     sales = [l for l in lines if l.category == "sales"]
-    buys = [l for l in lines if l.category in ("purchases", "expenses") and l.client_role == "buyer"]
+    buys = [l for l in lines if l.category in ("purchases", "expenses") and l.client_role == "buyer" and l.account != "drawings"]
     claimed = [l for l in buys if claims_input_vat(l, True)]
     unclaimed = [l for l in buys if not claims_input_vat(l, True)]
 
@@ -45,7 +45,7 @@ def compute_2550q(lines, inputs: PeriodInputs, carry_in: Decimal) -> VatResult:
     # Current transactions
     domestic = [l for l in claimed if not _is_import(l)]
     imported = [l for l in claimed if _is_import(l)]
-    i["44A"] = total(l.gross - l.vat for l in domestic)
+    i["44A"] = total(l.gross - l.vat - l.vat_difference for l in domestic)
     i["44B"] = total(l.vat for l in domestic)
     i["45A"] = ZERO
     i["45B"] = ZERO

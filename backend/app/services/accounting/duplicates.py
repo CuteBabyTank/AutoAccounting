@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.accounting import AADocument
+from app.services.accounting.review import needs_review
 from app.services.accounting.matching import normalize_name
 
 SAME_NUMBER = "same_number"     # same counterparty and document number
@@ -112,7 +113,7 @@ def sync_flags(pairs: list[Pair], docs: dict[uuid.UUID, AADocument]) -> None:
             doc.needs_review = True
         elif doc.id not in in_pairs and FLAG in reasons:
             doc.review_reasons = [r for r in reasons if r != FLAG]
-            doc.needs_review = bool(doc.review_reasons)
+            doc.needs_review = needs_review([r for r in doc.review_reasons if r not in (getattr(doc, "review_overrides", None) or {})])
 
 
 async def refresh_flags(db: AsyncSession, company_id: uuid.UUID) -> None:

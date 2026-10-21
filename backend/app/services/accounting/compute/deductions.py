@@ -30,7 +30,7 @@ def quarter_expenses(lines, company: CompanyFacts, rep_ytd_before: Decimal, allo
     capital = ZERO
     deductible = ("expenses", "purchases") if company.business_type == "services" else ("expenses",)
     for l in lines:
-        if l.category not in deductible:  # trading/manufacturing purchases go through cost of sales
+        if l.category not in deductible or l.account == "drawings":  # trading/manufacturing purchases go through cost of sales
             continue
         amount = cost_base(l, company.vat_registered)
         if l.account == "capital_goods":

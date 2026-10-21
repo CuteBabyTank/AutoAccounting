@@ -1,10 +1,10 @@
 from app.models.accounting import (
-    AAAccount, AAAsset, AAAtcDefault, AABookClose, AACompany, AAEmployee, AADocument, AAFile, AAJournalEntry, AAOutput, AAPeriod, AASupplierRule, AAUpload,
+    AAAuditEvent, AAAccount, AAAsset, AAAtcDefault, AABookClose, AACompany, AAEmployee, AADocument, AAFile, AAJournalEntry, AAOutput, AAPeriod, AASupplierRule, AAUpload,
 )
 from app.services.accounting.rls import rls_statements
 
 TABLES = [m.__tablename__ for m in (AACompany, AAUpload, AAFile, AADocument, AASupplierRule, AAPeriod, AAOutput,
-                                           AAAsset, AAAccount, AAJournalEntry, AAAtcDefault, AABookClose, AAEmployee)]
+                                           AAAsset, AAAccount, AAJournalEntry, AAAtcDefault, AABookClose, AAEmployee, AAAuditEvent)]
 
 
 def test_every_accounting_table_is_forced_under_rls_with_one_policy():

@@ -52,6 +52,12 @@ Reply with ONLY valid JSON, no markdown fences, no explanation:
   "exempt_amount": <VAT-exempt amount>,
   "zero_rated_amount": <zero-rated amount>,
   "withholding_amount": <withholding tax deducted>,
+  "cash_tendered": <cash tendered as printed, null when absent; never substitute the total>,
+  "change_amount": <change as printed, may be negative, null when absent>,
+  "payment_terms": "<credit / Net 30 / PDC / 50% down payment terms as printed, or empty>",
+  "payment_status": "<released|paid|unpaid|partial or empty, only when printed>",
+  "payment_source_unknown": <true only when an import lists freight/brokerage without a payee, else false>,
+  "personal_purchase": <true only for an explicitly personal purchase in the owner's name, else false>,
   "nature": "<goods_for_resale|raw_materials|capital_goods|services|import|payroll|other>",
   "expense_account": "<purchases|raw_materials|importation|capital_goods|salaries|rent|utilities|professional_fees|office_supplies|representation|transportation|repairs|taxes_licenses|other>",
   "confidence": <0-100, your certainty in the amounts and date>
@@ -125,10 +131,22 @@ class ExtractedDoc:
     exempt_amount: Decimal = Decimal("0.00")
     zero_rated_amount: Decimal = Decimal("0.00")
     withholding_amount: Decimal = Decimal("0.00")
+    cash_tendered: Decimal | None = None
+    change_amount: Decimal | None = None
+    payment_terms: str = ""
+    payment_status: str = ""
+    payment_source_unknown: bool = False
+    personal_purchase: bool = False
     nature: str = "other"
     expense_account: str = "other"
     confidence: float = 0.0
     raw: dict = field(default_factory=dict)
+
+
+def _optional_money(value) -> Decimal | None:
+    if value is None or isinstance(value, bool) or not re.search(r"\d", str(value)):
+        return None
+    return parse_money(value)
 
 
 def _load_json(raw: str):
@@ -228,6 +246,12 @@ def parse_extraction(raw: str, page_offset: int = 0, chunk_pages: int | None = N
             exempt_amount=parse_money(item.get("exempt_amount")),
             zero_rated_amount=parse_money(item.get("zero_rated_amount")),
             withholding_amount=parse_money(item.get("withholding_amount")),
+            cash_tendered=_optional_money(item.get("cash_tendered")),
+            change_amount=_optional_money(item.get("change_amount")),
+            payment_terms=_text(item.get("payment_terms"), 120),
+            payment_status=_text(item.get("payment_status"), 20).lower(),
+            payment_source_unknown=_bool_or_none(item.get("payment_source_unknown")) is True,
+            personal_purchase=_bool_or_none(item.get("personal_purchase")) is True,
             nature=_choice(item.get("nature"), NATURES),
             expense_account=_choice(item.get("expense_account"), EXPENSE_ACCOUNTS),
             confidence=min(100.0, max(0.0, confidence)),

@@ -10,13 +10,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
-from app.models.accounting import AAAccount, AACompany, AADocument, AAJournalEntry
+from app.models.accounting import AAAccount, AABookClose, AACompany, AADocument, AAJournalEntry
 from app.models.user import User
 from app.routers.accounting_scope import MANAGER_ROLES, company_or_404, scope_for
 from app.schemas.accounting_books import (
     AccountIn, AccountOut, AccountPatch, BookMonthOut, BooksYearOut, CloseMonthIn, DocRefOut, JournalEntryIn,
     JournalEntryOut, PaymentLinksOut,
 )
+from app.services.accounting.audit import record_event, snapshot
 from app.services.accounting.books.closing import (
     CloseError, bind_deadline, bind_year, close_month, reopen_month, stored_file, year_status,
 )
@@ -24,6 +25,7 @@ from app.services.accounting.books.links import doc_ref, invoice_docs, receipt_d
 from app.services.accounting.books.loader import ensure_chart, touch_books
 from app.services.accounting.books.receipts import candidates_for
 from app.services.accounting.compute.depreciation import fiscal_year_window
+from app.services.accounting.periods import period_for
 
 router = APIRouter()
 
@@ -67,6 +69,9 @@ async def add_account(company_id: uuid.UUID, body: AccountIn, user: User = Depen
     db.add(row)
     touch_books(company)
     try:
+        await db.flush()
+        record_event(db, enterprise_id=ent, company_id=company.id, user=user, entity="account",
+                     entity_id=row.id, action="create", after=snapshot(row))
         await db.commit()
     except IntegrityError:
         await db.rollback()
@@ -80,6 +85,7 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, user: User = 
     ent = scope_for(user)
     _require_manager(user)
     row = await _account_or_404(db, ent, account_id)
+    before = snapshot(row)
     company = await company_or_404(db, ent, row.company_id)
     if body.name is not None:
         row.name = body.name.strip()
@@ -99,6 +105,8 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, user: User = 
     if body.active is not None:
         row.active = body.active
     touch_books(company)
+    record_event(db, enterprise_id=ent, company_id=company.id, user=user, entity="account",
+                 entity_id=row.id, action="update", before=before, after=snapshot(row))
     await db.commit()
     return row
 
@@ -160,6 +168,9 @@ async def create_journal_entry(company_id: uuid.UUID, body: JournalEntryIn, user
                          lines=_lines_json(body), created_by=user.id)
     db.add(row)
     touch_books(company)
+    await db.flush()
+    record_event(db, enterprise_id=ent, company_id=company.id, user=user, entity="journal_entry",
+                 entity_id=row.id, action="create", after=snapshot(row))
     await db.commit()
     return _entry_out(row)
 
@@ -178,12 +189,15 @@ async def update_journal_entry(entry_id: uuid.UUID, body: JournalEntryIn, user: 
                                db: AsyncSession = Depends(get_db)):
     ent = scope_for(user)
     row = await _entry_or_404(db, ent, entry_id)
+    before = snapshot(row)
     company = await company_or_404(db, ent, row.company_id)
     await _check_entry(db, company, body, entry_id=row.id)
     row.kind, row.book, row.reference, row.particulars = body.kind, body.book, body.reference, body.particulars
     row.entry_date = company.books_start if body.kind == "opening" else body.entry_date
     row.lines = _lines_json(body)
     touch_books(company)
+    record_event(db, enterprise_id=ent, company_id=company.id, user=user, entity="journal_entry",
+                 entity_id=row.id, action="update", before=before, after=snapshot(row))
     await db.commit()
     return _entry_out(row)
 
@@ -193,9 +207,12 @@ async def delete_journal_entry(entry_id: uuid.UUID, user: User = Depends(get_cur
                                db: AsyncSession = Depends(get_db)):
     ent = scope_for(user)
     row = await _entry_or_404(db, ent, entry_id)
+    before = snapshot(row)
     company = await company_or_404(db, ent, row.company_id)
     row.deleted_at = datetime.now(timezone.utc)
     touch_books(company)
+    record_event(db, enterprise_id=ent, company_id=company.id, user=user, entity="journal_entry",
+                 entity_id=row.id, action="delete", before=before, after=snapshot(row))
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -255,13 +272,29 @@ async def close_books_month(body: CloseMonthIn, company_id: uuid.UUID, user: Use
     _require_manager(user)
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
+    fiscal_year = period_for(body.month_start, company.fiscal_year_end_month).fiscal_year
+    before = await _books_year(db, company, fiscal_year)
     try:
         row = await close_month(db, company, user.id, ent, body.month_start)
     except CloseError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
     touch_books(company)  # entry numbers are final now
+    await db.flush()
+    after = await _books_year(db, company, row.fiscal_year)
+    record_event(db, enterprise_id=ent, company_id=company.id, user=user, entity="book_close",
+                 entity_id=row.id, action="close", before=before, after=after)
     await db.commit()
-    return await _books_year(db, company, row.fiscal_year)
+    return after
+
+
+async def _reopen_year(db: AsyncSession, company: AACompany) -> int:
+    year = (await db.execute(select(AABookClose.fiscal_year).where(
+        AABookClose.enterprise_id == company.enterprise_id, AABookClose.company_id == company.id,
+        AABookClose.kind == "month", AABookClose.voided_at.is_(None),
+    ).order_by(AABookClose.month_start.desc()).limit(1))).scalar_one_or_none()
+    if year is None:
+        raise HTTPException(409, "No month is closed.")
+    return year
 
 
 @router.post("/companies/{company_id}/books/reopen", response_model=BooksYearOut)
@@ -270,13 +303,19 @@ async def reopen_books_month(company_id: uuid.UUID, user: User = Depends(get_cur
     _require_manager(user)
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
+    fiscal_year = await _reopen_year(db, company)
+    before = await _books_year(db, company, fiscal_year)
     try:
         row = await reopen_month(db, company)
     except CloseError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
     touch_books(company)
+    await db.flush()
+    after = await _books_year(db, company, row.fiscal_year)
+    record_event(db, enterprise_id=ent, company_id=company.id, user=user, entity="book_close",
+                 entity_id=row.id, action="reopen", before=before, after=after)
     await db.commit()
-    return await _books_year(db, company, row.fiscal_year)
+    return after
 
 
 @router.post("/companies/{company_id}/books/{fiscal_year}/bind", response_model=BooksYearOut)
@@ -285,12 +324,17 @@ async def bind_books_year(company_id: uuid.UUID, fiscal_year: int, user: User = 
     _require_manager(user)
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
+    before = await _books_year(db, company, fiscal_year)
     try:
-        await bind_year(db, company, user.id, ent, fiscal_year)
+        row = await bind_year(db, company, user.id, ent, fiscal_year)
     except CloseError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
+    await db.flush()
+    after = await _books_year(db, company, fiscal_year)
+    record_event(db, enterprise_id=ent, company_id=company.id, user=user, entity="book_close",
+                 entity_id=row.id, action="bind", before=before, after=after)
     await db.commit()
-    return await _books_year(db, company, fiscal_year)
+    return after
 
 
 @router.get("/companies/{company_id}/books/{fiscal_year}/file")

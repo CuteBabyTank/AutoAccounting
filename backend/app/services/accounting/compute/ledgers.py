@@ -43,7 +43,7 @@ def build_slp(lines, company_vat: bool) -> list[dict]:
     columns = ("exempt", "zero_rated", "services", "capital_goods", "other_goods", "input_tax")
     rows: dict[str, dict] = {}
     for l in lines:
-        if l.category not in ("purchases", "expenses") or l.client_role != "buyer":
+        if l.category not in ("purchases", "expenses") or l.client_role != "buyer" or l.account == "drawings":
             continue
         key = _party_key(l)
         row = rows.setdefault(key, _new_row(key, l, columns))
@@ -54,7 +54,7 @@ def build_slp(lines, company_vat: bool) -> list[dict]:
                 column = "other_goods"
             else:
                 column = "services"
-            row[column] = c2(row[column] + l.gross - l.vat)
+            row[column] = c2(row[column] + l.gross - l.vat - l.vat_difference)
             row["input_tax"] = c2(row["input_tax"] + l.vat)
         else:
             row["exempt"] = c2(row["exempt"] + l.gross)
@@ -80,7 +80,7 @@ def build_transactions(lines, company_vat: bool, ewt_by_line: dict | None = None
         rows.append({
             "key": l.id, "doc_date": l.doc_date.isoformat() if l.doc_date else "", "doc_number": l.doc_number,
             "counterparty": l.counterparty_name, "tin": l.counterparty_tin, "category": l.category,
-            "account": l.account, "gross": c2(l.gross), "vatable": c2(l.vatable), "vat": c2(l.vat),
+            "account": l.account, "gross": c2(l.gross), "vatable": c2(l.vatable), "vat": c2(l.vat), "vat_difference": c2(l.vat_difference),
             "exempt": c2(l.exempt), "zero_rated": c2(l.zero_rated), "withholding": c2(l.withholding),
             "ewt_atc": atc, "ewt_due": c2(due),
             "input_vat_claimed": "yes" if claims_input_vat(l, company_vat) else "no",

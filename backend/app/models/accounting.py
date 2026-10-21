@@ -45,6 +45,7 @@ class AACompany(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     registered_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    owner_name: Mapped[str] = mapped_column(String(255), nullable=False, default="", server_default="")
     aliases: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     tin: Mapped[str] = mapped_column(String(9), nullable=False, default="")
     branch_code: Mapped[str] = mapped_column(String(5), nullable=False, default="00000")
@@ -201,6 +202,7 @@ class AADocument(Base):
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     needs_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     review_reasons: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    review_overrides: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     excluded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     raw: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
@@ -433,3 +435,32 @@ class AAEmployee(Base):
     data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # alphalist fields (compute/alphalist.py)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
+
+
+class AAAuditEvent(Base):
+    """Append-only router audit history; stored independently of the audited entity's lifetime."""
+
+    __tablename__ = "aa_audit_events"
+    __table_args__ = (
+        Index("ix_aa_audit_events_scope_at", "enterprise_id", "company_id", "at"),
+        Index("ix_aa_audit_events_entity", "enterprise_id", "entity", "entity_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    user_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    at: Mapped[datetime] = _created()
+    entity: Mapped[str] = mapped_column(String(40), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    before: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    after: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")

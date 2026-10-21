@@ -89,6 +89,7 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
               </ul>
             </li>
           ))}
+          <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "audit" }, "Audit log", null, 0)}</li>
           <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "atc" }, "ATC databank", null, 0)}</li>
           {c.undated_count > 0 && (
             <li>{leaf({ companyId: c.id, year: null, quarter: null }, "Undated", c.undated_count, c.undated_count)}</li>

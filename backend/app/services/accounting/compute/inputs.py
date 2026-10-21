@@ -24,6 +24,7 @@ class DocLine:
     gross: Decimal = ZERO
     vatable: Decimal = ZERO
     vat: Decimal = ZERO
+    vat_difference: Decimal = ZERO                    # printed VAT less recomputed VAT, held for review
     exempt: Decimal = ZERO
     zero_rated: Decimal = ZERO
     withholding: Decimal = ZERO

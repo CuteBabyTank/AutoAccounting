@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X } from "@phosphor-icons/react";
+import AuditLogPanel from "@/components/accounting/AuditLogPanel";
 import AssetSection from "@/components/accounting/AssetSection";
 import DuplicateCompare from "@/components/accounting/DuplicateCompare";
 import { accountingApi } from "@/lib/accounting-api";
@@ -63,13 +64,16 @@ interface Props {
 /** The account a document account posts to (as the books do) and its active sub-accounts, plus the current pick. */
 function bookableAccounts(accounts: Account[], docAccount: string, current: string): Account[] {
   const key = (k: string) => accounts.find((a) => a.system_key === k)?.code;
-  const mapped = docAccount === "capital_goods" ? key("ppe") : (key(`doc:${docAccount}`) ?? key("doc:other"));
+  const mapped = docAccount === "drawings" ? key("drawings") : docAccount === "capital_goods" ? key("ppe") : (key(`doc:${docAccount}`) ?? key("doc:other"));
   return accounts.filter(
     (a) => (a.active && mapped !== undefined && (a.code === mapped || a.parent_code === mapped)) || (current !== "" && a.code === current),
   );
 }
 
 export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Props) {
+  const [tab, setTab] = useState<"details" | "history">("details");
+  const [overrideReason, setOverrideReason] = useState("");
+  useEffect(() => { setTab("details"); setOverrideReason(""); }, [doc.id]);
   const [draft, setDraft] = useState<Draft>(() => toDraft(doc));
   const [images, setImages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -155,6 +159,10 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
       else patch[key] = value;
     }
     if (Object.keys(patch).length === 0) return;
+    if ((patch.reviewed === true || (patch.excluded === false && doc.excluded)) && doc.review_reasons.length > 0) {
+      if (!overrideReason.trim()) { setError("Explain why you are overriding the review reason below."); return; }
+      patch.override_reason = overrideReason.trim();
+    }
     setBusy(true);
     setError("");
     setNotice("");
@@ -212,7 +220,21 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
     </div>
   );
 
-  const openReasons = doc.needs_review && !doc.reviewed ? doc.review_reasons : [];
+  const openReasons = !doc.reviewed ? doc.review_reasons.filter((r) => !doc.review_overrides?.[r]) : [];
+
+  async function overrideReviewReason(reason: string) {
+    if (!overrideReason.trim()) { setError("Explain why you are overriding this reason."); return; }
+    setBusy(true);
+    setError("");
+    try {
+      onChanged(await accountingApi.overrideReviewReason(doc.id, reason, overrideReason.trim()));
+      setOverrideReason("");
+    } catch (e) {
+      setError(apiErrorMessage(e, "Couldn't override the review reason"));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function compareDuplicates() {
     setError("");
@@ -257,6 +279,17 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
           </button>
         </div>
 
+        <div className="mb-4 flex gap-2 border-b border-[var(--border)] pb-3" role="tablist" aria-label="Document panel">
+          {(["details", "history"] as const).map((value) => (
+            <button key={value} id={`doc-tab-${value}`} role="tab" aria-selected={tab === value}
+              aria-controls={`doc-panel-${value}`} className={`${BTN} ${tab === value ? "bg-[var(--accent-subtle)]" : ""}`}
+              onClick={() => setTab(value)}>{value === "details" ? "Details" : "History"}</button>
+          ))}
+        </div>
+        {tab === "history" && <div role="tabpanel" id="doc-panel-history" aria-labelledby="doc-tab-history">
+          <AuditLogPanel key={doc.id} companyId={doc.company_id} entityId={doc.id} />
+        </div>}
+        {tab === "details" && <div role="tabpanel" id="doc-panel-details" aria-labelledby="doc-tab-details">
         {dupPairs && (
           <DuplicateCompare pairs={dupPairs} onClose={() => setDupPairs(null)} onResolved={duplicateResolved} />
         )}
@@ -266,6 +299,8 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
             {openReasons.map((r) => (
               <li key={r}>
                 • {REASON_LABELS[r] ?? r}
+                <button className="ml-2 font-semibold underline" disabled={busy || !overrideReason.trim()}
+                  onClick={() => overrideReviewReason(r)}>Override</button>
                 {r === "possible_duplicate" && (
                   <button className="ml-2 font-semibold underline" disabled={busy} onClick={compareDuplicates}>
                     Compare side by side
@@ -276,6 +311,18 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
           </ul>
         )}
 
+        {(openReasons.length > 0 || (doc.excluded && doc.review_reasons.length > 0)) && (
+          <label className={`${LABEL} mb-4`}>Reason for override
+            <textarea className={`${INPUT} mt-1`} maxLength={2000} value={overrideReason}
+              onChange={(e) => setOverrideReason(e.target.value)} placeholder="Explain the evidence or judgment behind this decision" />
+          </label>
+        )}
+        {openReasons.includes("ewt_expected") && doc.review_ewt_atc && (
+          <p className="mb-4 text-sm text-[var(--text-primary)]">Suggested withholding: {doc.review_ewt_atc} · {formatPeso(doc.review_ewt_amount)}. Confirm the ATC below; this feeds 0619-E, 1601-EQ and the outgoing 2307.</p>
+        )}
+        {openReasons.includes("vat_math_mismatch") && doc.input_vat_valid && (
+          <p className="mb-4 text-sm text-[var(--text-secondary)]">Input VAT is posted at 12% of the VATable base. The printed VAT difference is held in “VAT difference – for review”.</p>
+        )}
         <div className="mb-4 space-y-2">
           {images.map((src, i) => (
             // eslint-disable-next-line @next/next/no-img-element
@@ -454,6 +501,7 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
             {confirmDelete ? "Click again to delete" : "Delete"}
           </button>
         </div>
+        </div>}
       </aside>
     </div>
   );

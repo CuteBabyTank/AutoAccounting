@@ -40,7 +40,7 @@ def test_company_facts_carry_withholding_flags():
 
 def test_column_migrations_are_additive_and_idempotent():
     statements = column_statements()
-    assert all("ADD COLUMN IF NOT EXISTS" in s or "CREATE INDEX IF NOT EXISTS" in s or s.endswith("DROP NOT NULL")
+    assert all("ADD COLUMN IF NOT EXISTS" in s or "CREATE INDEX IF NOT EXISTS" in s or "CREATE TABLE IF NOT EXISTS" in s or s.endswith("DROP NOT NULL")
                for s in statements)  # dropping NOT NULL only relaxes a column and is safe to repeat
     assert {s.split()[2] for s in statements if "ADD COLUMN IF NOT EXISTS" in s} == {"aa_documents", "aa_supplier_rules", "aa_companies", "aa_periods"}
     joined = "\n".join(statements)

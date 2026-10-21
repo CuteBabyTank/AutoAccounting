@@ -6,13 +6,15 @@ from decimal import Decimal
 from app.services.accounting.extraction import EXPENSE_ACCOUNTS, ExtractedDoc
 from app.services.accounting.matching import NAME_MATCH_THRESHOLD, name_similarity, normalize_name
 from app.services.accounting.periods import period_for
+from app.services.accounting.review import ewt_suggestion, needs_review, payment_reasons
 
 CATEGORIES = ("sales", "purchases", "expenses", "payroll", "2307", "support", "unsorted")
-DOCUMENT_ACCOUNTS = EXPENSE_ACCOUNTS + ("sales", "2307_received", "2307_issued")
+DOCUMENT_ACCOUNTS = EXPENSE_ACCOUNTS + ("drawings", "sales", "2307_received", "2307_issued")
 REVIEW_REASONS = (
     "low_confidence", "missing_date", "missing_amount", "unsorted", "not_addressed_to_client",
     "seller_not_vat_registered", "not_an_invoice", "vat_math_mismatch", "possible_duplicate",
     "other_company_tin", "nothing_extracted", "possible_payment", "amounts_dont_add_up", "supplier_rule_mismatch",
+    "tendered_less_than_total", "ewt_expected", "payment_unverified", "payment_source_unknown",
 )
 
 LOW_CONFIDENCE = 70.0
@@ -34,6 +36,8 @@ class CompanyProfile:
     aliases: tuple[str, ...]
     vat_registered: bool
     fiscal_year_end_month: int
+    is_withholding_agent: bool = False
+    owner_name: str = ""
 
 
 def _name_score(name: str, company: CompanyProfile) -> float:
@@ -195,9 +199,9 @@ def classify_document(
     input_vat_valid: bool | None = None
     if role == "buyer" and category in ("purchases", "expenses") and company.vat_registered and ext.vat_amount > 0:
         issues = _input_vat_issues(ext, company, vatable)
-        input_vat_valid = not issues
+        input_vat_valid = not any(i != "vat_math_mismatch" for i in issues)
         reasons.extend(issues)
-        if issues:
+        if not input_vat_valid:
             treatment = "no_input_vat"
     elif _vat_math_mismatch(vatable, ext.vat_amount):
         reasons.append("vat_math_mismatch")
@@ -208,6 +212,26 @@ def classify_document(
     on_neither_side = company.tin not in party_tins and bool(party_tins & other_company_tins)
     if on_neither_side or (client_party.tin and client_party.tin != company.tin and client_party.tin in other_company_tins):
         reasons.append("other_company_tin")
+
+    if ((ext.cash_tendered is not None and ext.cash_tendered < ext.gross_amount - ext.withholding_amount)
+            or (ext.change_amount is not None and ext.change_amount < 0)):
+        reasons.append("tendered_less_than_total")
+    personal = role == "buyer" and category in ("purchases", "expenses") and not (
+        company.tin and ext.buyer.tin == company.tin) and (
+        ext.personal_purchase or bool(normalize_name(company.owner_name) and normalize_name(ext.buyer.name)
+                                     == normalize_name(company.owner_name)))
+    if personal:
+        if "not_addressed_to_client" not in reasons:
+            reasons.append("not_addressed_to_client")
+        account, treatment, input_vat_valid = "drawings", "no_input_vat", False
+    if ext.withholding_amount == 0 and ewt_suggestion({
+        "client_role": role, "category": category, "account": account, "seller_name": ext.seller.name,
+        "gross_amount": ext.gross_amount, "vat_amount": ext.vat_amount,
+    }, company.is_withholding_agent)[1] > 0:
+        reasons.append("ewt_expected")
+    raw = dict(ext.raw or {}, payment_terms=ext.payment_terms, payment_status=ext.payment_status,
+               payment_source_unknown=ext.payment_source_unknown)
+    reasons.extend(payment_reasons(raw, category, False))
 
     period = period_for(ext.doc_date, company.fiscal_year_end_month) if ext.doc_date else None
     return {
@@ -240,8 +264,9 @@ def classify_document(
         "input_vat_valid": input_vat_valid,
         "confidence": ext.confidence,
         "review_reasons": reasons,
-        "needs_review": bool(reasons),
-        "raw": ext.raw,
+        "needs_review": needs_review(reasons),
+        "excluded": personal,
+        "raw": raw,
     }
 
 

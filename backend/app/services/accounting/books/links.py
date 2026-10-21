@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.accounting import AADocument
+from app.services.accounting.review import needs_review, payment_reasons
 from app.services.accounting.books.receipts import DocRef, is_invoice, is_payment_receipt, match_receipts, party_key
 
 _PAYABLE = ("sales", "purchases", "expenses", "payroll")
@@ -50,6 +51,13 @@ def plan_links(docs) -> dict[str, LinkChange]:
             for m in matches}
 
 
+def payment_is_verified(doc, receipts) -> bool:
+    """A manual payment with a source, or linked receipts covering the net settlement amount."""
+    paid = sum((r.gross_amount for r in receipts), start=0)
+    due = doc.gross_amount - doc.withholding_amount
+    return bool(doc.paid_on and doc.paid_via) or bool(receipts and paid >= due > 0)
+
+
 async def relink_receipts(db: AsyncSession, company_id: uuid.UUID) -> None:
     """Apply plan_links to the company's documents (flushes; the caller commits)."""
     docs = (await db.execute(select(AADocument).where(
@@ -66,5 +74,16 @@ async def relink_receipts(db: AsyncSession, company_id: uuid.UUID) -> None:
             reasons.append("possible_payment")
         if reasons != list(doc.review_reasons or []):
             doc.review_reasons = reasons
-            doc.needs_review = bool(reasons)
+            doc.needs_review = needs_review([r for r in reasons if r not in (doc.review_overrides or {})])
+    # Refresh evidence-dependent warnings for invoices/payroll as receipts are added, unlinked or removed.
+    for doc in docs:
+        if not _live(doc) or doc.settles_document_id is not None:
+            continue
+        receipts = [r for r in docs if _live(r) and r.settles_document_id == doc.id]
+        verified = payment_is_verified(doc, receipts)
+        reasons = [r for r in (doc.review_reasons or []) if r not in ("payment_unverified", "payment_source_unknown")]
+        reasons.extend(payment_reasons(doc.raw, doc.category, verified))
+        if reasons != list(doc.review_reasons or []):
+            doc.review_reasons = reasons
+        doc.needs_review = needs_review([r for r in reasons if r not in (doc.review_overrides or {})])
     await db.flush()

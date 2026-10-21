@@ -14,7 +14,7 @@ _FIRM_EXPR = (
 )
 
 _FIRM_TABLES = ("aa_companies", "aa_uploads", "aa_files", "aa_documents", "aa_periods", "aa_outputs", "aa_assets",
-                "aa_accounts", "aa_journal_entries", "aa_book_closes", "aa_employees")
+                "aa_accounts", "aa_journal_entries", "aa_book_closes", "aa_employees", "aa_audit_events")
 _COMPANY_TABLES = ("aa_supplier_rules", "aa_atc_defaults")  # no enterprise_id: scoped through their company
 
 

@@ -32,6 +32,7 @@ from app.services.accounting.compute.ewt import effective_atc
 from app.services.accounting.compute.inputs import (
     CompanyFacts, DocLine, PeriodData, PeriodInputs, inputs_from_json, inputs_to_json,
 )
+from app.services.accounting.compute.money import c2
 from app.services.accounting.compute.specs import FORM_ORDER, FORM_TITLES, PAYABLE_ITEM, PDF_FORMS, form_items
 from app.services.accounting.assets import active_assets
 from app.services.accounting.atc_prefs import account_key, remembered_atc
@@ -75,13 +76,18 @@ def doc_line(doc: AADocument, atc_rules: dict[str, str] | None = None,
     counterparty_tin = doc.buyer_tin if seller else doc.seller_tin
     remembered = "" if seller else remembered_atc(atc_rules or {}, counterparty_tin, doc.account)[0]
     gl = doc.gl_account_code or ("" if seller else (gl_rules or {}).get(counterparty_tin, ""))
+    vat, difference = doc.vat_amount, Decimal("0")
+    if (doc.input_vat_valid is True and not seller and doc.vatable_amount > 0
+            and "vat_math_mismatch" in (getattr(doc, "review_reasons", None) or [])):
+        vat = c2(doc.vatable_amount * Decimal("0.12"))
+        difference = c2(doc.vat_amount - vat)
     return DocLine(
         id=str(doc.id), category=doc.category, account=doc.account, doc_type=doc.doc_type,
         client_role=doc.client_role, doc_date=doc.doc_date, doc_number=doc.doc_number,
         counterparty_tin=counterparty_tin,
         counterparty_name=doc.buyer_name if seller else doc.seller_name,
         counterparty_address=doc.buyer_address if seller else doc.seller_address,
-        gross=doc.gross_amount, vatable=doc.vatable_amount, vat=doc.vat_amount, exempt=doc.exempt_amount,
+        gross=doc.gross_amount, vatable=doc.vatable_amount, vat=vat, vat_difference=difference, exempt=doc.exempt_amount,
         zero_rated=doc.zero_rated_amount, withholding=doc.withholding_amount,
         input_vat_valid=doc.input_vat_valid, open_review=doc.needs_review and not doc.reviewed,
         ewt_atc=doc.ewt_atc or remembered,

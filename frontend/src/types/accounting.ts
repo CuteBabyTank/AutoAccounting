@@ -2,6 +2,7 @@ export type TaxpayerType = "individual" | "corporation" | "partnership";
 
 export interface CompanyInput {
   registered_name: string;
+  owner_name: string;
   aliases: string[];
   tin: string;
   branch_code: string;
@@ -165,6 +166,9 @@ export interface AADocument {
   confidence: number;
   needs_review: boolean;
   review_reasons: string[];
+  review_overrides: Record<string, { user_id: string; at: string; reason: string }>;
+  review_ewt_atc: string;
+  review_ewt_amount: string;
   reviewed: boolean;
   excluded: boolean;
   paid_on: string | null;
@@ -199,7 +203,7 @@ export interface FolderRef {
   companyId: string;
   year: number | null;
   quarter: number | null;
-  view?: "books" | "atc" | "employees";
+  view?: "books" | "atc" | "employees" | "audit";
 }
 
 export type DocumentPatch = Record<string, string | number | boolean | null>;
@@ -550,4 +554,33 @@ export interface AlphalistStatus {
   employees: number;
   issues: number;
   status: "no_payroll" | "needs_review" | "ready";
+}
+
+export interface AuditEvent {
+  id: string;
+  company_id: string | null;
+  user_id: string | null;
+  user_name: string;
+  at: string;
+  entity: string;
+  entity_id: string;
+  action: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  reason: string;
+}
+export interface AuditFilters {
+  company_id?: string;
+  user_id?: string;
+  date_from?: string;
+  date_to?: string;
+  entity?: string;
+  entity_id?: string;
+  offset?: number;
+  limit?: number;
+}
+export interface AuditPage {
+  events: AuditEvent[];
+  users: { id: string; name: string }[];
+  has_more: boolean;
 }

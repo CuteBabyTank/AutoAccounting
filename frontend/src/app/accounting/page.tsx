@@ -22,6 +22,7 @@ import Hint from "@/components/guide/Hint";
 import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
 import { DOCUMENTS_TOUR } from "@/components/guide/tours";
 import { accountingApi } from "@/lib/accounting-api";
+import AuditLogPanel from "@/components/accounting/AuditLogPanel";
 import { teamApi } from "@/lib/api";
 import { useGuide } from "@/lib/guides";
 import { apiErrorMessage } from "@/lib/accounting-format";
@@ -343,6 +344,10 @@ export default function AccountingPage() {
                 year={selected.year}
                 canManage={canManage}
               />
+            )}
+            {selected?.view === "audit" && (
+              <AuditLogPanel key={selected.companyId} companyId={selected.companyId}
+                companyName={tree.find((c) => c.id === selected.companyId)?.registered_name} />
             )}
             {selected?.view === "atc" && (
               <AtcDatabankPanel

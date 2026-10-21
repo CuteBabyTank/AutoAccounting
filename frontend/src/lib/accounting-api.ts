@@ -2,6 +2,8 @@
 import api from "@/lib/api";
 import type {
   AADocument,
+  AuditFilters,
+  AuditPage,
   Account,
   AnnualInputs,
   AnnualPeriod,
@@ -78,8 +80,8 @@ export const accountingApi = {
       })
       .then((r) => r.data),
   /** Keep both: the pair is never offered as a duplicate again. */
-  notDuplicate: (id: string, otherId: string) =>
-    api.post(`/accounting/documents/${id}/not-duplicate`, { other_id: otherId }).then(() => undefined),
+  notDuplicate: (id: string, otherId: string, reason: string) =>
+    api.post(`/accounting/documents/${id}/not-duplicate`, { other_id: otherId, reason }).then(() => undefined),
   deleteDocument: (id: string) => api.delete(`/accounting/documents/${id}`).then(() => undefined),
   pageImage: (fileId: string, page: number) =>
     api
@@ -213,6 +215,10 @@ export const accountingApi = {
       .then((r) => r.data),
   useAtcSuggestions: (companyId: string) =>
     api.post<AtcDatabank>(`/accounting/companies/${companyId}/atc-databank/use-suggestions`).then((r) => r.data),
+  auditEvents: (filters: AuditFilters) =>
+    api.get<AuditPage>("/accounting/audit-events", { params: filters }).then((r) => r.data),
+  overrideReviewReason: (id: string, reviewReason: string, reason: string) =>
+    api.post<AADocument>(`/accounting/documents/${id}/review-overrides`, { review_reason: reviewReason, reason }).then((r) => r.data),
   getDocument: (id: string) => api.get<AADocument>(`/accounting/documents/${id}`).then((r) => r.data),
   documentPayments: (docId: string) =>
     api.get<PaymentLinks>(`/accounting/documents/${docId}/payments`).then((r) => r.data),

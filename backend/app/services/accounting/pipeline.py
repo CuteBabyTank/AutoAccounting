@@ -47,7 +47,8 @@ def company_candidates(companies) -> list[CompanyCandidate]:
 
 def company_profile(c: AACompany) -> CompanyProfile:
     return CompanyProfile(
-        c.tin, c.registered_name, tuple(c.aliases or ()), c.vat_status == "vat", c.fiscal_year_end_month
+        c.tin, c.registered_name, tuple(c.aliases or ()), c.vat_status == "vat", c.fiscal_year_end_month,
+        c.is_withholding_agent or c.is_top_withholding_agent, getattr(c, "owner_name", "") or ""
     )
 
 

@@ -22,15 +22,17 @@ from app.models.accounting import (
     AAAccount, AAAsset, AACompany, AADocument, AAFile, AAJournalEntry, AAOutput, AAPeriod, AASupplierRule, AAUpload,
 )
 from app.models.user import User, UserRole
-from app.routers import accounting_annual, accounting_atc, accounting_books, accounting_employees, accounting_periods
+from app.routers import accounting_annual, accounting_audit, accounting_atc, accounting_books, accounting_employees, accounting_periods
 from app.routers.accounting_scope import (
     MANAGER_ROLES as _MANAGER_ROLES, company_or_404 as _company_or_404, scope_for as _scope,
 )
 from app.schemas.accounting import (
     AffectedPeriodOut, CompanyBrief, CompanyIn, CompanyOut, ConfirmIn, DocumentOut, DocumentPatch, DuplicatePairOut,
-    FolderOut, NotDuplicateIn,
+    FolderOut, NotDuplicateIn, ReviewOverrideIn,
     TreeCompanyOut, UploadFileOut, UploadGroupOut, UploadOut,
 )
+from app.services.accounting.audit import record_event, snapshot
+from app.services.accounting.review import ewt_suggestion, needs_review
 from app.services.accounting import pipeline
 from app.services.accounting.books.links import relink_receipts
 from app.services.accounting.books.loader import touch_books
@@ -145,18 +147,31 @@ async def update_company(
     if books_settings_changed(changed):
         touch_books(company)
     if "books_start" in changed and company.books_start is not None:  # opening balances sit on the start date
-        await db.execute(update(AAJournalEntry).where(
-            AAJournalEntry.company_id == company.id, AAJournalEntry.kind == "opening",
-        ).values(entry_date=company.books_start))
+        entries = (await db.execute(select(AAJournalEntry).where(
+            AAJournalEntry.enterprise_id == ent, AAJournalEntry.company_id == company.id,
+            AAJournalEntry.kind == "opening", AAJournalEntry.deleted_at.is_(None),
+        ))).scalars().all()
+        for entry in entries:
+            before = snapshot(entry)
+            entry.entry_date = company.books_start
+            record_event(db, enterprise_id=ent, company_id=company.id, user=user, entity="journal_entry",
+                         entity_id=entry.id, action="update", before=before, after=snapshot(entry),
+                         reason="Company books start changed")
     if fiscal_year_changed:
         # Stored periods were computed with the old year end; re-file unlocked documents.
         docs = (await db.execute(
-            select(AADocument).where(AADocument.company_id == company.id, AADocument.period_locked.is_(False))
+            select(AADocument).where(AADocument.enterprise_id == ent, AADocument.company_id == company.id,
+                                     AADocument.period_locked.is_(False))
         )).scalars().all()
         for doc in docs:
+            before = snapshot(doc)
             doc.period_year, doc.period_quarter, doc.period_month = period_fields(
                 doc.doc_date, company.fiscal_year_end_month
             )
+            if before != snapshot(doc):
+                record_event(db, enterprise_id=ent, company_id=company.id, user=user, entity="document",
+                             entity_id=doc.id, action="update", before=before, after=snapshot(doc),
+                             reason="Company fiscal year end changed")
     try:
         await db.commit()
     except IntegrityError:
@@ -612,10 +627,39 @@ def _apply_period_from_date(doc: AADocument, company: AACompany) -> None:
     )
 
 
+_DERIVED_DOCUMENT_FIELDS = (
+    "category", "account", "review_reasons", "needs_review", "settles_document_id", "settles_source",
+)
+
+
+def _derived_document_state(doc: AADocument) -> dict:
+    from app.services.accounting.audit import json_copy
+    return json_copy({key: getattr(doc, key) for key in _DERIVED_DOCUMENT_FIELDS})
+
+
+async def _related_document_states(db: AsyncSession, ent: uuid.UUID, company_id: uuid.UUID,
+                                   exclude: set[uuid.UUID]) -> list[tuple[AADocument, dict]]:
+    rows = (await db.execute(select(AADocument).where(
+        AADocument.enterprise_id == ent, AADocument.company_id == company_id,
+        AADocument.deleted_at.is_(None), AADocument.id.not_in(exclude),
+    ))).scalars().all()
+    return [(doc, _derived_document_state(doc)) for doc in rows]
+
+
+def _audit_related_documents(db: AsyncSession, ent: uuid.UUID, user: User,
+                             states: list[tuple[AADocument, dict]], source_id: uuid.UUID) -> None:
+    for doc, before in states:
+        after = _derived_document_state(doc)
+        if before != after:
+            record_event(db, enterprise_id=ent, company_id=doc.company_id, user=user, entity="document",
+                         entity_id=doc.id, action="update", before=before, after=after,
+                         reason=f"Updated from document {source_id}")
+
+
 async def _learn_supplier_rule(db: AsyncSession, doc: AADocument, learn_atc: bool = False,
                                learn_gl: bool = False) -> None:
     tin = doc.buyer_tin if doc.client_role == "seller" else doc.seller_tin
-    if not tin or doc.category not in ("purchases", "expenses"):
+    if not tin or doc.category not in ("purchases", "expenses") or doc.account == "drawings":
         return
     # Atomic upsert: two people correcting the same supplier at once must not 500.
     stmt = pg_insert(AASupplierRule).values(
@@ -639,7 +683,7 @@ async def _apply_rule_to_supplier_documents(db: AsyncSession, doc: AADocument) -
     before the rule existed). One the rule doesn't fit (goods vs services) is flagged instead of changed."""
     seller = doc.client_role == "seller"
     tin = doc.buyer_tin if seller else doc.seller_tin
-    if not tin or doc.category not in ("purchases", "expenses"):
+    if not tin or doc.category not in ("purchases", "expenses") or doc.account == "drawings":
         return 0
     others = (await db.execute(select(AADocument).where(
         AADocument.company_id == doc.company_id, AADocument.id != doc.id, AADocument.deleted_at.is_(None),
@@ -649,6 +693,8 @@ async def _apply_rule_to_supplier_documents(db: AsyncSession, doc: AADocument) -
     ))).scalars().all()
     changed = 0
     for other in others:
+        if other.excluded or other.account == "drawings":
+            continue
         if (other.category, other.account) == (doc.category, doc.account):
             continue
         if rule_conflicts(document_nature(other.raw), other.account, doc.account):
@@ -665,6 +711,8 @@ def _documents_out(docs, company: AACompany, rules: dict[str, str]) -> list[Docu
     out = []
     for doc in docs:
         item = DocumentOut.model_validate(doc)
+        item.review_ewt_atc, item.review_ewt_amount = ewt_suggestion(item.model_dump(),
+            company.is_withholding_agent or company.is_top_withholding_agent)
         item.ewt_atc_effective = accounting_periods.effective_document_atc(doc, company, rules)
         item.ewt_atc_source = accounting_periods.document_atc_source(doc, rules)
         out.append(item)
@@ -700,6 +748,23 @@ async def patch_document(
     doc = await _document_or_404(db, ent, doc_id)
     company = await _company_or_404(db, ent, doc.company_id)
     sent = body.model_fields_set
+    before = snapshot(doc)
+    overriding = bool(doc.review_reasons) and (
+        body.reviewed is True and not doc.reviewed
+        or body.excluded is False and doc.excluded
+        or body.vat_treatment == "vatable" and doc.vat_treatment == "no_input_vat")
+    if overriding and not body.override_reason.strip():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Explain why the review reason is being overridden")
+    related_fields = {"category", "account", "doc_number", "doc_date", "gross_amount", "withholding_amount",
+                      "seller_tin", "buyer_tin", "seller_name", "buyer_name", "excluded", "settles_document_id",
+                      "paid_on", "paid_via"}
+    related = await _related_document_states(db, ent, doc.company_id, {doc.id}) if sent & related_fields else []
+    if body.reviewed is True and not doc.reviewed:
+        doc.review_overrides = {**(doc.review_overrides or {}), **{
+            r: {"user_id": str(user.id), "reason": body.override_reason.strip(),
+                "at": datetime.now(timezone.utc).isoformat()} for r in doc.review_reasons or []}}
+    elif body.reviewed is False:
+        doc.review_overrides = {}
 
     for name in _PLAIN_FIELDS:
         if name not in sent:
@@ -733,7 +798,7 @@ async def patch_document(
         doc.settles_source = "user"   # never re-linked automatically after a person decides
         if "possible_payment" in (doc.review_reasons or []):
             doc.review_reasons = [r for r in doc.review_reasons if r != "possible_payment"]
-            doc.needs_review = bool(doc.review_reasons)
+            doc.needs_review = needs_review([r for r in doc.review_reasons if r not in (doc.review_overrides or {})])
 
     if "period_year" in sent:
         if body.period_year is None:
@@ -752,17 +817,45 @@ async def patch_document(
         applied = await _apply_rule_to_supplier_documents(db, doc)
 
     if sent & {"doc_date", "gross_amount", "withholding_amount", "seller_tin", "buyer_tin", "seller_name",
-               "buyer_name", "category", "excluded", "settles_document_id"}:
+               "buyer_name", "category", "excluded", "settles_document_id", "paid_on", "paid_via"}:
         await db.flush()
         await relink_receipts(db, doc.company_id)
     if sent & {"doc_number", "doc_date", "gross_amount", "seller_tin", "buyer_tin", "seller_name", "buyer_name"}:
         await db.flush()
         await duplicates.refresh_flags(db, doc.company_id)
 
+    doc.needs_review = needs_review([r for r in (doc.review_reasons or []) if r not in (doc.review_overrides or {})])
+    _audit_related_documents(db, ent, user, related, doc.id)
+    record_event(db, enterprise_id=ent, company_id=doc.company_id, user=user,
+                 entity="document", entity_id=doc.id, action="review_override" if overriding else "update",
+                 before=before, after=snapshot(doc), reason=body.override_reason)
     await db.commit()
     out = await _document_out(db, doc, company)
     out.rule_applied_to = applied
     return out
+
+
+@router.post("/documents/{doc_id}/review-overrides", response_model=DocumentOut)
+async def override_review_reason(
+    doc_id: uuid.UUID, body: ReviewOverrideIn, user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    ent = _scope(user)
+    doc = await _document_or_404(db, ent, doc_id)
+    company = await _company_or_404(db, ent, doc.company_id)
+    if body.review_reason not in (doc.review_reasons or []):
+        raise HTTPException(400, "This review reason is not on the document")
+    before = snapshot(doc)
+    doc.review_overrides = {**(doc.review_overrides or {}), body.review_reason: {
+        "user_id": str(user.id), "reason": body.reason, "at": datetime.now(timezone.utc).isoformat(),
+    }}
+    unresolved = [r for r in doc.review_reasons if r not in doc.review_overrides]
+    doc.needs_review = needs_review(unresolved)
+    doc.reviewed = not unresolved
+    record_event(db, enterprise_id=ent, company_id=doc.company_id, user=user, entity="document",
+                 entity_id=doc.id, action="review_override", before=before, after=snapshot(doc), reason=body.reason)
+    await db.commit()
+    return await _document_out(db, doc, company)
 
 
 @router.delete("/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -770,10 +863,15 @@ async def delete_document(
     doc_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     doc = await _document_or_404(db, _scope(user), doc_id)
+    before = snapshot(doc)
+    related = await _related_document_states(db, _scope(user), doc.company_id, {doc.id})
     doc.deleted_at = datetime.now(timezone.utc)
     await db.flush()
     await relink_receipts(db, doc.company_id)
     await duplicates.refresh_flags(db, doc.company_id)  # the copy left behind is no longer a duplicate
+    _audit_related_documents(db, _scope(user), user, related, doc.id)
+    record_event(db, enterprise_id=_scope(user), company_id=doc.company_id, user=user,
+                 entity="document", entity_id=doc.id, action="delete", before=before, after=snapshot(doc))
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -829,11 +927,20 @@ async def mark_not_duplicate(
     other = await _document_or_404(db, ent, body.other_id)
     if other.company_id != doc.company_id or other.id == doc.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pick two different documents of the same company")
+    if not body.reason.strip():
+        raise HTTPException(400, "Explain why these documents are not duplicates")
+    related = await _related_document_states(db, ent, doc.company_id, {doc.id, other.id})
+    before = {str(d.id): snapshot(d) for d in (doc, other)}
     for a, b in ((doc, other), (other, doc)):
         if str(b.id) not in (a.not_duplicate_of or []):
             a.not_duplicate_of = [*(a.not_duplicate_of or []), str(b.id)]
     await db.flush()
     await duplicates.refresh_flags(db, doc.company_id)
+    _audit_related_documents(db, ent, user, related, doc.id)
+    for d in (doc, other):
+        record_event(db, enterprise_id=ent, company_id=d.company_id, user=user,
+                     entity="document", entity_id=d.id, action="review_override",
+                     before=before[str(d.id)], after=snapshot(d), reason=body.reason)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -862,6 +969,7 @@ async def file_page(
     return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, max-age=3600"})
 
 
+router.include_router(accounting_audit.router)
 router.include_router(accounting_books.router)
 router.include_router(accounting_employees.router)
 router.include_router(accounting_atc.router)

@@ -19,7 +19,7 @@ Category = Literal["sales", "purchases", "expenses", "payroll", "2307", "support
 Account = Literal[
     "purchases", "raw_materials", "importation", "capital_goods", "salaries", "rent",
     "utilities", "professional_fees", "office_supplies", "representation", "transportation",
-    "repairs", "taxes_licenses", "other", "sales", "2307_received", "2307_issued",
+    "repairs", "taxes_licenses", "other", "drawings", "sales", "2307_received", "2307_issued",
 ]
 VatTreatment = Literal["", "vatable", "exempt", "zero_rated", "no_input_vat"]
 def _money_field():
@@ -35,6 +35,7 @@ def _tin_base(value: str) -> str:
 
 class CompanyIn(BaseModel):
     registered_name: str = Field(min_length=1, max_length=255)
+    owner_name: str = Field(default="", max_length=255)
     aliases: list[str] = Field(default_factory=list, max_length=20)
     tin: str = Field(min_length=9, max_length=25)
     branch_code: str = "00000"
@@ -262,6 +263,9 @@ class DocumentOut(BaseModel):
     confidence: float
     needs_review: bool
     review_reasons: list[str]
+    review_overrides: dict = Field(default_factory=dict)
+    review_ewt_atc: str = ""
+    review_ewt_amount: Decimal = Decimal("0")
     reviewed: bool
     excluded: bool
     created_at: datetime
@@ -286,8 +290,21 @@ class DuplicatePairOut(BaseModel):
     duplicate_file: str
 
 
+class ReviewOverrideIn(BaseModel):
+    review_reason: str = Field(min_length=1, max_length=60)
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def _why(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Explain why this review reason is being overridden")
+        return v.strip()
+
+
 class NotDuplicateIn(BaseModel):
     other_id: uuid.UUID
+    reason: str = Field(min_length=1, max_length=2000)
 
 
 class DocumentPatch(BaseModel):
@@ -311,6 +328,7 @@ class DocumentPatch(BaseModel):
     withholding_amount: Decimal | None = _money_field()
     ewt_atc: str | None = Field(default=None, max_length=10)
     vat_treatment: VatTreatment | None = None
+    override_reason: str = Field(default="", max_length=2000)
     reviewed: bool | None = None
     excluded: bool | None = None
     paid_on: date | None = None

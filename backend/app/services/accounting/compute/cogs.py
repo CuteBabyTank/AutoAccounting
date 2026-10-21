@@ -19,7 +19,7 @@ def is_capital_goods(line: DocLine) -> bool:
 def cost_base(line: DocLine, company_vat: bool) -> Decimal:
     """What a purchase or expense costs the business: VAT-exclusive only when its input VAT is claimed."""
     if claims_input_vat(line, company_vat):
-        return c2(line.gross - line.vat)
+        return c2(line.gross - line.vat - line.vat_difference)
     return c2(line.gross)
 
 
@@ -37,7 +37,7 @@ def compute_cogs(lines, company: CompanyFacts, beginning: Decimal, ending: Decim
     if company.business_type == "services":
         return CogsResult(ZERO, ZERO, ZERO, ZERO, True)
     purchases = total(cost_base(l, company.vat_registered) for l in lines
-                      if l.category == "purchases" and not is_capital_goods(l))
+                      if l.category == "purchases" and l.account != "drawings" and not is_capital_goods(l))
     end = c2(ending) if ending is not None else ZERO
     begin = c2(beginning)
     return CogsResult(begin, purchases, end, c2(begin + purchases - end), ending is not None)

@@ -30,7 +30,7 @@ def test_suggestions_follow_account_payee_and_top_agent():
     assert suggest_atc(expense(account="rent", counterparty_name="Pedro Cruz"), c) == "WI100"
     assert suggest_atc(expense(account="professional_fees", counterparty_name="Atty. Reyes"), c) == "WI010"
     assert suggest_atc(expense(account="professional_fees", counterparty_name="Atty. Reyes",
-                               counterparty_vat_registered=True), c) == "WI011"
+                               counterparty_vat_registered=True), c) == "WI010"
     assert suggest_atc(expense(account="professional_fees", counterparty_name="SGV & Co."), c) == "WC010"
     assert suggest_atc(expense(account="repairs", counterparty_name="BuildRight Corp"), c) == "WC120"
     assert suggest_atc(expense(account="repairs", counterparty_name="BuildRight Corp", nature="services"), c) == "WC120"

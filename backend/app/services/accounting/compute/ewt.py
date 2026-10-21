@@ -60,7 +60,7 @@ def is_agent(company: CompanyFacts) -> bool:
 
 
 def _is_payment(line: DocLine) -> bool:
-    return line.client_role == "buyer" and line.category in _PAYMENTS
+    return line.client_role == "buyer" and line.category in _PAYMENTS and line.account != "drawings"
 
 
 def suggest_atc(line: DocLine, company: CompanyFacts) -> str:
@@ -73,7 +73,7 @@ def suggest_atc(line: DocLine, company: CompanyFacts) -> str:
     if line.account == "professional_fees":
         if prefix == "WC":
             return "WC010"
-        return "WI011" if line.counterparty_vat_registered else "WI010"
+        return "WI010"  # default suggestion; a higher-rate ATC requires the reviewer's choice
     goods = line.nature in _GOODS_NATURES  # e.g. parts or materials booked to repairs: not a contractor's fee
     if line.account == "repairs" and not goods:
         return f"{prefix}120"
@@ -99,7 +99,7 @@ def effective_atc(line: DocLine, company: CompanyFacts) -> str:
 
 def tax_base(line: DocLine) -> Decimal:
     """Amount paid, net of VAT when the document shows VAT."""
-    return c2(line.gross - line.vat) if line.vat > 0 else c2(line.gross)
+    return c2(line.gross - line.vat - line.vat_difference) if line.vat > 0 else c2(line.gross)
 
 
 def month_in_quarter(day: date | None, year: int, quarter: int, fye: int) -> int | None:

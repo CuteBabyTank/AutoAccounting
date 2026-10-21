@@ -3,6 +3,9 @@ Application configuration via environment variables.
 """
 
 import sys
+from typing import Literal
+
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 _INSECURE_DEFAULTS = {
@@ -78,6 +81,24 @@ class Settings(BaseSettings):
     # not a thinking budget).
     accounting_gemini_model: str = "gemini-3.8-flash"
     accounting_gemini_thinking_level: str = "low"
+    # Firm assistant only: native Ollama locally, OpenAI-compatible hosted Qwen later.
+    assistant_llm_provider: Literal["ollama", "openai"] = "ollama"
+    assistant_llm_base_url: str = "http://host.docker.internal:11434"
+    assistant_llm_model: str = "qwen3:4b-instruct"
+    assistant_llm_api_key: str = ""
+    assistant_llm_timeout_seconds: float = Field(default=90, gt=0)
+    assistant_llm_think: bool = False
+    assistant_llm_keep_alive: str = "30m"
+    assistant_llm_num_ctx: int = Field(default=16384, ge=1024)
+    assistant_llm_max_output_tokens: int = Field(default=1024, ge=1)
+    assistant_turn_seconds: float = Field(default=180, gt=0)
+    assistant_max_steps: int = Field(default=5, ge=1)
+    assistant_max_calls_per_step: int = Field(default=3, ge=1)
+    assistant_observation_chars: int = Field(default=6000, ge=200)
+    assistant_history_turns: int = Field(default=12, ge=0)
+    assistant_history_chars: int = Field(default=800, ge=1)
+    assistant_history_budget_chars: int = Field(default=4000, ge=0)
+    assistant_answer_chars: int = Field(default=4000, ge=100)
 
     # Gemini API rate limits (requests per minute).
     # Per-user RPM is a hard ceiling. The platform-wide global RPM is *dynamic*:

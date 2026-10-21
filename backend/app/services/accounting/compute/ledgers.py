@@ -1,6 +1,6 @@
 """SLS / SLP / SAWT and transaction ledgers for the workbook (pure)."""
 
-from app.services.accounting.compute.cogs import claims_input_vat
+from app.services.accounting.compute.cogs import claimed_input_vat, claims_input_vat
 from app.services.accounting.compute.money import ZERO, c2, total
 from app.services.accounting.compute.vat import VAT_RATE
 from app.services.accounting.matching import normalize_name
@@ -55,7 +55,7 @@ def build_slp(lines, company_vat: bool) -> list[dict]:
             else:
                 column = "services"
             row[column] = c2(row[column] + l.gross - l.vat)
-            row["input_tax"] = c2(row["input_tax"] + l.vat)
+            row["input_tax"] = c2(row["input_tax"] + claimed_input_vat(l, company_vat))
         else:
             row["exempt"] = c2(row["exempt"] + l.gross)
     for row in rows.values():

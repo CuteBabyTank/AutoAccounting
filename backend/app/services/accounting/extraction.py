@@ -7,7 +7,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.ocr import clean_text
-from app.services.accounting.parsing import normalize_tin, parse_doc_date, parse_money
+from app.services.accounting.parsing import normalize_tin, parse_doc_date, parse_money, printed_branch
 
 KINDS = ("invoice", "receipt", "bir2307", "payroll", "import", "statement", "other")
 NATURES = ("goods_for_resale", "raw_materials", "capital_goods", "services", "import", "payroll", "other")
@@ -23,14 +23,15 @@ Look at this first page and identify the two parties.
 Reply with ONLY valid JSON, no markdown fences, no explanation:
 {"document_title": "<title printed on the document, e.g. SALES INVOICE, OFFICIAL RECEIPT, BIR FORM 2307>",
  "kind": "<invoice|receipt|bir2307|payroll|import|statement|other>",
- "seller": {"name": "<issuer / seller / payee>", "tin": "<TIN as printed>"},
- "buyer": {"name": "<customer / buyer / payor>", "tin": "<TIN as printed>"},
+ "seller": {"name": "<issuer / seller / payee>", "tin": "<TIN as printed, every digit incl. the branch code>"},
+ "buyer": {"name": "<customer / buyer / payor>", "tin": "<TIN as printed, every digit incl. the branch code>"},
  "date": "<document date as YYYY-MM-DD, or empty>"}
 
 Rules:
 - On a BIR Form 2307 the payee is the seller and the payor is the buyer.
 - On a payroll register the employer is the buyer; leave seller empty.
-- Use "" for anything not printed. Never guess a TIN."""
+- Copy a TIN with ALL its digits, including the branch code after the 9-digit number (010-234-567-000 or
+  010-234-567-00000), never only the first 9. Use "" for anything not printed. Never guess a TIN."""
 
 EXTRACT_PROMPT = """You are extracting accounting data from Philippine business documents for a bookkeeper.
 The file may contain ONE or MANY separate documents (for example a scan of 40 receipts, one per page,
@@ -52,9 +53,22 @@ Reply with ONLY valid JSON, no markdown fences, no explanation:
   "exempt_amount": <VAT-exempt amount>,
   "zero_rated_amount": <zero-rated amount>,
   "withholding_amount": <withholding tax deducted>,
+  "cash_tendered": <cash tendered / amount received printed on a cash receipt, 0 when not shown>,
+  "change": <change printed on the receipt exactly as shown, negative if it shows a negative change, 0 when not shown>,
+  "payment_terms": "<credit if the document shows credit terms, a due date, PDC, charge or a balance still due; cash if paid in full on the spot; empty if unclear>",
+  "due_date": "<YYYY-MM-DD when a due date is printed, else empty>",
+  "terms_days": <number of days of credit when terms are printed (e.g. Net 30 or 30 days PDC = 30), else null>,
+  "marked_paid": <true when the document says PAID, RELEASED or RECEIVED (e.g. a payroll sheet marked released), else false>,
   "nature": "<goods_for_resale|raw_materials|capital_goods|services|import|payroll|other>",
   "expense_account": "<purchases|raw_materials|importation|capital_goods|salaries|rent|utilities|professional_fees|office_supplies|representation|transportation|repairs|taxes_licenses|other>",
-  "confidence": <0-100, your certainty in the amounts and date>
+  "description": "<what was bought or the service rendered, in a few words, e.g. office rent for March, aircon repair, cement and rebar>",
+  "confidence": <0-100, your certainty in the amounts and date>,
+  "statement": <ONLY for a bank or e-wallet statement, else omit: {"bank_name": "", "account_number": "<as printed>",
+    "period_start": "<YYYY-MM-DD>", "period_end": "<YYYY-MM-DD>", "opening_balance": <beginning balance>,
+    "closing_balance": <ending balance>,
+    "lines": [{"date": "<YYYY-MM-DD>", "description": "<narration exactly as printed>", "debit": <withdrawal / money out, 0 if none>,
+               "credit": <deposit / money in, 0 if none>, "balance": <running balance as printed, or "" if not shown>,
+               "ref": "<check or reference number, or "">", "page": <page of this file the line is printed on, 1-based>}]}>
 }]}
 
 Rules:
@@ -70,7 +84,11 @@ Rules:
 - Meals or entertainment with clients use expense_account "representation".
 - Every page that carries its own complete document (its own header, number and total) is a separate entry, even when it
   repeats a document already in this file (a second copy or a rescan). Only merge pages that continue one document.
+- For a bank statement list every transaction line in order, across all its pages, in "statement".lines.
 - Amounts are plain numbers without currency symbols; use 0 when not shown.
+- Copy a TIN with ALL its digits as printed, including the branch code after the 9-digit number (e.g.
+  "010-234-567-000" or "010-234-567-00000"). Never stop at the first 9 digits and never add a branch code that
+  isn't printed.
 - Use "" for text that is not printed. Never invent a TIN or a document number."""
 
 
@@ -97,6 +115,8 @@ class Party:
     tin: str = ""          # 9-digit base, "" when unknown
     branch: str = "00000"
     address: str = ""
+    # The branch digits as printed ("000" stays "000"), "" when none: display only, so not part of equality.
+    printed_branch: str = field(default="", compare=False)
 
 
 @dataclass(frozen=True)
@@ -128,6 +148,12 @@ class ExtractedDoc:
     nature: str = "other"
     expense_account: str = "other"
     confidence: float = 0.0
+    cash_tendered: Decimal = Decimal("0.00")
+    change_amount: Decimal = Decimal("0.00")   # negative when the receipt shows negative change
+    payment_terms: str = ""                    # cash | credit | "" (unclear / not read)
+    marked_paid: bool = False
+    due_date: date | None = None
+    terms_days: int | None = None              # printed credit terms in days ("Net 30")
     raw: dict = field(default_factory=dict)
 
 
@@ -153,6 +179,7 @@ def _party(obj) -> Party:
         name=_text(obj.get("name"), 255),
         tin=tin,
         branch=branch or "00000",
+        printed_branch=printed_branch(str(obj.get("tin") or "")) if tin else "",
         address=_text(obj.get("address"), 500),
     )
 
@@ -175,6 +202,37 @@ def _int(value, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _signed_money(value) -> Decimal:
+    """parse_money, keeping a leading minus sign on text amounts ("-60.00")."""
+    amount = parse_money(value)
+    if isinstance(value, str) and value.strip().startswith("-") and amount > 0:
+        return -amount
+    return amount
+
+
+def _terms(value) -> str:
+    text = str(value or "").strip().lower()
+    return text if text in ("cash", "credit") else ""
+
+
+def _terms_days(value) -> int | None:
+    if isinstance(value, bool) or value in (None, ""):
+        return None
+    try:
+        days = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return days if 0 <= days <= 3650 else None
+
+
+def due_fields(raw: dict | None) -> tuple[date | None, int | None]:
+    """(printed due date, printed terms in days) from a document's stored reply; old replies give (None, None)."""
+    if not isinstance(raw, dict):
+        return None, None
+    due = parse_doc_date(raw.get("due_date")) if raw.get("due_date") else None
+    return due, _terms_days(raw.get("terms_days"))
 
 
 def parse_detection(raw: str) -> Detection:
@@ -231,6 +289,12 @@ def parse_extraction(raw: str, page_offset: int = 0, chunk_pages: int | None = N
             nature=_choice(item.get("nature"), NATURES),
             expense_account=_choice(item.get("expense_account"), EXPENSE_ACCOUNTS),
             confidence=min(100.0, max(0.0, confidence)),
+            cash_tendered=max(parse_money(item.get("cash_tendered")), Decimal("0.00")),
+            change_amount=_signed_money(item.get("change")),
+            payment_terms=_terms(item.get("payment_terms")),
+            marked_paid=_bool_or_none(item.get("marked_paid")) is True,
+            due_date=due_fields(item)[0],
+            terms_days=due_fields(item)[1],
             raw=item,
         ))
     return docs

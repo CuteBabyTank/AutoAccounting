@@ -11,6 +11,29 @@ def claims_input_vat(line: DocLine, company_vat: bool) -> bool:
     return company_vat and line.input_vat_valid is True and line.vat > 0
 
 
+_VAT_RATE = Decimal("0.12")
+_VAT_TOLERANCE = Decimal("1.00")
+
+
+def claimed_input_vat(line: DocLine, company_vat: bool) -> Decimal:
+    """The input VAT a purchase claims: what it shows, but never more than 12% of its VATable amount (a VAT
+    figure above 12% claims 12%; the excess is the VAT difference held for review)."""
+    if not claims_input_vat(line, company_vat):
+        return ZERO
+    vat = c2(line.vat)
+    if line.vatable <= 0:
+        return vat
+    expected = c2(line.vatable * _VAT_RATE)
+    return expected if vat - expected > _VAT_TOLERANCE else vat
+
+
+def vat_difference(line: DocLine, company_vat: bool) -> Decimal:
+    """Printed VAT above 12% of the VATable amount on a claimed purchase (0 otherwise)."""
+    if not claims_input_vat(line, company_vat):
+        return ZERO
+    return c2(line.vat - claimed_input_vat(line, company_vat))
+
+
 def is_capital_goods(line: DocLine) -> bool:
     """A purchase of a long-lived asset: depreciated through the asset register, never expensed."""
     return line.account == "capital_goods" and line.category in ("purchases", "expenses") and line.client_role == "buyer"

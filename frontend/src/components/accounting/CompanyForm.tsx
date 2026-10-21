@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { X } from "@phosphor-icons/react";
 import { accountingApi } from "@/lib/accounting-api";
 import { BOOK_LABELS, apiErrorMessage } from "@/lib/accounting-format";
-import type { Company, CompanyInput } from "@/types/accounting";
+import type { CoaTemplate, Company, CompanyInput } from "@/types/accounting";
 
 const EMPTY: CompanyInput = {
   registered_name: "",
   aliases: [],
+  owner_names: [],
   tin: "",
   branch_code: "00000",
   rdo_code: "",
@@ -46,11 +47,31 @@ interface Props {
   onSaved: (company: Company) => void;
 }
 
+/** First day of the fiscal year today is in (fiscal year Y ends in its year-end month of calendar year Y). */
+function fiscalYearStart(fyEnd: number, today = new Date()): string {
+  const endYear = today.getMonth() + 1 <= fyEnd ? today.getFullYear() : today.getFullYear() + 1;
+  const startYear = fyEnd === 12 ? endYear : endYear - 1;
+  return `${startYear}-${String((fyEnd % 12) + 1).padStart(2, "0")}-01`;
+}
+
 export default function CompanyForm({ initial, companyId, onClose, onSaved }: Props) {
-  const [form, setForm] = useState<CompanyInput>({ ...EMPTY, ...initial });
+  // Books are on by default for a new company, from the start of its fiscal year; clearing the date keeps it returns-only.
+  const [form, setForm] = useState<CompanyInput>(() => {
+    const start = { ...EMPTY, ...initial };
+    if (!companyId && initial?.books_start === undefined) start.books_start = fiscalYearStart(start.fiscal_year_end_month);
+    return start;
+  });
+  const [booksTouched, setBooksTouched] = useState(Boolean(companyId) || initial?.books_start !== undefined);
   const [aliases, setAliases] = useState((initial?.aliases ?? []).join(", "));
+  const [owners, setOwners] = useState((initial?.owner_names ?? []).join(", "));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [templates, setTemplates] = useState<CoaTemplate[]>([]);
+  const [template, setTemplate] = useState("");
+
+  useEffect(() => {
+    if (!companyId) accountingApi.coaTemplates().then(setTemplates).catch(() => undefined);
+  }, [companyId]);
 
   const set = <K extends keyof CompanyInput>(key: K, value: CompanyInput[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -63,6 +84,7 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
       ...EMPTY,
       ...form,
       aliases: aliases.split(",").map((a) => a.trim()).filter(Boolean),
+      owner_names: owners.split(",").map((a) => a.trim()).filter(Boolean),
       income_tax_option: form.taxpayer_type === "individual" ? form.income_tax_option : "graduated",
       operations_start_year: form.taxpayer_type === "individual" ? null : form.operations_start_year,
       has_compensation_income: form.taxpayer_type === "individual" && form.has_compensation_income,
@@ -70,7 +92,7 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
     try {
       const saved = companyId
         ? await accountingApi.updateCompany(companyId, payload)
-        : await accountingApi.createCompany(payload);
+        : await accountingApi.createCompany({ ...payload, coa_template: template });
       onSaved(saved);
     } catch (err) {
       setError(apiErrorMessage(err, "Couldn't save the company"));
@@ -110,6 +132,11 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
           <div className="sm:col-span-2">
             <label className={LABEL}>Trade names / aliases (comma-separated)</label>
             <input className={INPUT} value={aliases} onChange={(e) => setAliases(e.target.value)} placeholder="JCT, Juan Cloth Shop" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={LABEL}>Owner / officer names (comma-separated)</label>
+            <input className={INPUT} value={owners} onChange={(e) => setOwners(e.target.value)} placeholder="Juan Dela Cruz" />
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">Receipts made out to these people personally are excluded as personal purchases.</p>
           </div>
           <div>
             <label className={LABEL}>TIN *</label>
@@ -194,9 +221,25 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
               <option value="services">Services</option>
             </select>
           </div>
+          {!companyId && templates.length > 0 && (
+            <div>
+              <label className={LABEL}>Chart of accounts</label>
+              <select className={INPUT} value={template} onChange={(e) => setTemplate(e.target.value)}>
+                <option value="">Standard PH chart</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id} title={t.description}>
+                    {t.name}{t.builtin ? "" : " (firm template)"}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className={LABEL}>Fiscal year ends</label>
-            <select className={INPUT} value={form.fiscal_year_end_month} onChange={(e) => set("fiscal_year_end_month", Number(e.target.value))}>
+            <select className={INPUT} value={form.fiscal_year_end_month} onChange={(e) => {
+              const fyEnd = Number(e.target.value);
+              setForm((f) => ({ ...f, fiscal_year_end_month: fyEnd, books_start: booksTouched ? f.books_start : fiscalYearStart(fyEnd) }));
+            }}>
               {MONTHS.map((m, i) => (
                 <option key={m} value={i + 1}>{m}</option>
               ))}
@@ -234,10 +277,13 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
                   type="date"
                   className={INPUT}
                   value={form.books_start ?? ""}
-                  onChange={(e) => set("books_start", e.target.value || null)}
+                  onChange={(e) => {
+                    setBooksTouched(true);
+                    set("books_start", e.target.value || null);
+                  }}
                 />
                 <span className="mt-0.5 block text-[11px] text-[var(--text-secondary)]">
-                  Leave empty to keep returns only. Enter the opening balances as of this date in Books.
+                  Clear it to keep returns only. Enter the opening balances as of this date in Books.
                 </span>
               </div>
               <div>

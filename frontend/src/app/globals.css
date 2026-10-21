@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "../components/assistant/BotMascot.css";
+@import "../components/assistant/Casper.css";
 
 /*
  * AutoAccounting Color System
@@ -315,6 +317,20 @@ main textarea:focus-visible {
 .progress-smooth {
   transition: width 400ms var(--ease-in-out);
 }
+
+/* ── Focus flash: a notification click rings what it points at for ~2 s (lib/focus.ts) ── */
+@keyframes focusFlash {
+  0%   { outline-color: var(--accent); background-color: var(--accent-subtle); }
+  70%  { outline-color: var(--accent); background-color: var(--accent-subtle); }
+  100% { outline-color: transparent; background-color: transparent; }
+}
+.aa-focus-flash {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+  animation: focusFlash 2200ms var(--ease-in-out) both;
+}
+tr.aa-focus-flash { outline-offset: -2px; }
 
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
@@ -1474,6 +1490,30 @@ main textarea:focus-visible {
     transition-delay: calc(20ms + min(var(--i, 0), 7) * 8ms);
   }
 }
+/* The nav scrolls without a bar; in the 72px rail one would eat the icons. */
+.aa-rail-scroll {
+  scrollbar-width: none;
+  /* A row cut off by a short window fades out instead of ending on a hard edge. */
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(#000 calc(100% - 16px), transparent);
+}
+.aa-rail-scroll::-webkit-scrollbar { display: none; }
+/* Short windows (a laptop with the dock and a tab strip): tighter rows so
+   the whole rail, footer included, usually fits without scrolling. */
+@media (max-height: 760px) {
+  .aa-rail-panel .aa-item { height: 36px; margin-bottom: 2px; }
+  .aa-rail-panel .aa-rail-logo { padding-top: 14px; padding-bottom: 10px; }
+  .aa-rail-panel .aa-rail-section { margin-bottom: 12px; }
+  .aa-rail-panel .aa-rail-rule { margin-bottom: 8px; }
+}
+@media (max-height: 620px) {
+  .aa-rail-panel .aa-item { height: 32px; }
+}
+@media (max-height: 540px) {
+  .aa-rail-panel .aa-rail-logo { padding-top: 10px; padding-bottom: 6px; }
+  .aa-rail-panel .aa-rail-section { margin-bottom: 6px; }
+  .aa-rail-panel .aa-rail-rule { margin-top: 2px; margin-bottom: 4px; }
+}
 @media (prefers-reduced-motion: reduce) {
   /* Gentler, not gone: a short, soft slide so the push still reads as
      one continuous change (a snap would jolt the whole page), labels
@@ -1584,7 +1624,103 @@ main textarea:focus-visible {
   white-space: nowrap;
 }
 .gd-btn--ghost { background: var(--lp-bg-card); color: var(--lp-text); border: 1px solid var(--lp-border); }
+/* On-screen tour (SpotlightTour): the ring's shadow dims everything but the element. */
+.sp-ring {
+  box-shadow: 0 0 0 2px var(--lp-accent), 0 0 0 6px color-mix(in srgb, var(--lp-accent) 22%, transparent), 0 0 0 9999px rgba(8,10,20,.55);
+  transition: top 380ms var(--ease-out), left 380ms var(--ease-out), width 380ms var(--ease-out), height 380ms var(--ease-out);
+  animation: spIn 260ms var(--ease-out) both;
+}
+.sp-ring::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 2px var(--lp-accent);
+  animation: spPulse 1.8s var(--ease-out) 400ms infinite;
+}
+@keyframes spIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes spPulse {
+  0%   { box-shadow: 0 0 0 2px var(--lp-accent); opacity: .9; }
+  100% { box-shadow: 0 0 0 12px var(--lp-accent); opacity: 0; }
+}
+.sp-card {
+  box-shadow: 0 1px 2px rgba(11,11,18,.06), 0 24px 48px -16px rgba(11,11,18,.35);
+  transition: top 380ms var(--ease-out), left 380ms var(--ease-out);
+}
+.sp-wire { stroke-dashoffset: 0; animation: spDraw 420ms var(--ease-out) 160ms both, gdDash 1.2s linear 580ms infinite !important; }
+@keyframes spDraw { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .gd-in { animation: none; }
   .gd-wire path { animation: none; }
+  .sp-ring, .sp-card { transition: none; }
+  .sp-ring::after, .sp-wire { animation: none !important; }
+}
+
+/* Privacy toggle (lib/privacy.ts): blur amounts on dashboards while screen-sharing. */
+:root[data-privacy="on"] .aa-amount {
+  filter: blur(6px);
+  user-select: none;
+}
+/* ── Assistant dock (components/assistant) ── */
+.aa-launcher {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  filter: drop-shadow(0 3px 5px color-mix(in srgb, var(--text-primary) 18%, transparent));
+  transition: transform 160ms ease, filter 160ms ease;
+}
+.aa-launcher:hover {
+  transform: translateY(-1px);
+  filter: drop-shadow(0 4px 6px color-mix(in srgb, var(--text-primary) 24%, transparent));
+}
+.aa-launcher:focus-visible,
+.aa-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.aa-icon-btn {
+  display: flex;
+  height: 36px;
+  width: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--text-secondary);
+}
+.aa-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+/* The step that's running: a light sweep across its words. */
+.aa-shimmer {
+  background: linear-gradient(90deg, var(--text-primary) 0%, var(--text-primary) 35%, var(--text-tertiary) 50%,
+    var(--text-primary) 65%, var(--text-primary) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: aa-shimmer 1.8s linear infinite;
+}
+@keyframes aa-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -150% 0; }
+}
+.aa-trail > li {
+  animation: aa-step-in 220ms ease-out both;
+}
+@keyframes aa-step-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+@media (min-width: 768px) {
+  .aa-dock { animation: aa-dock-in 200ms ease-out both; }
+}
+@keyframes aa-dock-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aa-shimmer { animation: none; -webkit-text-fill-color: currentColor; background: none; }
+  .aa-trail > li, .aa-dock { animation: none; }
+  .aa-launcher, .aa-launcher:hover { transition: none; transform: none; }
 }

@@ -1,0 +1,264 @@
+"""Customer / supplier subledgers for a company (async glue + document mappers).
+
+The decisions are pure: ``contacts`` (master, dedupe, merges) and ``compute.subledger`` (open items, aging, 2307
+items). Payments are the books' payments (``loader.document_payments`` + matched bank lines through
+``apply_bank_lines``), so the subledger and the books agree on what paid what.
+"""
+
+import uuid
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
+
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.accounting import AACompany, AAContact, AADocument, AAJournalEntry, AAOutput, AAPeriod
+from app.services.accounting.books.receipts import party_key
+from app.services.accounting.compute.bank_books import apply_bank_lines
+from app.services.accounting.compute.books import Payment
+from app.services.accounting.compute import writeoff
+from app.services.accounting.compute.ewt import compute_ewt
+from app.services.accounting.compute.money import ZERO, c2
+from app.services.accounting.compute.subledger import (
+    CwtItem, OpenDoc, OpenItem, Received2307, counter_paid, cwt_items, open_items, payment_amounts,
+)
+from app.services.accounting.contacts import SeenParty, plan_contacts, resolve
+from app.services.accounting.extraction import due_fields
+from app.services.accounting.opening_items import opening_open_doc, opening_payments, opening_seen_party
+from app.services.accounting.parsing import parse_money
+from app.services.accounting.periods import period_for
+
+_BILLS = ("purchases", "expenses")
+
+
+def _live(doc) -> bool:
+    return doc.deleted_at is None and not doc.excluded
+
+
+def real_tin(tin: str) -> str:
+    """The TIN, or "" for a placeholder printed for a walk-in buyer (000-000-000, any one digit repeated)."""
+    tin = tin or ""
+    return "" if len(set(tin)) <= 1 else tin
+
+
+def counterparty(doc) -> tuple[str, str, str]:
+    """(TIN, name, address) of the other party; a placeholder TIN counts as none, so walk-ins key by name."""
+    if doc.client_role == "seller":
+        return real_tin(doc.buyer_tin), doc.buyer_name or "", doc.buyer_address or ""
+    return real_tin(doc.seller_tin), doc.seller_name or "", doc.seller_address or ""
+
+
+def doc_kind(doc) -> str | None:
+    """ar (a sale), ap (a bill), or None (anything else, or a receipt that pays an invoice)."""
+    if doc.settles_document_id is not None:
+        return None
+    if doc.category == "sales" and doc.client_role == "seller":
+        return "ar"
+    if doc.category in _BILLS and doc.client_role == "buyer":
+        return "ap"
+    return None
+
+
+def seen_party(doc) -> SeenParty | None:
+    """The contact a live document shows (sales, bills, receipts and 2307s; not payroll)."""
+    if not _live(doc) or doc.category not in ("sales", "purchases", "expenses", "2307"):
+        return None
+    tin, name, address = counterparty(doc)
+    if not tin and not name.strip():
+        return None
+    role = "customer" if doc.client_role == "seller" else "supplier"
+    vat = doc.seller_vat_registered if role == "supplier" else None
+    return SeenParty(party_key(tin, name), tin, name, address, role, vat, doc.doc_date)
+
+
+def open_doc_from(doc, ewt: dict[str, Decimal], key_map: dict[str, str], names: dict[str, tuple[str, str]],
+                  fye: int) -> OpenDoc | None:
+    """A sale or bill as the subledger sees it (None for anything else)."""
+    kind = doc_kind(doc)
+    if kind is None or not _live(doc) or doc.doc_date is None:
+        return None
+    tin, name, _ = counterparty(doc)
+    key = key_map.get(party_key(tin, name), party_key(tin, name))
+    shown_name, shown_tin = names.get(key, (name, tin))
+    raw = doc.raw if isinstance(doc.raw, dict) else {}
+    due, days = due_fields(raw)
+    where = period_for(doc.doc_date, fye)
+    withheld = c2(doc.withholding_amount or ZERO) if kind == "ar" else c2(ewt.get(str(doc.id), ZERO))
+    return OpenDoc(
+        id=str(doc.id), kind=kind, contact_key=key, contact_name=shown_name or name, contact_tin=shown_tin or tin,
+        doc_number=doc.doc_number or "", doc_date=doc.doc_date, total=c2(doc.gross_amount or ZERO),
+        withheld=withheld,
+        paid_at_counter=doc.paid_on is None and counter_paid(str(raw.get("payment_terms") or ""),
+                                                             parse_money(raw.get("cash_tendered"))),
+        due_date=due, terms_days=days, payment_unverified="payment_unverified" in (doc.review_reasons or []),
+        period=(where.fiscal_year, where.quarter),
+    )
+
+
+
+@dataclass
+class Subledger:
+    as_of: date
+    contacts: list[AAContact]
+    docs: list[OpenDoc]                 # every sale and bill (open or not)
+    items: list[OpenItem]               # open as of ``as_of``
+    cwt: list[CwtItem]
+    payments: list[Payment]
+    ewt: dict[str, tuple[str, Decimal]]   # bill id → (ATC, tax)
+    received: list[Received2307]
+    documents: dict[str, AADocument]
+
+
+async def sync_contacts(db: AsyncSession, company: AACompany, docs: list[AADocument],
+                        extra: list[SeenParty] | None = None) -> list[AAContact]:
+    """Create / update the company's contacts from its documents (and opening items; flushes, the caller commits)."""
+    rows = list((await db.execute(select(AAContact).where(
+        AAContact.enterprise_id == company.enterprise_id, AAContact.company_id == company.id))).scalars().all())
+    seen = [s for s in (seen_party(d) for d in docs) if s is not None] + list(extra or [])
+    creates, updates = plan_contacts(seen, rows)
+    by_key = {r.key: r for r in rows}
+    for key, change in updates.items():
+        for name, value in change.items():
+            setattr(by_key[key], name, value)
+    if updates:
+        await db.flush()
+    if creates:
+        # Two page loads (the contacts list and the aging are fetched together) can sync the same new party at once:
+        # the loser of the race skips the row the other one inserted instead of failing on the unique key.
+        await db.execute(pg_insert(AAContact).values([contact_values(company, c) for c in creates])
+                         .on_conflict_do_nothing(constraint="uq_aa_contact_key"))
+        rows = list((await db.execute(select(AAContact).where(
+            AAContact.enterprise_id == company.enterprise_id, AAContact.company_id == company.id))).scalars().all())
+    return rows
+
+
+def contact_values(company: AACompany, c: dict) -> dict:
+    return {"id": uuid.uuid4(), "enterprise_id": company.enterprise_id, "company_id": company.id,
+            "key": c["key"][:300], "tin": c["tin"], "role": c["role"], "registered_name": c["registered_name"][:255],
+            "aliases": c["aliases"], "address": c["address"], "vat_status": c["vat_status"], "manual": []}
+
+
+def key_map_for(rows: list[AAContact]) -> dict[str, str]:
+    """Every contact key → the key of the contact it counts for (merges followed)."""
+    out = {}
+    for r in rows:
+        target = resolve(r.key, rows)
+        out[r.key] = target.key if target is not None else r.key
+    return out
+
+
+async def company_documents(db: AsyncSession, company: AACompany) -> list[AADocument]:
+    return list((await db.execute(select(AADocument).where(
+        AADocument.enterprise_id == company.enterprise_id, AADocument.company_id == company.id,
+        AADocument.deleted_at.is_(None), AADocument.excluded.is_(False), AADocument.doc_date.is_not(None),
+    ))).scalars().all())
+
+
+async def load_subledger(db: AsyncSession, company: AACompany, as_of: date) -> Subledger:
+    from app.routers.accounting_periods import company_facts, doc_line, supplier_atc_rules, supplier_gl_rules
+    from app.services.accounting.books.bank import matched_lines
+    from app.services.accounting.books.loader import document_payments, opening_items
+
+    docs = await company_documents(db, company)
+    opening = await opening_items(db, company)
+    contacts = await sync_contacts(db, company, docs, [opening_seen_party(i) for i in opening])
+    key_map = key_map_for(contacts)
+    names = {r.key: (r.registered_name, r.tin) for r in contacts}
+    receipts = [d for d in docs if d.settles_document_id is not None]
+    posted = [d for d in docs if d.settles_document_id is None]
+    atc_rules, gl_rules = await supplier_atc_rules(db, company.id), await supplier_gl_rules(db, company.id)
+    facts = company_facts(company)
+    where = period_for(as_of, company.fiscal_year_end_month)
+    lines = [doc_line(d, atc_rules, gl_rules) for d in posted]
+    ewt = compute_ewt(lines, facts, where.fiscal_year, where.quarter).by_line()
+    taxes = {i: tax for i, (_, tax) in ewt.items()}
+    payments = document_payments(receipts, posted) + opening_payments(opening)
+    payments, _, _ = apply_bank_lines(payments, (), await matched_lines(db, company.id, as_of))
+    payments += writeoff.payments(await writeoff_rows(db, company))
+    fye = company.fiscal_year_end_month
+    open_docs = [o for o in (open_doc_from(d, taxes, key_map, names, fye) for d in posted) if o is not None]
+    open_docs += [opening_open_doc(i, key_map, names) for i in opening]
+    terms = {r.key: r.payment_terms_days for r in contacts if r.payment_terms_days is not None}
+    items = open_items(open_docs, payments, as_of, terms)
+    received = []
+    for d in posted:
+        if d.category == "2307" and d.client_role == "seller":
+            tin, name, _ = counterparty(d)
+            p = period_for(d.doc_date, fye)
+            received.append(Received2307(str(d.id), key_map.get(party_key(tin, name), party_key(tin, name)),
+                                         (p.fiscal_year, p.quarter), c2(d.withholding_amount or ZERO)))
+    marks = {str(d.id): d.cwt_2307 or {} for d in posted}
+    cwt = cwt_items([o for o in open_docs if o.doc_date <= as_of], marks, received)
+    return Subledger(as_of, contacts, open_docs, items, cwt, payments, ewt, received, {str(d.id): d for d in docs})
+
+
+async def writeoff_rows(db: AsyncSession, company: AACompany) -> list[tuple[str, date, list[dict]]]:
+    """(entry id, date, writeoff_items) of the company's live write-off journal entries."""
+    rows = (await db.execute(select(AAJournalEntry.id, AAJournalEntry.entry_date, AAJournalEntry.writeoff_items).where(
+        AAJournalEntry.enterprise_id == company.enterprise_id, AAJournalEntry.company_id == company.id,
+        AAJournalEntry.deleted_at.is_(None), AAJournalEntry.writeoff_items != [],
+    ))).all()
+    return [(str(i), on, items or []) for i, on, items in rows]
+
+
+def payment_rows(docs: list[OpenDoc], payments: list[Payment]) -> list[tuple[Payment, Decimal]]:
+    """Each payment of these documents with the amount it paid (a full payment resolves as the books post it)."""
+    return payment_amounts(docs, payments)
+
+
+async def outgoing_2307_outputs(db: AsyncSession, company: AACompany) -> dict[tuple[int, int], str]:
+    """(fiscal year, quarter) → the latest generated version that has 2307s to issue (its QAP rows)."""
+    rows = (await db.execute(select(AAPeriod.year, AAPeriod.quarter, AAOutput.id, AAOutput.version, AAOutput.snapshot)
+                             .join(AAOutput, AAOutput.period_id == AAPeriod.id).where(
+        AAPeriod.company_id == company.id, AAPeriod.enterprise_id == company.enterprise_id, AAPeriod.quarter >= 1,
+    ))).all()
+    best: dict[tuple[int, int], tuple[int, str, bool]] = {}
+    for year, quarter, output_id, version, snap in rows:
+        if (year, quarter) not in best or version > best[(year, quarter)][0]:
+            has = bool(((snap or {}).get("ledgers") or {}).get("QAP"))
+            best[(year, quarter)] = (version, str(output_id), has)
+    return {k: v[1] for k, v in best.items() if v[2]}
+
+
+async def control_ties(db: AsyncSession, company: AACompany, sub: Subledger) -> tuple[dict[str, list], str]:
+    """Aging → books control account tie for A/R and A/P as of ``sub.as_of`` ({kind: [TieLine]}, note). Empty with a
+    note when the books are off, start later, or can't be built."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.services.accounting.books.bank import book_entries
+    from app.services.accounting.books.loader import ensure_chart
+    from app.services.accounting.compute.book_ledgers import balances
+    from app.services.accounting.compute.reports import check_window, is_closing
+    from app.services.accounting.compute.statements import _key
+    from app.services.accounting.compute.subledger import control_tie
+
+    if company.books_start is None:
+        return {}, ""
+    if sub.as_of < company.books_start:
+        return {}, f"The books start on {company.books_start:%b %d, %Y}; nothing to tie to yet."
+    try:
+        check_window(None, sub.as_of, datetime.now(ZoneInfo("Asia/Manila")).date(), company.fiscal_year_end_month)
+        entries = await book_entries(db, company, sub.as_of)
+    except (ValueError, KeyError) as exc:
+        return {}, f"The books couldn't be built to tie the aging out: {exc}"
+    if entries is None:
+        return {}, ""
+    chart = await ensure_chart(db, company)
+    entries = [e for e in entries if not is_closing(e)]
+    bal = balances(entries, sub.as_of)
+    out: dict[str, list] = {}
+    for kind in ("ar", "ap"):
+        codes = {a.code for a in chart.accounts if _key(chart, a.code) == kind}
+        control = c2(sum((bal.get(c, ZERO) for c in codes), ZERO))
+        if kind == "ap":
+            control = -control
+        ar_codes = codes if kind == "ar" else set()
+        cwt_booked = c2(sum((l.credit - l.debit for e in entries if e.id.endswith(":2307") for l in e.lines
+                             if l.account in ar_codes), ZERO))
+        aging_total = c2(sum((i.open for i in sub.items if i.doc.kind == kind), ZERO))
+        out[kind] = control_tie(kind, sub.docs, sub.payments, sub.as_of, company.books_start, aging_total, control,
+                                cwt_booked)
+    return out, ""

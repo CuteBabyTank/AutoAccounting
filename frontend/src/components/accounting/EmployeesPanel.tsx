@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import AmountInput from "@/components/AmountInput";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
-import type { Employee, EmployeeData, EmployeesYear, PayrollPreview } from "@/types/accounting";
+import PdfPreview from "@/components/accounting/PdfPreview";
+import { useWorkbookPreview } from "@/components/accounting/WorkbookPreview";
+import type { Certificate, Employee, EmployeeData, EmployeesYear, PayrollPreview } from "@/types/accounting";
 
 interface Props {
   companyId: string;
@@ -35,6 +38,8 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
   const [data, setData] = useState<EmployeesYear | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const [certificates, setCertificates] = useState<Certificate[] | null>(null);
+  const sheet = useWorkbookPreview();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PayrollPreview | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -98,9 +103,9 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
     }
   }
 
-  async function download(kind: "xlsx" | "zip") {
-    const blob = await run(kind, () => (kind === "xlsx" ? accountingApi.alphalistXlsx(companyId, year) : accountingApi.zip2316(companyId, year)));
-    if (blob) saveBlob(blob, `${companyName} ${kind === "xlsx" ? "1604-C alphalist" : "2316s"} ${year}.${kind}`);
+  async function open2316s() {
+    const list = await run("zip", () => accountingApi.certificates2316(companyId, year));
+    if (list) setCertificates(list);
   }
 
   if (!data) return error ? <p className="text-sm text-[var(--alert-error-text)]">{error}</p> : null;
@@ -128,10 +133,12 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
               <button className={BTN} onClick={() => setEditing({ data: { status: "R" } })}>Add employee</button>
             </>
           )}
-          <button className={BTN} disabled={!data.employees.length || Boolean(busy)} onClick={() => download("xlsx")}>
+          <button className={BTN} disabled={!data.employees.length || Boolean(busy)} onClick={() =>
+            sheet.open(`1604-C alphalist · ${companyName} ${year}`, () => accountingApi.alphalistPreview(companyId, year),
+              () => accountingApi.alphalistXlsx(companyId, year), `${companyName} 1604-C alphalist ${year}.xlsx`)}>
             {busy === "xlsx" ? "Preparing…" : "Alphalist (Excel)"}
           </button>
-          <button className={BTN} disabled={!data.employees.length || Boolean(busy)} onClick={() => download("zip")}>
+          <button className={BTN} disabled={!data.employees.length || Boolean(busy)} onClick={open2316s}>
             {busy === "zip" ? "Preparing…" : "2316s (PDF)"}
           </button>
         </div>
@@ -201,9 +208,11 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
                         <option value="Y">Yes</option>
                         <option value="N">No</option>
                       </select>
+                    ) : k.startsWith("nt_") || k.startsWith("t_") || k.startsWith("tax_") ? (
+                      <AmountInput className={INPUT} value={String(editing.data[k] ?? "")}
+                        onValueChange={(v) => setEditing({ ...editing, data: { ...editing.data, [k]: v } })} />
                     ) : (
                       <input className={INPUT} type={DATE_KEYS.has(k) ? "date" : "text"} value={String(editing.data[k] ?? "")}
-                        inputMode={k.startsWith("nt_") || k.startsWith("t_") || k.startsWith("tax_") ? "decimal" : undefined}
                         onChange={(e) => setEditing({ ...editing, data: { ...editing.data, [k]: e.target.value } })} />
                     )}
                   </label>
@@ -335,6 +344,18 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
             </table>
           </div>
         </div>
+      )}
+      {sheet.node}
+      {certificates && (
+        <PdfPreview
+          title={`2316s · ${companyName} ${year}`}
+          docs={certificates}
+          render={(id, values) => accountingApi.preview2316(companyId, year, id, values)}
+          note="Edits change only the certificates you download now. To keep a change, edit the employee instead."
+          exportLabel={(edited) => (edited ? "Download edited 2316s (zip)" : "Download 2316s (zip)")}
+          onExport={async (edits) => saveBlob(await accountingApi.zip2316(companyId, year, edits), `${companyName} 2316s ${year}.zip`)}
+          onClose={() => setCertificates(null)}
+        />
       )}
     </div>
   );

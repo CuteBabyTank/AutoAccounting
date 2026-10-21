@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Lock } from "@phosphor-icons/react";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
-import type { Account } from "@/types/accounting";
+import type { Account, CoaTemplate } from "@/types/accounting";
 
 const INPUT = "px-2 py-1 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] text-sm text-[var(--text-primary)]";
 
@@ -12,11 +12,23 @@ export default function ChartEditor({ companyId, canManage }: { companyId: strin
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState<{ parent: string; code: string; name: string } | null>(null);
+  const [showInactive, setShowInactive] = useState(false);
+  const [templates, setTemplates] = useState<CoaTemplate[]>([]);
+  const [templateName, setTemplateName] = useState("");
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     accountingApi.accounts(companyId).then(setAccounts).catch((e) => setError(apiErrorMessage(e, "Couldn't load the chart")));
-  }, [companyId]);
+    if (canManage) accountingApi.coaTemplates().then((t) => setTemplates(t.filter((x) => !x.builtin))).catch(() => undefined);
+  }, [companyId, canManage]);
 
+  const inactiveCount = accounts.filter((a) => !a.active).length;
+  const shown = accounts.filter((a) => showInactive || a.active);
+  const parentOf = (code: string) => accounts.find((a) => a.code === code);
+
+  const bankCode = accounts.find((a) => a.system_key === "bank")?.code;
+  // Cash in bank and its sub-accounts carry the number printed on their statements (matched on the last 4 digits).
+  const isBank = (a: Account) => a.system_key === "bank" || (bankCode !== undefined && a.parent_code === bankCode) || Boolean(a.bank_account_no);
   const replace = (a: Account) => setAccounts((all) => all.map((x) => (x.id === a.id ? a : x)));
   const run = async (fn: () => Promise<void>) => {
     setError("");
@@ -30,9 +42,19 @@ export default function ChartEditor({ companyId, canManage }: { companyId: strin
   return (
     <div>
       {error && <p className="mb-2 text-sm text-[var(--alert-error-text)]">{error}</p>}
+      {notice && <p className="mb-2 text-sm text-[var(--text-secondary)]">{notice}</p>}
+      <div className="mb-2 flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)]">
+        <span>Locked accounts take no new postings. Inactive ones are hidden from pickers but stay in the reports.</span>
+        {inactiveCount > 0 && (
+          <label className="ml-auto inline-flex items-center gap-1">
+            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+            Show inactive ({inactiveCount})
+          </label>
+        )}
+      </div>
       <table className="w-full text-sm">
         <tbody>
-          {accounts.map((a) => (
+          {shown.map((a) => (
             <tr key={a.id} className={`border-b border-[var(--border)] ${a.active ? "" : "opacity-50"}`}>
               <td className="w-20 py-1 font-mono text-xs" style={{ paddingLeft: a.parent_code ? 16 : 0 }}>{a.code}</td>
               <td className="py-1">
@@ -53,7 +75,29 @@ export default function ChartEditor({ companyId, canManage }: { companyId: strin
                   a.name
                 )}
               </td>
-              <td className="w-24 py-1 text-xs text-[var(--text-secondary)]">{a.type}{a.contra ? " (contra)" : ""}</td>
+              <td className="w-24 py-1 text-xs text-[var(--text-secondary)]" title={a.placement}>
+                {a.type}{a.contra ? " (contra)" : ""}
+                {a.locked && (
+                  <span className="ml-1 rounded-full bg-[var(--badge-yellow-bg)] px-1.5 text-[11px] font-medium text-[var(--badge-yellow-text)]">Locked</span>
+                )}
+              </td>
+              <td className="w-40 py-1">
+                {isBank(a) && (canManage ? (
+                  <input
+                    className={`${INPUT} w-full text-xs`}
+                    aria-label={`Bank account number for ${a.code}`}
+                    placeholder="Bank account no."
+                    maxLength={40}
+                    defaultValue={a.bank_account_no ?? ""}
+                    onBlur={(e) => {
+                      const value = e.target.value.trim();
+                      if (value !== (a.bank_account_no ?? "")) run(async () => replace(await accountingApi.updateAccount(a.id, { bank_account_no: value })));
+                    }}
+                  />
+                ) : (
+                  <span className="text-xs text-[var(--text-secondary)]">{a.bank_account_no}</span>
+                ))}
+              </td>
               <td className="w-40 py-1 text-right text-xs">
                 {a.system_key ? (
                   <span className="inline-flex items-center gap-1 text-[var(--text-secondary)]"><Lock size={12} /> used by posting</span>
@@ -62,6 +106,15 @@ export default function ChartEditor({ companyId, canManage }: { companyId: strin
                     {a.active ? "Deactivate" : "Activate"}
                   </button>
                 ) : null}
+                {canManage && (!a.system_key || a.system_key.startsWith("doc:")) && a.active && (
+                  <button
+                    className="ml-3 text-[var(--accent)]"
+                    title={a.locked ? "Allow new postings again" : "Block new postings to this account (existing ones stay)"}
+                    onClick={() => run(async () => replace(await accountingApi.updateAccount(a.id, { locked: !a.locked })))}
+                  >
+                    {a.locked ? "Unlock" : "Lock"}
+                  </button>
+                )}
                 {canManage && a.active && (
                   <button className="ml-3 text-[var(--accent)]" onClick={() => setAdding({ parent: a.code, code: "", name: "" })}>Sub-account</button>
                 )}
@@ -89,6 +142,53 @@ export default function ChartEditor({ companyId, canManage }: { companyId: strin
             Add
           </button>
           <button onClick={() => setAdding(null)}>Cancel</button>
+          {parentOf(adding.parent)?.placement && (
+            <span className="basis-full text-xs text-[var(--text-secondary)]">
+              Lands on: <b className="text-[var(--text-primary)]">{parentOf(adding.parent)?.placement}</b>, under {adding.parent} {parentOf(adding.parent)?.name}
+            </span>
+          )}
+        </div>
+      )}
+      {canManage && (
+        <div className="mt-4 border-t border-[var(--border)] pt-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[var(--text-secondary)]">Save this chart as a firm template:</span>
+            <input className={`${INPUT} w-56`} placeholder="Template name" maxLength={80} value={templateName} onChange={(e) => setTemplateName(e.target.value)} />
+            <button
+              className="rounded-lg border border-[var(--border)] px-3 py-1 font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-60"
+              disabled={!templateName.trim()}
+              onClick={() =>
+                run(async () => {
+                  const saved = await accountingApi.saveCoaTemplate(companyId, templateName.trim());
+                  setTemplates((all) => [...all, saved].sort((x, y) => x.name.localeCompare(y.name)));
+                  setTemplateName("");
+                  setNotice(`Saved "${saved.name}". Pick it when adding a company.`);
+                })
+              }
+            >
+              Save template
+            </button>
+          </div>
+          {templates.length > 0 && (
+            <ul className="mt-2 space-y-1 text-xs text-[var(--text-secondary)]">
+              {templates.map((t) => (
+                <li key={t.id} className="flex items-center gap-2">
+                  <span className="text-[var(--text-primary)]">{t.name}</span> · {t.accounts_count} accounts
+                  <button
+                    className="text-[var(--alert-error-text)]"
+                    onClick={() =>
+                      run(async () => {
+                        await accountingApi.deleteCoaTemplate(t.id);
+                        setTemplates((all) => all.filter((x) => x.id !== t.id));
+                      })
+                    }
+                  >
+                    Delete
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>

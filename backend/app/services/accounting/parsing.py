@@ -26,6 +26,12 @@ def normalize_tin(text: str | None) -> tuple[str, str]:
     return digits[:9], branch
 
 
+def printed_branch(text: str | None) -> str:
+    """The branch code digits exactly as printed after the 9-digit TIN ("010-234-567-000" → "000"), "" when none."""
+    digits = re.sub(r"\D", "", text or "")
+    return digits[9:14] if len(digits) > 9 else ""
+
+
 def parse_money(value) -> Decimal:
     """Parse an amount from Gemini JSON (number or text) into a 2-dp Decimal."""
     if value is None or isinstance(value, bool):

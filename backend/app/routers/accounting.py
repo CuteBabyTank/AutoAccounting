@@ -1,15 +1,18 @@
 """AutoAccounting phase 1: company databank, uploads, folder tree, documents."""
 
 import asyncio
+from dataclasses import dataclass
 import re
 import shutil
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
 from fastapi import Path as PathParam
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -19,30 +22,44 @@ from app.auth.security import RateLimiter
 from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.models.accounting import (
-    AAAccount, AAAsset, AACompany, AADocument, AAFile, AAJournalEntry, AAOutput, AAPeriod, AASupplierRule, AAUpload,
+    AAAccount, AAAsset, AABankLine, AABankReconciliation, AACompany, AADocument, AAFile, AAJournalEntry, AAOutput,
+    AAPeriod, AASupplierRule, AAUpload,
 )
 from app.models.user import User, UserRole
-from app.routers import accounting_annual, accounting_atc, accounting_books, accounting_employees, accounting_periods
+from app.routers import (
+    accounting_annual, accounting_assistant, accounting_atc, accounting_audit, accounting_bank, accounting_books,
+    accounting_checklists,
+    accounting_contacts,
+    accounting_employees, accounting_imports,
+    accounting_periods, accounting_reclassify, accounting_reports, accounting_search, accounting_tasks,
+    accounting_recurring, accounting_templates, accounting_writeoff,
+    accounting_work,
+)
 from app.routers.accounting_scope import (
     MANAGER_ROLES as _MANAGER_ROLES, company_or_404 as _company_or_404, scope_for as _scope,
 )
 from app.schemas.accounting import (
-    AffectedPeriodOut, CompanyBrief, CompanyIn, CompanyOut, ConfirmIn, DocumentOut, DocumentPatch, DuplicatePairOut,
+    AffectedPeriodOut, CompanyBrief, CompanyCreateIn, CompanyIn, CompanyOut, ConfirmIn, DocumentOut, DocumentPatch, DuplicatePairOut,
     FolderOut, NotDuplicateIn,
     TreeCompanyOut, UploadFileOut, UploadGroupOut, UploadOut,
 )
-from app.services.accounting import pipeline
+from app.services.accounting import audit, move_company, pipeline
 from app.services.accounting.books.links import relink_receipts
-from app.services.accounting.books.loader import touch_books
+from app.services.accounting.books.chart import locked_message
+from app.services.accounting.books.loader import ensure_chart, touch_books
+from app.services.accounting.books.books_start import default_books_start
+from app.services.accounting.compute.reclassify import document_main_account
+from app.services.accounting.review_rules import BULK_MAX, LOCKED_REASON, bulk_targets, flag_locked, sync_receipt_flag
 from app.services.accounting import duplicates
-from app.services.accounting.classify import document_nature, rule_conflicts
+from app.services.accounting.classify import document_nature, needs_review_for, rule_conflicts
 from app.services.accounting.matching import file_detection_from_json, suggest_groups
 from app.services.accounting.jobs import is_stale_job
 from app.services.accounting.periods import period_fields, period_for, quarter_label
 from app.services.accounting.storage import (
     UploadRejected, filed_hashes, is_stored_path_safe, read_page_bytes, stream_upload, upload_dir,
 )
-from app.services.accounting.tree import TreeCompanyInput, build_tree, folder_counts, stale_periods
+from app.services.accounting.books import bank as bank_service
+from app.services.accounting.tree import TreeCompanyInput, bank_nodes, build_tree, folder_counts, stale_periods
 from app.services.usage_service import get_effective_rate_config, get_enterprise_for_user
 
 router = APIRouter()
@@ -96,24 +113,36 @@ async def list_companies(
 
 @router.post("/companies", response_model=CompanyOut, status_code=status.HTTP_201_CREATED)
 async def create_company(
-    body: CompanyIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    body: CompanyCreateIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     ent = _scope(user)
     _require_manager(user)
-    company = AACompany(enterprise_id=ent, created_by=user.id, **body.model_dump())
+    template = body.coa_template.strip()
+    fields = body.model_dump(exclude={"coa_template"})
+    if "books_start" not in body.model_fields_set:  # books are on unless the request turns them off (null)
+        fields["books_start"] = default_books_start(body.fiscal_year_end_month, None, date.today())
+    company = AACompany(id=uuid.uuid4(), enterprise_id=ent, created_by=user.id, **fields)
     db.add(company)
     try:
-        await db.commit()
+        await db.flush()  # the TIN clash surfaces here, before the event is added
     except IntegrityError:
         await db.rollback()
         raise HTTPException(
             status.HTTP_409_CONFLICT, "A company with this TIN and branch code is already in your databank"
         )
+    after = audit.snapshot(company, CompanyIn.model_fields)
+    if template:
+        await accounting_templates.apply_template(db, company, template)
+        after["coa_template"] = template
+    audit.record(db, label=company.registered_name,
+                 ent=ent, company_id=company.id, user=user, entity="company", entity_id=company.id,
+                 action="create", after=after)
+    await db.commit()
     return company
 
 
 _BOOKS_SETTINGS = frozenset({"books_start", "books_kept", "books_signatory", "books_signatory_title"})
-_NOT_TAX_FACTS = frozenset({"pinned", "aliases"}) | _BOOKS_SETTINGS
+_NOT_TAX_FACTS = frozenset({"pinned", "aliases", "owner_names"}) | _BOOKS_SETTINGS
 
 
 def tax_facts_changed(changed: dict) -> bool:
@@ -138,8 +167,12 @@ async def update_company(
     company = await _company_or_404(db, ent, company_id)
     fiscal_year_changed = body.fiscal_year_end_month != company.fiscal_year_end_month
     changed = {name: value for name, value in body.model_dump().items() if getattr(company, name) != value}
+    before = audit.snapshot(company, changed)
     for name, value in changed.items():
         setattr(company, name, value)
+    audit.record(db, label=company.registered_name,
+                 ent=ent, company_id=company.id, user=user, entity="company", entity_id=company.id,
+                 action="update", before=before, after=audit.snapshot(company, changed))
     if tax_facts_changed(changed):
         company.facts_updated_at = datetime.now(timezone.utc)
     if books_settings_changed(changed):
@@ -359,6 +392,120 @@ async def get_pending_upload(user: User = Depends(get_current_user), db: AsyncSe
     return await _upload_out(db, ent, upload_id) if upload_id else None
 
 
+class RecentUploadFileOut(BaseModel):
+    id: uuid.UUID
+    original_filename: str
+    documents: int
+    companies: list[CompanyBrief]
+
+
+class RecentUploadOut(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    files: list[RecentUploadFileOut]
+
+
+class UploadMoveIn(BaseModel):
+    company_id: uuid.UUID
+    file_ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+
+
+class MoveRefusalOut(BaseModel):
+    document: str
+    reason: str
+
+
+class UploadMoveOut(BaseModel):
+    moved: int
+    refused: list[MoveRefusalOut]
+    upload: RecentUploadOut | None
+
+
+async def _recent_upload_out(db: AsyncSession, upload: AAUpload) -> RecentUploadOut | None:
+    """The upload's filed files with where their documents are now (None when nothing of it is left)."""
+    files = (await db.execute(select(AAFile).where(
+        AAFile.upload_id == upload.id, AAFile.status == "extracted").order_by(AAFile.created_at))).scalars().all()
+    rows = (await db.execute(
+        select(AADocument.file_id, AACompany.id, AACompany.registered_name, AACompany.tin, func.count(AADocument.id))
+        .join(AACompany, AACompany.id == AADocument.company_id)
+        .where(AADocument.file_id.in_([f.id for f in files]), AADocument.deleted_at.is_(None))
+        .group_by(AADocument.file_id, AACompany.id, AACompany.registered_name, AACompany.tin)
+    )).all() if files else []
+    by_file: dict[uuid.UUID, tuple[int, list[CompanyBrief]]] = {}
+    for file_id, company_id, name, tin, count in rows:
+        total, companies = by_file.get(file_id, (0, []))
+        by_file[file_id] = (total + count, [*companies, CompanyBrief(id=company_id, registered_name=name, tin=tin)])
+    out = [RecentUploadFileOut(id=f.id, original_filename=f.original_filename, documents=by_file[f.id][0],
+                               companies=by_file[f.id][1]) for f in files if f.id in by_file]
+    return RecentUploadOut(id=upload.id, created_at=upload.created_at, files=out) if out else None
+
+
+@router.get("/uploads/latest", response_model=RecentUploadOut | None)
+async def get_latest_upload(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """The caller's latest finished upload and where its documents went, so a drop filed under the wrong company
+    can be moved in one go."""
+    ent = _scope(user)
+    upload = (await db.execute(
+        select(AAUpload)
+        .where(AAUpload.enterprise_id == ent, AAUpload.uploaded_by == user.id, AAUpload.status == "done")
+        .order_by(AAUpload.created_at.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    return await _recent_upload_out(db, upload) if upload else None
+
+
+@router.post("/uploads/{upload_id}/move-company", response_model=UploadMoveOut)
+async def move_upload_to_company(
+    upload_id: uuid.UUID, body: UploadMoveIn, user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move every document of the chosen files of an upload to another company (each re-sorted for it, as a single
+    document move). Documents that can't move yet are listed with the reason; the rest move. A file whose documents
+    all moved is filed under the new company too, so dropping it there again is caught as a duplicate."""
+    ent = _scope(user)
+    upload = (await db.execute(select(AAUpload).where(
+        AAUpload.id == upload_id, AAUpload.enterprise_id == ent))).scalar_one_or_none()
+    if upload is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Upload not found")
+    target = await _company_or_404(db, ent, body.company_id)
+    files = {f.id: f for f in (await db.execute(select(AAFile).where(
+        AAFile.upload_id == upload.id, AAFile.id.in_(body.file_ids)))).scalars().all()}
+    if set(body.file_ids) - set(files):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown file in this upload")
+
+    to = await _move_target(db, ent, target)
+    sources: dict[uuid.UUID, AACompany] = {}
+    moved, refused = 0, []
+    docs = (await db.execute(select(AADocument).where(
+        AADocument.file_id.in_(list(files)), AADocument.deleted_at.is_(None), AADocument.company_id != target.id,
+    ).order_by(AADocument.file_id, AADocument.page_start))).scalars().all()
+    for doc in docs:
+        source = sources.get(doc.company_id) or await _company_or_404(db, ent, doc.company_id)
+        sources[source.id] = source
+        problem = await _move_document(db, ent, user, doc, source, to)
+        if problem:
+            refused.append(MoveRefusalOut(document=audit.document_label(doc), reason=problem))
+        else:
+            moved += 1
+
+    await db.flush()
+    for f in files.values():
+        left = (await db.execute(select(func.count(AADocument.id)).where(
+            AADocument.file_id == f.id, AADocument.deleted_at.is_(None), AADocument.company_id != target.id,
+        ))).scalar_one()
+        if left or f.company_id == target.id:
+            continue
+        # One active copy of a file per company: if the target already has this file, keep the record where it is.
+        clash = (await db.execute(select(AAFile.id).where(
+            AAFile.company_id == target.id, AAFile.sha256 == f.sha256, AAFile.id != f.id,
+            AAFile.status.in_(("extracting", "extracted"))).limit(1))).first()
+        if clash is None:
+            f.company_id = target.id
+    await _refresh_after_move(db, [*sources.values(), target])
+    await db.commit()
+    return UploadMoveOut(moved=moved, refused=refused, upload=await _recent_upload_out(db, upload))
+
+
 @router.get("/uploads/{upload_id}", response_model=UploadOut)
 async def get_upload(
     upload_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
@@ -412,6 +559,11 @@ async def confirm_upload(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Every file must be assigned to a company or skipped")
 
     has_work = any(not a.skip for a in body.assignments)
+    for a in body.assignments:
+        if a.company_id and not a.skip and a.file_ids:
+            audit.record(db, label="Upload",
+                         ent=ent, company_id=a.company_id, user=user, entity="upload", entity_id=upload_id,
+                         action="confirm", after={"files": [files[fid].original_filename for fid in a.file_ids]})
     upload = await db.get(AAUpload, upload_id)
     upload.status = "extracting" if has_work else "done"
     await db.commit()
@@ -455,12 +607,15 @@ async def retry_upload(
 # --- Tree, folders, documents --------------------------------------------------
 
 _PLAIN_FIELDS = (
-    "category", "account", "doc_number", "doc_date", "seller_name", "seller_tin", "buyer_name",
-    "buyer_tin", "gross_amount", "vatable_amount", "vat_amount", "exempt_amount",
+    "category", "account", "doc_number", "doc_date", "seller_name", "seller_tin", "seller_branch", "seller_address",
+    "buyer_name", "buyer_tin", "buyer_branch", "gross_amount", "vatable_amount", "vat_amount", "exempt_amount",
     "zero_rated_amount", "withholding_amount", "vat_treatment", "reviewed", "excluded", "ewt_atc",
     "paid_on", "paid_via", "payment_ref",
 )
 _NULLABLE_FIELDS = {"doc_date", "paid_on"}
+# What a person can change on a document (the audit log diffs these).
+_AUDIT_DOC_FIELDS = _PLAIN_FIELDS + ("gl_account_code", "settles_document_id", "period_year", "period_quarter",
+                                     "period_month", "period_locked")
 
 
 def _by_company(rows) -> dict[str, dict]:
@@ -560,7 +715,25 @@ async def get_tree(user: User = Depends(get_current_user), db: AsyncSession = De
     )).all()
     facts = {str(c.id): c.facts_updated_at for c in companies if c.facts_updated_at is not None}
     status_map = _quarter_status(outputs, filed, doc_changes, input_changes, asset_changes, annual_changes, facts)
-    return build_tree(inputs, [tuple(r) for r in rows], status_map)
+    return build_tree(inputs, [tuple(r) for r in rows], status_map, await _bank_tree(db, ent, fye))
+
+
+async def _bank_tree(db: AsyncSession, ent: uuid.UUID, fye: dict[str, int]) -> dict:
+    month = func.date_trunc("month", AABankLine.line_date)
+    open_line = case((AABankLine.match_status.in_(("unmatched", "ambiguous", "suggested")), 1), else_=0)
+    rows = (await db.execute(
+        select(AABankLine.company_id, AABankLine.account_code, month, func.count(), func.sum(open_line))
+        .where(AABankLine.enterprise_id == ent, bank_service.live_line()).group_by(AABankLine.company_id, AABankLine.account_code, month)
+    )).all()
+    if not rows:
+        return {}
+    reconciled = {(str(c), code, m) for c, code, m in (await db.execute(
+        select(AABankReconciliation.company_id, AABankReconciliation.account_code, AABankReconciliation.month_start)
+        .where(AABankReconciliation.enterprise_id == ent, AABankReconciliation.voided_at.is_(None)))).all()}
+    accounts = {(str(c), code): (name, number or "") for c, code, name, number in (await db.execute(
+        select(AAAccount.company_id, AAAccount.code, AAAccount.name, AAAccount.bank_account_no)
+        .where(AAAccount.enterprise_id == ent, AAAccount.code.in_({r[1] for r in rows if r[1]})))).all()}
+    return bank_nodes([tuple(r) for r in rows], reconciled, accounts, fye)
 
 
 @router.get("/folders", response_model=FolderOut)
@@ -634,7 +807,7 @@ async def _learn_supplier_rule(db: AsyncSession, doc: AADocument, learn_atc: boo
     await db.execute(stmt.on_conflict_do_update(constraint="uq_aa_supplier_rule", set_=learned))
 
 
-async def _apply_rule_to_supplier_documents(db: AsyncSession, doc: AADocument) -> int:
+async def _apply_rule_to_supplier_documents(db: AsyncSession, doc: AADocument, user: User) -> int:
     """A corrected category/account also reaches the supplier's documents nobody has reviewed yet (uploaded
     before the rule existed). One the rule doesn't fit (goods vs services) is flagged instead of changed."""
     seller = doc.client_role == "seller"
@@ -654,9 +827,15 @@ async def _apply_rule_to_supplier_documents(db: AsyncSession, doc: AADocument) -
         if rule_conflicts(document_nature(other.raw), other.account, doc.account):
             if "supplier_rule_mismatch" not in (other.review_reasons or []):
                 other.review_reasons = [*(other.review_reasons or []), "supplier_rule_mismatch"]
-                other.needs_review = True
+                other.needs_review = needs_review_for(other.review_reasons)
             continue
+        before = audit.snapshot(other, ("category", "account"))
         other.category, other.account = doc.category, doc.account
+        audit.record(db, label=audit.document_label(other),
+                     ent=other.enterprise_id, company_id=other.company_id, user=user, entity="document",
+                     entity_id=other.id, action="supplier_rule", before=before,
+                     after=audit.snapshot(other, ("category", "account")),
+                     reason=f"Same supplier as document {doc.doc_number or doc.id}, corrected by hand")
         changed += 1
     return changed
 
@@ -667,6 +846,8 @@ def _documents_out(docs, company: AACompany, rules: dict[str, str]) -> list[Docu
         item = DocumentOut.model_validate(doc)
         item.ewt_atc_effective = accounting_periods.effective_document_atc(doc, company, rules)
         item.ewt_atc_source = accounting_periods.document_atc_source(doc, rules)
+        best = accounting_periods.best_document_atc(doc, company)
+        item.ewt_atc_best, item.ewt_atc_best_reason = best.atc, best.reason if best.atc else ""
         out.append(item)
     return out
 
@@ -700,6 +881,12 @@ async def patch_document(
     doc = await _document_or_404(db, ent, doc_id)
     company = await _company_or_404(db, ent, doc.company_id)
     sent = body.model_fields_set
+    before = audit.snapshot(doc, _AUDIT_DOC_FIELDS)
+    classifying = bool(sent & {"category", "account", "gl_account_code", "client_role"})
+    if classifying:
+        chart = await ensure_chart(db, company)
+        gl_rules = await accounting_periods.supplier_gl_rules(db, company.id)
+        old_main = document_main_account(accounting_periods.doc_line(doc, None, gl_rules), chart)
 
     for name in _PLAIN_FIELDS:
         if name not in sent:
@@ -717,7 +904,17 @@ async def patch_document(
             ))).scalar_one_or_none()
             if account is None:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Account {code} isn't an active account in the chart")
+            if account.locked and code != doc.gl_account_code:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, locked_message(chart, [code]))
         doc.gl_account_code = code
+
+    if classifying:  # a person can't classify a document into a locked account; moving it out clears the flag
+        new_main = document_main_account(accounting_periods.doc_line(doc, None, gl_rules), chart)
+        if new_main and chart.locked(new_main) and new_main != old_main:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, locked_message(chart, [new_main]))
+        if LOCKED_REASON in (doc.review_reasons or []) and not (new_main and chart.locked(new_main)):
+            doc.review_reasons = [r for r in doc.review_reasons if r != LOCKED_REASON]
+            doc.needs_review = needs_review_for(doc.review_reasons)
 
     if "settles_document_id" in sent:
         target_id = body.settles_document_id
@@ -733,7 +930,9 @@ async def patch_document(
         doc.settles_source = "user"   # never re-linked automatically after a person decides
         if "possible_payment" in (doc.review_reasons or []):
             doc.review_reasons = [r for r in doc.review_reasons if r != "possible_payment"]
-            doc.needs_review = bool(doc.review_reasons)
+            doc.needs_review = needs_review_for(doc.review_reasons)
+
+    sync_receipt_flag(doc)   # a seller TIN / number typed in clears the flag; reclassifying may raise it
 
     if "period_year" in sent:
         if body.period_year is None:
@@ -745,16 +944,25 @@ async def patch_document(
     elif "doc_date" in sent and not doc.period_locked:
         _apply_period_from_date(doc, company)
 
+    after = audit.snapshot(doc, _AUDIT_DOC_FIELDS)
+    old, new = audit.diff(before, after)
+    if new.get("reviewed") is True:  # accepting the flags anyway: record which ones
+        new["overridden_reasons"] = list(doc.review_reasons or [])
+    audit.record(db, label=audit.document_label(doc),
+                 ent=ent, company_id=doc.company_id, user=user, entity="document", entity_id=doc.id,
+                 action=audit.document_action(old, new), before=old, after=new, reason=body.reason)
+
     applied = 0
     if sent & {"category", "account", "ewt_atc", "gl_account_code"}:
         await _learn_supplier_rule(db, doc, learn_atc="ewt_atc" in sent, learn_gl="gl_account_code" in sent)
     if sent & {"category", "account"}:
-        applied = await _apply_rule_to_supplier_documents(db, doc)
+        applied = await _apply_rule_to_supplier_documents(db, doc, user)
 
     if sent & {"doc_date", "gross_amount", "withholding_amount", "seller_tin", "buyer_tin", "seller_name",
-               "buyer_name", "category", "excluded", "settles_document_id"}:
+               "buyer_name", "category", "excluded", "settles_document_id", "paid_on"}:
         await db.flush()
         await relink_receipts(db, doc.company_id)
+        await _bank_after_document_change(db, doc, company)
     if sent & {"doc_number", "doc_date", "gross_amount", "seller_tin", "buyer_tin", "seller_name", "buyer_name"}:
         await db.flush()
         await duplicates.refresh_flags(db, doc.company_id)
@@ -765,17 +973,180 @@ async def patch_document(
     return out
 
 
+class BulkResolveIn(BaseModel):
+    document_ids: list[uuid.UUID] = Field(min_length=1, max_length=BULK_MAX)
+    reason_code: str = Field(min_length=1, max_length=40)
+    action: Literal["reviewed", "exclude"]
+    reason: str = Field(min_length=3, max_length=500)
+
+
+@router.post("/documents/bulk-resolve")
+async def bulk_resolve(body: BulkResolveIn, user: User = Depends(get_current_user),
+                       db: AsyncSession = Depends(get_db)):
+    """Resolve many documents flagged for the same reason in one go (mark reviewed or exclude), one audit event
+    per document; documents that are already resolved or don't carry the reason are skipped and listed."""
+    ent = _scope(user)
+    ids = list(dict.fromkeys(body.document_ids))
+    docs = list((await db.execute(select(AADocument).where(
+        AADocument.enterprise_id == ent, AADocument.id.in_(ids)))).scalars().all())
+    found = {d.id for d in docs}
+    ok, skipped = bulk_targets(docs, body.reason_code)
+    reason = body.reason.strip()
+    for doc in ok:
+        before = audit.snapshot(doc, ("reviewed", "excluded"))
+        if body.action == "reviewed":
+            doc.reviewed = True
+        else:
+            doc.excluded = True
+        old, new = audit.diff(before, audit.snapshot(doc, ("reviewed", "excluded")))
+        if body.action == "reviewed":
+            new["overridden_reasons"] = list(doc.review_reasons or [])
+        audit.record(db, label=audit.document_label(doc), ent=ent, company_id=doc.company_id, user=user,
+                     entity="document", entity_id=doc.id, action=audit.document_action(old, new), before=old,
+                     after=new, reason=f"Bulk: {reason}")
+    if ok and body.action == "exclude":
+        await db.flush()
+        for doc in ok:
+            if doc.doc_type == "statement":
+                await bank_service.statement_document_changed(db, doc)
+        for company_id in {d.company_id for d in ok}:
+            company = await db.get(AACompany, company_id)
+            await relink_receipts(db, company_id)
+            if company is not None:
+                await bank_service.rematch(db, company)
+            await duplicates.refresh_flags(db, company_id)
+    await db.commit()
+    return {"resolved": [str(d.id) for d in ok],
+            "skipped": [{"id": str(i), "why": why} for i, why in skipped]
+            + [{"id": str(i), "why": "not found"} for i in ids if i not in found]}
+
+
+async def _bank_after_document_change(db: AsyncSession, doc: AADocument, company: AACompany | None) -> None:
+    """A deleted / excluded statement's lines stop counting; any other document a bank line pays (or could pay)
+    changed, so the lines are matched again."""
+    if doc.doc_type == "statement":
+        await bank_service.statement_document_changed(db, doc)
+    elif company is not None:
+        await bank_service.rematch(db, company)
+
+
 @router.delete("/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(
     doc_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    doc = await _document_or_404(db, _scope(user), doc_id)
+    ent = _scope(user)
+    doc = await _document_or_404(db, ent, doc_id)
     doc.deleted_at = datetime.now(timezone.utc)
+    audit.record(db, label=audit.document_label(doc),
+                 ent=ent, company_id=doc.company_id, user=user, entity="document", entity_id=doc.id,
+                 action="delete", before=audit.snapshot(doc, ("doc_number", "doc_date", "seller_name", "buyer_name",
+                                                              "gross_amount", "category")), after=None)
     await db.flush()
     await relink_receipts(db, doc.company_id)
+    await _bank_after_document_change(db, doc, await db.get(AACompany, doc.company_id))
     await duplicates.refresh_flags(db, doc.company_id)  # the copy left behind is no longer a duplicate
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class MoveCompanyIn(BaseModel):
+    company_id: uuid.UUID
+
+
+@dataclass
+class _MoveTarget:
+    """What re-sorting documents for the target company needs, loaded once per move."""
+    company: AACompany
+    rules: dict[str, tuple[str, str]]
+    other_tins: frozenset[str]
+    lock: tuple | None
+
+
+async def _move_target(db: AsyncSession, ent: uuid.UUID, target: AACompany) -> _MoveTarget:
+    rules = {r.counterparty_tin: (r.category, r.account) for r in (await db.execute(
+        select(AASupplierRule).where(AASupplierRule.company_id == target.id))).scalars().all()}
+    others = frozenset((await db.execute(select(AACompany.tin).where(
+        AACompany.enterprise_id == ent, AACompany.id != target.id, AACompany.tin != ""))).scalars().all())
+    locks = await pipeline._locked_charts(db, [target.id])
+    return _MoveTarget(target, rules, others, locks.get(target.id))
+
+
+async def _move_document(db: AsyncSession, ent: uuid.UUID, user: User, doc: AADocument, source: AACompany,
+                         to: _MoveTarget) -> str | None:
+    """Move one document to ``to.company`` (re-sorted, audited, not committed); the reason it can't, else None.
+    The caller relinks / rematches / refreshes duplicates of both companies afterwards."""
+    target = to.company
+    doc_ref = str(doc.id)
+    facts = move_company.MoveFacts(
+        is_statement=doc.doc_type == "statement",
+        has_asset=(await db.execute(select(AAAsset.id).where(AAAsset.document_id == doc.id).limit(1))).first()
+        is not None,
+        confirmed_bank_match=(await db.execute(select(AABankLine.id).where(
+            AABankLine.company_id == source.id, AABankLine.match_status == "confirmed",
+            AABankLine.match_kind == "document", AABankLine.matched_ref == doc_ref,
+        ).limit(1))).first() is not None,
+        written_off=(await db.execute(select(AAJournalEntry.id).where(
+            AAJournalEntry.company_id == source.id, AAJournalEntry.deleted_at.is_(None),
+            AAJournalEntry.writeoff_items.contains([{"id": doc_ref}]),
+        ).limit(1))).first() is not None,
+        is_2307_for_a_sale=(await db.execute(select(AADocument.id).where(
+            AADocument.company_id == source.id, AADocument.deleted_at.is_(None),
+            AADocument.cwt_2307["document_id"].astext == doc_ref,
+        ).limit(1))).first() is not None,
+    )
+    problem = move_company.move_problem(facts)
+    if problem:
+        return problem
+
+    fields = move_company.resorted_fields(doc, pipeline.company_profile(target), to.rules, to.other_tins)
+    if to.lock is not None:  # classified into a locked account: queue it, as extraction does
+        checked = {**fields, "seller_tin": doc.seller_tin, "buyer_tin": doc.buyer_tin}
+        flag_locked(checked, *to.lock)
+        fields["review_reasons"], fields["needs_review"] = checked["review_reasons"], checked["needs_review"]
+
+    before = {"company": source.registered_name, **audit.snapshot(doc, ("category", "period_year", "period_quarter"))}
+    # Receipts in the old company that a person linked to this one as the invoice they pay.
+    for receipt in (await db.execute(select(AADocument).where(
+        AADocument.company_id == source.id, AADocument.settles_document_id == doc.id))).scalars().all():
+        receipt.settles_document_id, receipt.settles_source = None, ""
+    for name, value in fields.items():
+        setattr(doc, name, value)
+    doc.company_id = target.id
+    after = {"company": target.registered_name, **audit.snapshot(doc, ("category", "period_year", "period_quarter"))}
+    for company, action in ((source, "move_out"), (target, "move_in")):
+        audit.record(db, label=audit.document_label(doc), ent=ent, company_id=company.id, user=user,
+                     entity="document", entity_id=doc.id, action=action, before=before, after=after)
+    return None
+
+
+async def _refresh_after_move(db: AsyncSession, companies: list[AACompany]) -> None:
+    await db.flush()
+    for company in companies:
+        await relink_receipts(db, company.id)
+        await bank_service.rematch(db, company)
+        await duplicates.refresh_flags(db, company.id)
+
+
+@router.post("/documents/{doc_id}/move-company", response_model=DocumentOut)
+async def move_document_to_company(
+    doc_id: uuid.UUID, body: MoveCompanyIn, user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move a document to another company of the firm, re-sorted for it (side, folder, account, review flags and
+    quarter by its fiscal year). The file stays where it is; only the document moves. Refused (409) while something
+    in the old company still depends on it."""
+    ent = _scope(user)
+    doc = await _document_or_404(db, ent, doc_id)
+    source = await _company_or_404(db, ent, doc.company_id)
+    target = await _company_or_404(db, ent, body.company_id)
+    if target.id == source.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The document is already in this company")
+    problem = await _move_document(db, ent, user, doc, source, await _move_target(db, ent, target))
+    if problem:
+        raise HTTPException(status.HTTP_409_CONFLICT, problem)
+    await _refresh_after_move(db, [source, target])
+    await db.commit()
+    return await _document_out(db, doc, target)
 
 
 @router.get("/duplicates", response_model=list[DuplicatePairOut])
@@ -832,6 +1203,11 @@ async def mark_not_duplicate(
     for a, b in ((doc, other), (other, doc)):
         if str(b.id) not in (a.not_duplicate_of or []):
             a.not_duplicate_of = [*(a.not_duplicate_of or []), str(b.id)]
+            audit.record(db, label=audit.document_label(a),
+                         ent=ent, company_id=a.company_id, user=user, entity="document", entity_id=a.id,
+                         action="not_duplicate", after={"kept_with": b.doc_number or str(b.id),
+                                                        "kept_with_id": str(b.id)},
+                         reason=body.reason, always=True)
     await db.flush()
     await duplicates.refresh_flags(db, doc.company_id)
     await db.commit()
@@ -862,9 +1238,23 @@ async def file_page(
     return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, max-age=3600"})
 
 
+router.include_router(accounting_work.router)
+router.include_router(accounting_tasks.router)
 router.include_router(accounting_books.router)
+router.include_router(accounting_imports.router)
+router.include_router(accounting_bank.router)
+router.include_router(accounting_contacts.router)
+router.include_router(accounting_audit.router)
 router.include_router(accounting_employees.router)
+router.include_router(accounting_reports.router)
+router.include_router(accounting_reclassify.router)
+router.include_router(accounting_templates.router)
+router.include_router(accounting_recurring.router)
+router.include_router(accounting_writeoff.router)
+router.include_router(accounting_checklists.router)
 router.include_router(accounting_atc.router)
+router.include_router(accounting_search.router)
+router.include_router(accounting_assistant.router)
 # Annual routes first: "/periods/{company}/{year}/annual" would otherwise match the quarter route's {quarter}.
 router.include_router(accounting_annual.router)
 router.include_router(accounting_periods.router)

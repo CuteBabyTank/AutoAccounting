@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import AmountInput from "@/components/AmountInput";
 import { Plus, Trash } from "@phosphor-icons/react";
 import type { Account, JournalEntryInput, JournalLine } from "@/types/accounting";
 
@@ -35,7 +36,8 @@ export default function JournalEntryForm({ accounts, initial, busy, onCancel, on
           : "";
   const setLine = (i: number, patch: Partial<JournalLine>) =>
     setEntry((e) => ({ ...e, lines: lines.map((l, j) => (j === i ? { ...l, ...patch } : l)) }));
-  const active = accounts.filter((a) => a.active);
+  // Locked accounts take no new lines; a line already on one (posted before the lock) keeps it.
+  const active = accounts.filter((a) => a.active && (!a.locked || initial.lines.some((l) => l.account_code === a.code)));
   const opening = entry.kind === "opening";
 
   return (
@@ -53,6 +55,17 @@ export default function JournalEntryForm({ accounts, initial, busy, onCancel, on
         )}
         <input className={INPUT} placeholder="Reference" maxLength={60} value={entry.reference} onChange={(e) => setEntry({ ...entry, reference: e.target.value })} />
         <input className={INPUT} placeholder="Particulars" maxLength={255} value={entry.particulars} onChange={(e) => setEntry({ ...entry, particulars: e.target.value })} />
+        {!opening && (
+          <label className="col-span-2 flex items-center gap-2 text-sm text-[var(--text-primary)] md:col-span-4">
+            <input
+              type="checkbox"
+              checked={!!entry.is_adjusting}
+              onChange={(e) => setEntry({ ...entry, is_adjusting: e.target.checked })}
+            />
+            Adjusting entry
+            <span className="text-xs text-[var(--text-secondary)]">(period-end accrual or correction; shows in the Adjusted TB)</span>
+          </label>
+        )}
       </div>
       <table className="w-full text-sm">
         <thead>
@@ -71,8 +84,8 @@ export default function JournalEntryForm({ accounts, initial, busy, onCancel, on
                   ))}
                 </select>
               </td>
-              <td className="py-0.5 pr-2"><input className={INPUT} inputMode="decimal" value={l.debit} onChange={(e) => setLine(i, { debit: e.target.value, credit: e.target.value ? "" : l.credit })} /></td>
-              <td className="py-0.5 pr-2"><input className={INPUT} inputMode="decimal" value={l.credit} onChange={(e) => setLine(i, { credit: e.target.value, debit: e.target.value ? "" : l.debit })} /></td>
+              <td className="py-0.5 pr-2"><AmountInput className={INPUT} aria-label="Debit" value={l.debit} onValueChange={(v) => setLine(i, { debit: v, credit: v ? "" : l.credit })} /></td>
+              <td className="py-0.5 pr-2"><AmountInput className={INPUT} aria-label="Credit" value={l.credit} onValueChange={(v) => setLine(i, { credit: v, debit: v ? "" : l.debit })} /></td>
               <td className="py-0.5 pr-2"><input className={INPUT} maxLength={255} value={l.party_name} onChange={(e) => setLine(i, { party_name: e.target.value })} /></td>
               <td>
                 {lines.length > 2 && (
@@ -101,6 +114,7 @@ export default function JournalEntryForm({ accounts, initial, busy, onCancel, on
             onClick={() =>
               onSave({
                 ...entry,
+                is_adjusting: !opening && !!entry.is_adjusting,
                 lines: used
                   .map((l) => ({ ...l, debit: l.debit || "0", credit: l.credit || "0" })),
               })

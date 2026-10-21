@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass, Plus, PushPin } from "@phosphor-icons/react";
 import CompanyForm from "@/components/accounting/CompanyForm";
 import Hint from "@/components/guide/Hint";
-import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
+import { GuideButton } from "@/components/guide/GuideTour";
+import PageGuide from "@/components/guide/PageGuide";
 import { COMPANIES_TOUR } from "@/components/guide/tours";
+import { COMPANIES_SPOTS } from "@/components/guide/tours/spots";
 import { useGuide } from "@/lib/guides";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatTin } from "@/lib/accounting-format";
@@ -77,7 +79,7 @@ export default function AccountingCompaniesPage() {
             </p>
           </div>
           <GuideButton open={guide.open} onClick={guide.toggle} />
-          <label className="relative">
+          <label data-tour="company-search" className="relative">
             <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
             <input
               value={search}
@@ -89,6 +91,7 @@ export default function AccountingCompaniesPage() {
           {canManage && (
             <button
               onClick={() => setEditing("new")}
+              data-tour="add-company"
               className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--accent-hover)]"
             >
               <Plus size={16} /> Add company
@@ -96,7 +99,7 @@ export default function AccountingCompaniesPage() {
           )}
         </div>
 
-        <GuideTour open={guide.open} onClose={guide.dismiss} label="Companies" slides={COMPANIES_TOUR} />
+        <PageGuide open={guide.open} onClose={guide.dismiss} label="Companies" spots={COMPANIES_SPOTS} slides={COMPANIES_TOUR} />
 
         {error && (
           <div className="mb-4 rounded-lg border border-[var(--alert-error-border)] bg-[var(--alert-error-bg)] px-4 py-2 text-sm text-[var(--alert-error-text)]">
@@ -104,7 +107,7 @@ export default function AccountingCompaniesPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
+        <div data-tour="company-list" className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-[var(--text-secondary)]">

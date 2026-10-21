@@ -9,8 +9,9 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
+from app.services.accounting.bank_match import due_amount
 from app.services.accounting.books.chart import Chart, JOURNAL_BOOKS
-from app.services.accounting.compute.cogs import claims_input_vat, cost_base, is_capital_goods
+from app.services.accounting.compute.cogs import claimed_input_vat, cost_base, is_capital_goods, vat_difference
 from app.services.accounting.compute.depreciation import Asset, depreciation_between
 from app.services.accounting.compute.inputs import CompanyFacts, DocLine
 from app.services.accounting.compute.money import ZERO, c2, total
@@ -59,6 +60,7 @@ class Payment:
     amount: Decimal | None     # None = whatever is still open
     via: str                   # cash | bank | ewallet
     ref: str
+    account: str = ""          # the cash / bank account code it moved through ("" = by via)
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,20 @@ class FiledPayment:
     quarter: int
     on: date
     amount: Decimal
+    account: str = ""          # the bank account a matched statement line shows it left ("" = Cash in bank)
+
+
+@dataclass(frozen=True)
+class BankPosting:
+    """A statement line no document explains, posted against the account a person (or a safe rule) chose."""
+
+    id: str                    # the bank line id
+    on: date
+    amount: Decimal            # signed: + into the bank account
+    bank_account: str
+    counter_account: str
+    particulars: str
+    ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -117,6 +133,7 @@ class BooksInput:
     filed: tuple[FiledPayment, ...] = ()
     assets: tuple[Asset, ...] = ()
     annual: tuple[AnnualTaxes, ...] = ()
+    bank: tuple[BankPosting, ...] = ()
 
 
 def _dr(account: str, amount) -> Line | None:
@@ -168,11 +185,13 @@ def document_entries(l: DocLine, inp: BooksInput) -> list[Entry]:
         ))
     if l.category in ("purchases", "expenses") and l.client_role == "buyer":
         account = chart.code("ppe") if is_capital_goods(l) else chart.doc_account(l.account, l.gl_account)
-        input_vat = l.vat if claims_input_vat(l, vat) else ZERO
+        input_vat = claimed_input_vat(l, vat)
+        difference = vat_difference(l, vat)
         ewt = inp.ewt.get(l.id, ZERO)
         return _kept(make_entry(
             f"doc:{l.id}:buy", l.doc_date, _book(inp, "PJ"), ref, party, f"{chart.name(account)}, {name}".strip(", "),
             "document", _dr(account, cost_base(l, vat)), _dr(chart.code("input_vat"), input_vat),
+            _dr(chart.code("vat_difference"), difference) if difference else None,
             _cr(chart.code("ewt_payable"), ewt), _cr(chart.code("ap"), l.gross - ewt),
         ))
     if l.category == "payroll":
@@ -192,13 +211,7 @@ def document_entries(l: DocLine, inp: BooksInput) -> list[Entry]:
 def amount_due(l: DocLine, inp: BooksInput, contributions: dict[str, Decimal] | None = None) -> Decimal:
     """What the counterparty pays / is paid in cash: net of tax withheld (and, for payroll, the employees'
     SSS / PhilHealth / Pag-IBIG share deducted from their pay)."""
-    if l.category == "sales":
-        return c2(l.gross - l.withholding)
-    if l.category in ("purchases", "expenses"):
-        return c2(l.gross - inp.ewt.get(l.id, ZERO))
-    if l.category == "payroll":
-        return c2(l.gross - l.withholding - (contributions or {}).get(l.id, ZERO))
-    return ZERO
+    return due_amount(l, inp.ewt, contributions or {})
 
 
 def _month_contributions(inp: BooksInput) -> dict[tuple[int, int], tuple[date, Decimal, Decimal]]:
@@ -255,7 +268,7 @@ def payment_entries(inp: BooksInput, warnings: list[str]) -> list[Entry]:
             continue
         if amount > left + _OVERPAY:
             over += 1
-        cash = chart.code(CASH_KEYS.get(p.via, "cash"))
+        cash = p.account or chart.code(CASH_KEYS.get(p.via, "cash"))
         party, ref = _party(l), p.ref or l.doc_number
         if l.category == "sales":
             entry = make_entry(f"pay:{p.id}", p.on, _book(inp, "CRJ"), ref, party,
@@ -392,7 +405,7 @@ def tax_entries(inp: BooksInput) -> list[Entry]:
         out += _kept(make_entry(
             f"tax:{p.form}:{p.year}Q{p.quarter}:paid", p.on, _book(inp, "CDJ"), p.form, ("Bureau of Internal Revenue", ""),
             f"Payment of BIR {p.form} for {period}", "tax",
-            _dr(code(account), p.amount), _cr(code("bank"), p.amount),
+            _dr(code(account), p.amount), _cr(p.account or code("bank"), p.amount),
         ))
     return out
 
@@ -479,6 +492,20 @@ def manual_entries(inp: BooksInput) -> list[Entry]:
     return out
 
 
+def bank_entries(inp: BooksInput) -> list[Entry]:
+    """Statement lines posted on their own: money in to the CRJ, money out to the CDJ."""
+    out: list[Entry] = []
+    for b in inp.bank:
+        if not inp.start <= b.on <= inp.through or b.amount == 0:
+            continue
+        incoming = b.amount > 0
+        out += _kept(make_entry(
+            f"bank:{b.id}", b.on, _book(inp, "CRJ" if incoming else "CDJ"), b.ref, _NO_PARTY, b.particulars, "bank",
+            _dr(b.bank_account, b.amount), _cr(b.counter_account, b.amount),
+        ))
+    return out
+
+
 def post_all(inp: BooksInput) -> tuple[list[Entry], list[str]]:
     """Every entry from the books' start to ``through``, in posting order, plus warnings."""
     warnings: list[str] = []
@@ -490,6 +517,7 @@ def post_all(inp: BooksInput) -> tuple[list[Entry], list[str]]:
     entries += tax_entries(inp)
     entries += depreciation_entries(inp)
     entries += manual_entries(inp)
+    entries += bank_entries(inp)
     entries += contribution_entries(inp, warnings)
     entries += inventory_entries(inp, entries, warnings)
     entries.sort(key=lambda e: (e.date, JOURNAL_BOOKS.index(e.book) if e.book in JOURNAL_BOOKS else 9, e.id))

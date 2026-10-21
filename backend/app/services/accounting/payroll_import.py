@@ -16,6 +16,7 @@ from openpyxl import load_workbook
 from app.services.accounting.compute.alphalist import FIELD_LABELS, MONEY
 
 MAX_ROWS = 5000
+MAX_READ_ROWS = MAX_ROWS * 4 + 50     # physical rows read (blank ones included) before giving up on a sheet
 MAX_COLUMNS = 120
 MAX_UNZIPPED = 60 * 1024 * 1024     # an .xlsx is a zip: refuse ones that inflate past this (zip bombs)
 # Extra pseudo-field: one "Last, First Middle" column.
@@ -67,8 +68,19 @@ def _cell(value) -> str:
     return str(value).strip()
 
 
+def _decode(data: bytes) -> str:
+    """CSV text: UTF-8 (with or without a BOM), else Windows-1252 (Excel's "CSV" on Windows keeps ñ that way)."""
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("cp1252", errors="replace")
+
+
 def parse_sheet(data: bytes, filename: str) -> tuple[list[str], list[list[str]]]:
-    """Headers and data rows of the first sheet. The header row is the first with three or more text cells."""
+    """Headers and data rows of the first sheet. The header row is the first with three or more text cells.
+
+    A sheet with more than ``MAX_ROWS`` data rows is refused (never cut short: a cut-off trial balance or journal
+    file would still look whole)."""
     if filename.lower().endswith((".xlsx", ".xlsm")):
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as z:
@@ -79,11 +91,12 @@ def parse_sheet(data: bytes, filename: str) -> tuple[list[str], list[list[str]]]
         wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
         ws = wb.worksheets[0]
         raw = [[_cell(v) for v in row]
-               for row in ws.iter_rows(values_only=True, max_row=MAX_ROWS + 50, max_col=MAX_COLUMNS)]
+               for row in ws.iter_rows(values_only=True, max_row=MAX_READ_ROWS, max_col=MAX_COLUMNS)]
         wb.close()
     elif filename.lower().endswith((".csv", ".txt")):
-        text = data.decode("utf-8-sig", errors="replace")
-        raw = [[c.strip() for c in row[:MAX_COLUMNS]] for _, row in zip(range(MAX_ROWS + 50), csv.reader(io.StringIO(text)))]
+        text = _decode(data)
+        raw = [[c.strip() for c in row[:MAX_COLUMNS]]
+               for _, row in zip(range(MAX_READ_ROWS), csv.reader(io.StringIO(text)))]
     else:
         raise ValueError("Upload an Excel (.xlsx) or CSV file.")
     start = next((i for i, row in enumerate(raw)
@@ -93,7 +106,9 @@ def parse_sheet(data: bytes, filename: str) -> tuple[list[str], list[list[str]]]
     headers = raw[start]
     width = len(headers)
     rows = [(r + [""] * width)[:width] for r in raw[start + 1:] if any(c for c in r)]
-    return headers, rows[:MAX_ROWS]
+    if len(rows) > MAX_ROWS or (len(raw) >= MAX_READ_ROWS and any(c for c in raw[-1])):
+        raise ValueError(f"The sheet has more than {MAX_ROWS:,} rows; split it into smaller files.")
+    return headers, rows
 
 
 def _is_number(text: str) -> bool:

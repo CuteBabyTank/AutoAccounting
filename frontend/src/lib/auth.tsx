@@ -14,6 +14,8 @@ interface AuthState {
   devLogin: (email?: string) => Promise<User>;
   logout: () => void;
   updateNickname: (nickname: string | null) => Promise<User>;
+  /** Set your own profile picture (JPG / PNG under 5 MB; the server shrinks it). */
+  uploadAvatar: (file: File) => Promise<User>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -69,8 +71,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return res.data;
   };
 
+  const uploadAvatar = async (file: File): Promise<User> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await api.put<User>("/auth/me/avatar", form, { headers: { "Content-Type": "multipart/form-data" } });
+    setUser(res.data);
+    return res.data;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, googleLogin, devLogin, logout, updateNickname }}>
+    <AuthContext.Provider value={{ user, token, loading, googleLogin, devLogin, logout, updateNickname, uploadAvatar }}>
       {children}
     </AuthContext.Provider>
   );

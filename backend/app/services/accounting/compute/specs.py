@@ -405,7 +405,7 @@ FORM_NOTES["BalanceSheet"] = {"ppe_net": "Asset register net book value unless e
                               "total_liabilities_equity": "Should equal total assets"}
 
 LEDGER_ORDER = ("SLS", "SLP", "SAWT", "QAP", "Depreciation", "NOLCO", "ExcessMCIT", "QuarterCredits", "Transactions",
-                "SJ", "PJ", "CRJ", "CDJ", "GJ", "GL", "AR", "AP", "TB", "PCTB", "SFP", "IS", "SCE", "SCF")
+                "SJ", "PJ", "CRJ", "CDJ", "GJ", "GL", "AR", "AP", "TB", "PCTB", "SFP", "IS", "SCE", "SCF", "ARAging", "APAging")
 LEDGER_TITLES.update({"Depreciation": "Asset register and depreciation", "NOLCO": "Net operating loss carry-over",
                       "ExcessMCIT": "Excess MCIT carry-over", "QuarterCredits": "Income tax paid and withheld by quarter"})
 _CARRY_COLUMNS = (("year", "Year incurred", "text"), ("amount", "Amount", "money"),
@@ -468,3 +468,13 @@ LEDGER_COLUMNS.update({
 _STATEMENT = (("line", "", "text"), ("amount", "Amount", "money"))
 LEDGER_COLUMNS.update({"PCTB": LEDGER_COLUMNS["TB"], "SFP": _STATEMENT, "IS": _STATEMENT, "SCE": _STATEMENT,
                        "SCF": _STATEMENT})
+
+# Aging of open items as of the quarter's end (compute/subledger.py): one row per open sale / bill.
+_AGING = (("party", "Name", "text"), ("tin", "TIN", "text"), ("doc_number", "Document", "text"), ("date", "Date", "text"),
+          ("due", "Due", "text"), ("days", "Days past due", "text"), ("total_amount", "Total", "money"),
+          ("withheld", "Tax withheld", "money"), ("paid", "Paid", "money"), ("current", "Current", "money"),
+          ("1-30", "1–30 days", "money"), ("31-60", "31–60 days", "money"), ("61-90", "61–90 days", "money"),
+          ("90+", "Over 90 days", "money"), ("open", "Open", "money"))
+LEDGER_TITLES.update({"ARAging": "Accounts receivable aging", "APAging": "Accounts payable aging"})
+LEDGER_COLUMNS.update({"ARAging": (("party", "Customer", "text"),) + _AGING[1:],
+                       "APAging": (("party", "Supplier", "text"),) + _AGING[1:] + (("unverified", "Payment unverified", "text"),)})

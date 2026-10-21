@@ -15,14 +15,17 @@ from sqlalchemy.exc import IntegrityError
 
 from app.database import async_session
 from app.dependencies import bind_session_user
-from app.models.accounting import AACompany, AADocument, AAFile, AASupplierRule, AAUpload
+from app.models.accounting import AAAccount, AACompany, AADocument, AAFile, AASupplierRule, AAUpload
 from app.models.user import User
 from app.services import gemini_service
 from app.services.accounting import duplicates, gemini as aa_gemini
 from app.services.accounting.classify import (
     CompanyProfile, classify_document, duplicate_key, empty_document_fields, mark_duplicates,
 )
+from app.services.accounting.books import bank
+from app.services.accounting.books.chart import Chart
 from app.services.accounting.books.links import relink_receipts
+from app.services.accounting.review_rules import flag_locked
 from app.services.accounting.jobs import JobSlots
 from app.services.accounting.extraction import (
     DETECT_PROMPT, extract_prompt, parse_detection, parse_extraction,
@@ -46,8 +49,10 @@ def company_candidates(companies) -> list[CompanyCandidate]:
 
 
 def company_profile(c: AACompany) -> CompanyProfile:
+    owners = tuple(n for n in (*(c.owner_names or ()), c.books_signatory or "") if n and n.strip())
     return CompanyProfile(
-        c.tin, c.registered_name, tuple(c.aliases or ()), c.vat_status == "vat", c.fiscal_year_end_month
+        c.tin, c.registered_name, tuple(c.aliases or ()), c.vat_status == "vat", c.fiscal_year_end_month,
+        is_withholding_agent=bool(c.is_withholding_agent or c.is_top_withholding_agent), owner_names=owners,
     )
 
 
@@ -128,6 +133,15 @@ async def _claim_file(db, file_id: uuid.UUID, company_id: uuid.UUID, sha256: str
         return False
 
 
+async def _store_statement(db, doc: AADocument) -> None:
+    """Save a bank statement's lines; a bad statement never fails the file (its document is still filed)."""
+    try:
+        async with db.begin_nested():
+            await bank.store_statement(db, doc)
+    except Exception:
+        logger.exception("accounting_statement_failed document_id=%s", doc.id)
+
+
 async def run_detection(upload_id: uuid.UUID, user_id: str) -> None:
     async with async_session() as db:
         await bind_session_user(db, user_id)
@@ -204,6 +218,7 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
             select(AASupplierRule).where(AASupplierRule.company_id.in_(company_ids))
         )).scalars().all() if company_ids else []:
             rules.setdefault(r.company_id, {})[r.counterparty_tin] = (r.category, r.account)
+        locks = await _locked_charts(db, company_ids)
         seen: dict[uuid.UUID, set[tuple[str, str]]] = {cid: set() for cid in company_ids}
         for company_id, seller_tin, seller_name, doc_number in (await db.execute(
             select(AADocument.company_id, AADocument.seller_tin, AADocument.seller_name, AADocument.doc_number)
@@ -254,13 +269,18 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
                         rows.append(empty_document_fields(pages, page_start=start0 + 1))
                 if not rows:
                     rows = [empty_document_fields(page_count)]
+                if company_id in locks:
+                    for fields in rows:
+                        flag_locked(fields, *locks[company_id])
                 new_seen = mark_duplicates(rows, seen[company_id])
-                for fields in rows:
-                    db.add(AADocument(
-                        enterprise_id=enterprise_scope, company_id=company_id, file_id=file_id, **fields
-                    ))
+                added = [AADocument(enterprise_id=enterprise_scope, company_id=company_id, file_id=file_id, **fields)
+                         for fields in rows]
+                db.add_all(added)
 
                 await db.flush()  # surface bad rows (e.g. out-of-range amounts) inside this file's try
+                for doc in added:
+                    if doc.doc_type == "statement":
+                        await _store_statement(db, doc)
                 f = await db.get(AAFile, file_id)
                 if not f.pages_charged and enterprise_id is not None:
                     ent = await db.get(User, enterprise_id)
@@ -286,6 +306,9 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
             try:
                 await relink_receipts(db, company_id)
                 await duplicates.refresh_flags(db, company_id)  # copies dropped in earlier uploads too
+                company = await db.get(AACompany, company_id)
+                if company is not None:
+                    await bank.rematch(db, company)  # new statement lines, or new documents they pay
                 await db.commit()
             except Exception:  # linking is a convenience; never fail the upload over it
                 logger.exception("accounting_relink_failed company_id=%s", company_id)
@@ -294,3 +317,21 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
         upload = await db.get(AAUpload, upload_id)
         upload.status = "done"
         await db.commit()
+
+
+async def _locked_charts(db, company_ids: list[uuid.UUID]) -> dict[uuid.UUID, tuple[Chart, dict[str, str]]]:
+    """Chart + supplier default accounts of the companies that have a locked account (the only ones whose new
+    documents can need ``account_locked``)."""
+    from app.services.accounting.books.loader import _chart_account
+
+    if not company_ids:
+        return {}
+    locked = set((await db.execute(select(AAAccount.company_id).where(
+        AAAccount.company_id.in_(company_ids), AAAccount.locked.is_(True)).distinct())).scalars().all())
+    out: dict[uuid.UUID, tuple[Chart, dict[str, str]]] = {}
+    for cid in locked:
+        rows = (await db.execute(select(AAAccount).where(AAAccount.company_id == cid))).scalars().all()
+        gl = dict((await db.execute(select(AASupplierRule.counterparty_tin, AASupplierRule.gl_account_code).where(
+            AASupplierRule.company_id == cid, AASupplierRule.gl_account_code != ""))).all())
+        out[cid] = (Chart(_chart_account(r) for r in rows), gl)
+    return out

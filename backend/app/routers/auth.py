@@ -1,16 +1,22 @@
 """Auth routes: Google SSO + profile."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies import get_db, get_current_user
 from app.models.user import User
 from app.schemas.auth import DevLoginRequest, GoogleAuthRequest, TokenResponse, UpdateMeRequest, UserResponse
+from app.services.avatar_service import MAX_UPLOAD_BYTES, make_avatar
 from app.services.auth_service import dev_login, dev_login_enabled, google_login, user_to_response
 from app.services.usage_service import get_enterprise_for_user, get_usage_stats
 
 router = APIRouter()
+
+
+async def _response(db: AsyncSession, user: User) -> dict:
+    await db.refresh(user, ["avatar"])
+    return user_to_response(user)
 
 
 def _clean_nickname(value: str | None) -> str | None:
@@ -23,7 +29,7 @@ def _clean_nickname(value: str | None) -> str | None:
 @router.post("/google", response_model=TokenResponse)
 async def auth_google(request: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
     user, token = await google_login(db, request.credential, settings.google_client_id)
-    return TokenResponse(token=token, user=UserResponse(**user_to_response(user)))
+    return TokenResponse(token=token, user=UserResponse(**await _response(db, user)))
 
 
 @router.get("/config")
@@ -36,7 +42,7 @@ async def auth_config():
 async def auth_dev_login(request: DevLoginRequest, db: AsyncSession = Depends(get_db)):
     # dev_login itself refuses (404) unless ENABLE_DEV_LOGIN=true in development.
     user, token = await dev_login(db, request.email)
-    return TokenResponse(token=token, user=UserResponse(**user_to_response(user)))
+    return TokenResponse(token=token, user=UserResponse(**await _response(db, user)))
 
 
 @router.get("/me", response_model=UserResponse)
@@ -44,7 +50,7 @@ async def get_me(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    data = user_to_response(user)
+    data = await _response(db, user)
     enterprise = await get_enterprise_for_user(db, user)
     if enterprise:
         stats = await get_usage_stats(db, enterprise.id)
@@ -59,8 +65,23 @@ async def update_me(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Self-service profile update. Currently only the nickname is editable."""
+    """Self-service profile update: the nickname (the picture has its own route)."""
     user.nickname = _clean_nickname(payload.nickname)
     await db.commit()
-    await db.refresh(user)
-    return UserResponse(**user_to_response(user))
+    return UserResponse(**await _response(db, user))
+
+
+@router.put("/me/avatar", response_model=UserResponse)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set your own profile picture (JPG / PNG under 5 MB, stored as a ~10 KB WebP)."""
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    try:
+        user.avatar = make_avatar(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    await db.commit()
+    return UserResponse(**await _response(db, user))

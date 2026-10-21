@@ -63,3 +63,13 @@ def test_unknown_system_key_raises():
 def test_default_books():
     assert default_books(True) == ["SJ", "PJ", "CRJ", "CDJ", "GJ", "GL"]
     assert default_books(False) == ["CRJ", "CDJ", "GJ", "GL"]
+
+
+def test_standard_chart_has_bank_charges_and_interest_income():
+    from app.services.accounting.books.chart import Chart, ChartAccount, standard_chart
+
+    chart = Chart(standard_chart("corporation"))
+    assert chart.name(chart.code("bank_charges")) == "Bank charges"
+    assert chart.code("interest_income") == "4110"
+    old = Chart([ChartAccount("6900", "Misc", "expense", system_key="doc:other")])
+    assert old.code_or("bank_charges", "doc:other") == "6900"

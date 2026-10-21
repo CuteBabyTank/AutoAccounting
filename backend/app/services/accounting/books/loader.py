@@ -13,13 +13,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.accounting import (
-    AAAccount, AABookClose, AACompany, AADocument, AAJournalEntry, AAOutput, AAPeriod,
+    AAAccount, AABookClose, AACompany, AADocument, AAJournalEntry, AAOpeningItem, AAOutput, AAPeriod,
 )
 from app.services.accounting.books.chart import (
     JOURNAL_BOOKS, Chart, ChartAccount, default_books, missing_standard, standard_chart,
 )
 from app.services.accounting.compute.book_ledgers import build_books, trial_balance_totals
 from app.services.accounting.compute.annual_inputs import annual_inputs_from_json
+from app.services.accounting.compute.bank_books import apply_bank_lines
 from app.services.accounting.compute.books import (
     AnnualTaxes, BooksInput, Entry, FiledPayment, Line, ManualEntry, Payment, QuarterTaxes, post_all,
 )
@@ -32,6 +33,7 @@ from app.services.accounting.compute.book_close import ClosedMonth, apply_closes
 from app.services.accounting.compute.statements import build_statements, closing_entries, is_closing
 from app.services.accounting.compute.specs import ANNUAL_FORMS, PAYABLE_ITEM
 from app.services.accounting.filing import credited_output_id
+from app.services.accounting.opening_items import opening_doc_line, opening_payments
 from app.services.accounting.periods import period_for
 
 _MANILA = ZoneInfo("Asia/Manila")
@@ -111,7 +113,8 @@ def books_warnings(tabs: dict, inputs: PeriodInputs, has_employees: bool, chart:
 
 
 def _chart_account(row: AAAccount) -> ChartAccount:
-    return ChartAccount(row.code, row.name, row.type, row.contra, row.system_key, row.parent_code, row.active)
+    return ChartAccount(row.code, row.name, row.type, row.contra, row.system_key, row.parent_code, row.active,
+                        bool(row.locked))
 
 
 async def ensure_chart(db: AsyncSession, company: AACompany) -> Chart:
@@ -233,6 +236,14 @@ def _closed_months(rows: list[AABookClose]) -> list[ClosedMonth]:
                         tuple((r.numbers or {}).items())) for r in rows]
 
 
+async def opening_items(db: AsyncSession, company: AACompany) -> list[AAOpeningItem]:
+    """The company's live opening open items (A/R / A/P outstanding when the books start)."""
+    return list((await db.execute(select(AAOpeningItem).where(
+        AAOpeningItem.enterprise_id == company.enterprise_id, AAOpeningItem.company_id == company.id,
+        AAOpeningItem.deleted_at.is_(None)).order_by(AAOpeningItem.doc_date, AAOpeningItem.doc_number)
+    )).scalars().all())
+
+
 async def quarter_books(db: AsyncSession, company: AACompany, facts: CompanyFacts, year: int, quarter: int,
                         result: QuarterResult, assets, periods: list[PeriodData]) -> tuple[dict, list[str]]:
     """Book tabs for the quarter being generated ({} when books are off or start after this quarter)."""
@@ -273,8 +284,10 @@ async def quarter_entries(db: AsyncSession, company: AACompany, facts: CompanyFa
     atc_rules, gl_rules = await supplier_atc_rules(db, company.id), await supplier_gl_rules(db, company.id)
     receipts = [d for d in docs if d.settles_document_id is not None]
     posted = [d for d in docs if d.settles_document_id is None]
-    lines = tuple(doc_line(d, atc_rules, gl_rules) for d in posted)
-    payments = document_payments(receipts, posted)
+    opening = await opening_items(db, company)
+    lines = tuple(doc_line(d, atc_rules, gl_rules) for d in posted) + tuple(
+        opening_doc_line(i, company.books_start) for i in opening)
+    payments = document_payments(receipts, posted) + opening_payments(opening)
     ewt = {line_id: tax for line_id, (_, tax) in compute_ewt(lines, facts, year, quarter).by_line().items()}
 
     # Q4 without a count takes the ending inventory typed in the annual inputs (the 1702-RT / 1701 figure)
@@ -307,11 +320,15 @@ async def quarter_entries(db: AsyncSession, company: AACompany, facts: CompanyFa
 
     kept = frozenset(company.books_kept or default_books(facts.vat_registered)) | {"GJ"}
     typed = [_manual(m, company.books_start) for m in manual]
+    # Matched statement lines: a document's bank payment, a receipt moved into the bank, charges / transfers
+    from app.services.accounting.books.bank import matched_lines  # bank imports this module
+
+    payments, filed, bank_postings = apply_bank_lines(
+        payments, filed_payments([tuple(r) for r in rows], outputs), await matched_lines(db, company.id, through))
     inp = BooksInput(facts, chart, kept, company.books_start, through, lines=lines, ewt=ewt,
                      payments=tuple(payments), manual=tuple(typed),
-                     quarters=tuple(quarters),
-                     filed=filed_payments([tuple(r) for r in rows], outputs), assets=tuple(assets),
-                     annual=annual)
+                     quarters=tuple(quarters), filed=filed, assets=tuple(assets),
+                     annual=annual, bank=tuple(bank_postings))
     entries, warnings = post_all(inp)
     closing = chart.code("retained_earnings") if company.taxpayer_type == "corporation" else chart.code("capital")
     if quarter == 4:  # fiscal year end: closing entries, post-closing TB and the financial statements

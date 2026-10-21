@@ -18,6 +18,7 @@ class ChartAccount:
     system_key: str | None = None
     parent_code: str | None = None
     active: bool = True
+    locked: bool = False          # a person locked it: no new postings by people or extraction
 
     @property
     def debit_normal(self) -> bool:
@@ -32,6 +33,7 @@ _STANDARD = (
     ("1100", "Accounts receivable - trade", "asset", False, "ar"),
     ("1200", "Merchandise / materials inventory", "asset", False, "inventory"),
     ("1300", "Input VAT", "asset", False, "input_vat"),
+    ("1310", "VAT difference - for review", "asset", False, "vat_difference"),
     ("1320", "Creditable withholding tax", "asset", False, "cwt"),
     ("1500", "Property and equipment", "asset", False, "ppe"),
     ("1510", "Accumulated depreciation", "asset", True, "accum_dep"),
@@ -52,6 +54,7 @@ _STANDARD = (
     ("4010", "Sales", "income", False, "sales"),
     ("4020", "Sales returns and discounts", "income", True, "sales_returns"),
     ("4100", "Other income", "income", False, "other_income"),
+    ("4110", "Interest income", "income", False, "interest_income"),
     ("5010", "Purchases", "cost", False, "doc:purchases"),
     ("5020", "Raw materials", "cost", False, "doc:raw_materials"),
     ("5030", "Importations", "cost", False, "doc:importation"),
@@ -69,6 +72,8 @@ _STANDARD = (
     ("6100", "Depreciation", "expense", False, "depreciation"),
     ("6110", "Percentage tax", "expense", False, "pt_expense"),
     ("6120", "Non-creditable input VAT", "expense", False, "input_vat_expense"),
+    ("6130", "Bank charges", "expense", False, "bank_charges"),
+    ("6140", "Bad debts", "expense", False, "bad_debts"),
     ("6900", "Miscellaneous expenses", "expense", False, "doc:other"),
     ("7010", "Income tax expense", "expense", False, "income_tax"),
 )
@@ -93,6 +98,15 @@ def default_books(vat_registered: bool) -> list[str]:
     return ["SJ", "PJ", "CRJ", "CDJ", "GJ", "GL"] if vat_registered else ["CRJ", "CDJ", "GJ", "GL"]
 
 
+def locked_message(chart: "Chart", codes) -> str:
+    """The refusal for a person posting to a locked account ("" when none of the codes is locked)."""
+    for code in dict.fromkeys(codes):
+        if chart.locked(code):
+            return (f"Account {code} {chart.name(code)} is locked: choose another account (unlock it in the chart of "
+                    "accounts first if this posting is right).")
+    return ""
+
+
 class Chart:
     def __init__(self, accounts: Iterable[ChartAccount]):
         self._by_code = {a.code: a for a in accounts}
@@ -110,6 +124,14 @@ class Chart:
             return self._by_key[system_key]
         except KeyError:
             raise KeyError(f"The chart of accounts has no account for {system_key!r}") from None
+
+    def code_or(self, system_key: str, fallback_key: str) -> str:
+        """The account for a key added after a chart was seeded (its code may have been taken), else the fallback."""
+        return self._by_key.get(system_key) or self.code(fallback_key)
+
+    def locked(self, code: str) -> bool:
+        account = self._by_code.get(code)
+        return bool(account and account.locked)
 
     def name(self, code: str) -> str:
         account = self._by_code.get(code)

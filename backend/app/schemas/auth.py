@@ -18,6 +18,7 @@ class UserResponse(BaseModel):
     id: str
     email: str
     nickname: Optional[str] = None
+    avatar: Optional[str] = None  # data: URI of the profile picture
     role: str = "unverified"
     organization_name: Optional[str] = None
     is_active: bool = True

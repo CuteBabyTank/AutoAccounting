@@ -1,19 +1,23 @@
-"""Platform-admin routes: accounts, firm onboarding, page rate and firm budgets."""
+"""Platform-admin routes: accounts, firm onboarding, page rate, firm budgets and maintenance switches."""
 
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select, update
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_admin
 from app.models.api_usage import ApiUsage
+from app.models.feature_toggle import FeatureToggle, FirmFeatureOverride
 from app.models.user import User, UserRole
 from app.schemas.auth import (
     AccountOverview, AdjustBudgetRequest, BudgetResponse, PageRateResponse, PromoteFirmRequest,
     SetPageRateRequest, SetUserRoleRequest,
 )
+from app.services import features
 from app.services.budget_service import compute_new_budget
 
 router = APIRouter()
@@ -192,3 +196,87 @@ async def adjust_firm_budget(
     firm.budget = compute_new_budget(firm.budget, req.operation, req.amount)
     await db.commit()
     return BudgetResponse(budget=firm.budget)
+
+
+# ---- maintenance switches -----------------------------------------------------------------------
+
+class FeatureSwitch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+
+
+class FirmFeatureSwitch(BaseModel):
+    """None clears the firm's override (it follows the global switch again)."""
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool | None
+
+
+def _known(key: str) -> str:
+    if key not in features.KEYS:
+        raise HTTPException(status_code=404, detail="Unknown feature")
+    return key
+
+
+async def _features_out(db: AsyncSession) -> dict:
+    features.invalidate()
+    toggles, overrides = await features.load_state(db)
+    return {
+        "features": [
+            {"key": k, "label": label, "group": group, "description": desc, "enabled": toggles.get(k, True)}
+            for k, label, group, desc in features.FEATURES
+        ],
+        # {firm id: {key: bool}} — only firms with at least one override.
+        "overrides": {str(firm): o for firm, o in overrides.items() if o},
+    }
+
+
+@router.get("/features")
+async def list_features(db: AsyncSession = Depends(get_db), _admin: User = Depends(require_admin)):
+    """Every switch with its global state, and each firm's overrides."""
+    return await _features_out(db)
+
+
+@router.put("/features/{key}")
+async def set_feature(
+    key: str, req: FeatureSwitch, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin),
+):
+    """Turn a feature on or off for every firm (firm overrides still win)."""
+    _known(key)
+    await db.execute(
+        pg_insert(FeatureToggle.__table__).values(key=key, enabled=req.enabled)
+        .on_conflict_do_update(index_elements=["key"], set_={"enabled": req.enabled})
+    )
+    await db.commit()
+    features.logger.info("feature_switch key=%s enabled=%s admin=%s", key, req.enabled, admin.id)
+    return await _features_out(db)
+
+
+@router.post("/features/all-on")
+async def all_features_on(db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+    """Back to normal: every global switch on and every firm override cleared."""
+    await db.execute(delete(FeatureToggle))
+    await db.execute(delete(FirmFeatureOverride))
+    await db.commit()
+    features.logger.info("feature_switch all_on admin=%s", admin.id)
+    return await _features_out(db)
+
+
+@router.put("/firms/{firm_id}/features/{key}")
+async def set_firm_feature(
+    firm_id: uuid.UUID, key: str, req: FirmFeatureSwitch,
+    db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin),
+):
+    """Pin a feature on or off for one firm, or clear the pin."""
+    _known(key)
+    await _firm_or_404(db, firm_id)
+    if req.enabled is None:
+        await db.execute(delete(FirmFeatureOverride).where(
+            FirmFeatureOverride.enterprise_id == firm_id, FirmFeatureOverride.key == key))
+    else:
+        await db.execute(
+            pg_insert(FirmFeatureOverride.__table__).values(enterprise_id=firm_id, key=key, enabled=req.enabled)
+            .on_conflict_do_update(index_elements=["enterprise_id", "key"], set_={"enabled": req.enabled})
+        )
+    await db.commit()
+    features.logger.info("feature_switch firm=%s key=%s enabled=%s admin=%s", firm_id, key, req.enabled, admin.id)
+    return await _features_out(db)

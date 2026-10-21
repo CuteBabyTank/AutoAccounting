@@ -3,9 +3,13 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from app.services.accounting.compute.ewt import atc_info, expected_atc, rate_percent
 from app.services.accounting.extraction import EXPENSE_ACCOUNTS, ExtractedDoc
 from app.services.accounting.matching import NAME_MATCH_THRESHOLD, name_similarity, normalize_name
 from app.services.accounting.periods import period_for
+from app.services.accounting.review_rules import (  # noqa: F401
+    RECEIPT_REASON, SOFT_REASONS, needs_review_for, payment_reasons, receipt_problems,
+)
 
 CATEGORIES = ("sales", "purchases", "expenses", "payroll", "2307", "support", "unsorted")
 DOCUMENT_ACCOUNTS = EXPENSE_ACCOUNTS + ("sales", "2307_received", "2307_issued")
@@ -13,7 +17,10 @@ REVIEW_REASONS = (
     "low_confidence", "missing_date", "missing_amount", "unsorted", "not_addressed_to_client",
     "seller_not_vat_registered", "not_an_invoice", "vat_math_mismatch", "possible_duplicate",
     "other_company_tin", "nothing_extracted", "possible_payment", "amounts_dont_add_up", "supplier_rule_mismatch",
+    "tendered_less_than_total", "ewt_expected", "payment_source_unknown", "payment_unverified",
+    "duplicate_invoice_number", "personal_purchase", "account_locked", "receipt_incomplete",
 )
+_EWT_ACCOUNTS = frozenset({"rent", "professional_fees"})
 
 LOW_CONFIDENCE = 70.0
 UNSORTED_CONFIDENCE = 40.0
@@ -34,6 +41,8 @@ class CompanyProfile:
     aliases: tuple[str, ...]
     vat_registered: bool
     fiscal_year_end_month: int
+    is_withholding_agent: bool = False
+    owner_names: tuple[str, ...] = ()     # owner / officers: a purchase in their name is personal
 
 
 def _name_score(name: str, company: CompanyProfile) -> float:
@@ -100,6 +109,49 @@ def _vat_math_mismatch(vatable: Decimal, vat: Decimal) -> bool:
     return abs(vatable * _VAT_RATE - vat) > _VAT_TOLERANCE
 
 
+def _money(value: Decimal) -> str:
+    return str(Decimal(value).quantize(Decimal("0.01")))
+
+
+def _vat_note(vatable: Decimal, vat: Decimal) -> dict:
+    expected = (vatable * _VAT_RATE).quantize(Decimal("0.01"))
+    return {"expected": _money(expected), "difference": _money(vat - expected)}
+
+
+def _addressed(ext: ExtractedDoc, company: CompanyProfile) -> bool:
+    return bool(company.tin and ext.buyer.tin == company.tin) or (
+        _name_score(ext.buyer.name, company) >= NAME_MATCH_THRESHOLD
+    )
+
+
+def _personal(ext: ExtractedDoc, company: CompanyProfile) -> bool:
+    """Bought in the owner's (or an officer's) own name rather than the company's."""
+    if not ext.buyer.name or not company.owner_names or _addressed(ext, company):
+        return False
+    return max(name_similarity(ext.buyer.name, n) for n in company.owner_names) >= NAME_MATCH_THRESHOLD
+
+
+def _tendered_short(ext: ExtractedDoc) -> bool:
+    if ext.change_amount < 0:
+        return True
+    # "Amount received" on an OR is net of the EWT the payer withheld: that is paid in full, not short.
+    due = ext.gross_amount - max(ext.withholding_amount, _ZERO)
+    return ext.cash_tendered > 0 and ext.gross_amount > 0 and ext.cash_tendered < due - _VAT_TOLERANCE
+
+
+def _ewt_note(ext: ExtractedDoc, account: str) -> dict | None:
+    """The EWT a withholding agent should have withheld from this bill, when it shows none."""
+    if account not in _EWT_ACCOUNTS or ext.withholding_amount != 0 or ext.gross_amount <= 0:
+        return None
+    atc = expected_atc(account, ext.seller.name, ext.seller_vat_registered)
+    info = atc_info(atc)
+    if info is None:
+        return None
+    base = ext.gross_amount - ext.vat_amount if ext.vat_amount > 0 else ext.gross_amount
+    return {"atc": atc, "rate": str(rate_percent(info[1])), "base": _money(base),
+            "amount": _money(base * info[1])}
+
+
 def _amounts_dont_add_up(ext: ExtractedDoc, vatable: Decimal) -> bool:
     """VATable + VAT + exempt + zero-rated should equal the total; a misread digit breaks it.
 
@@ -113,10 +165,7 @@ def _amounts_dont_add_up(ext: ExtractedDoc, vatable: Decimal) -> bool:
 
 def _input_vat_issues(ext: ExtractedDoc, company: CompanyProfile, vatable: Decimal) -> list[str]:
     issues: list[str] = []
-    addressed = bool(company.tin and ext.buyer.tin == company.tin) or (
-        _name_score(ext.buyer.name, company) >= NAME_MATCH_THRESHOLD
-    )
-    if not addressed:
+    if not _addressed(ext, company):
         issues.append("not_addressed_to_client")
     if ext.kind == "import":  # VAT paid to Customs: the import entry and BOC receipt support it, not an invoice
         if _vat_math_mismatch(vatable, ext.vat_amount):
@@ -159,6 +208,12 @@ def document_nature(raw: dict | None) -> str:
     return nature if isinstance(nature, str) else ""
 
 
+def document_description(raw: dict | None) -> str:
+    """What Gemini read was bought or done, for a stored document ("" when unknown)."""
+    text = (raw or {}).get("description") if isinstance(raw, dict) else None
+    return text[:200] if isinstance(text, str) else ""
+
+
 def classify_document(
     ext: ExtractedDoc,
     company: CompanyProfile,
@@ -192,17 +247,44 @@ def classify_document(
         reasons.append("unsorted")
 
     treatment = _treatment(ext)
+    notes: dict[str, dict] = {}
     input_vat_valid: bool | None = None
-    if role == "buyer" and category in ("purchases", "expenses") and company.vat_registered and ext.vat_amount > 0:
+    buying = role == "buyer" and category in ("purchases", "expenses")
+    if buying and company.vat_registered and ext.vat_amount > 0:
         issues = _input_vat_issues(ext, company, vatable)
-        input_vat_valid = not issues
+        # A VAT figure that isn't 12% alone doesn't lose the input VAT: the books claim 12% of the VATable
+        # amount and park the excess in "VAT difference - for review".
+        input_vat_valid = not [i for i in issues if i != "vat_math_mismatch"]
         reasons.extend(issues)
-        if issues:
+        if not input_vat_valid:
             treatment = "no_input_vat"
     elif _vat_math_mismatch(vatable, ext.vat_amount):
         reasons.append("vat_math_mismatch")
+    if "vat_math_mismatch" in reasons:
+        notes["vat_math_mismatch"] = _vat_note(vatable, ext.vat_amount)
+    excluded = False
+    if buying and _personal(ext, company):
+        if "not_addressed_to_client" not in reasons:
+            reasons.append("not_addressed_to_client")
+        reasons.append("personal_purchase")
+        excluded = True   # not the company's expense; drawings by journal entry if the company paid
+    if _tendered_short(ext) and category != "support":
+        reasons.append("tendered_less_than_total")
+        notes["tendered_less_than_total"] = {"tendered": _money(ext.cash_tendered), "total": _money(ext.gross_amount),
+                                             "change": _money(ext.change_amount)}
+    if buying and company.is_withholding_agent:
+        ewt = _ewt_note(ext, account)
+        if ewt:
+            reasons.append("ewt_expected")
+            notes["ewt_expected"] = ewt
+    reasons += payment_reasons(category, role, {"marked_paid": ext.marked_paid, "payment_terms": ext.payment_terms})
     if _amounts_dont_add_up(ext, vatable):
         reasons.append("amounts_dont_add_up")
+    receipt = receipt_problems(category, role, ext.kind, ext.document_title, ext.seller.name, ext.seller.tin,
+                               ext.seller.address, ext.doc_number)
+    if receipt:
+        reasons.append(RECEIPT_REASON)
+        notes[RECEIPT_REASON] = receipt
 
     party_tins = {t for t in (ext.seller.tin, ext.buyer.tin) if t}
     on_neither_side = company.tin not in party_tins and bool(party_tins & other_company_tins)
@@ -225,10 +307,12 @@ def classify_document(
         "period_month": period.month_in_quarter if period else None,
         "seller_name": ext.seller.name,
         "seller_tin": ext.seller.tin,
+        "seller_branch": ext.seller.printed_branch,
         "seller_address": ext.seller.address,
         "seller_vat_registered": ext.seller_vat_registered,
         "buyer_name": ext.buyer.name,
         "buyer_tin": ext.buyer.tin,
+        "buyer_branch": ext.buyer.printed_branch,
         "buyer_address": ext.buyer.address,
         "gross_amount": ext.gross_amount,
         "vatable_amount": vatable,
@@ -240,7 +324,9 @@ def classify_document(
         "input_vat_valid": input_vat_valid,
         "confidence": ext.confidence,
         "review_reasons": reasons,
-        "needs_review": bool(reasons),
+        "review_notes": notes,
+        "needs_review": needs_review_for(reasons),
+        "excluded": excluded,
         "raw": ext.raw,
     }
 
@@ -253,7 +339,7 @@ def empty_document_fields(page_count: int, page_start: int = 1) -> dict:
         {},
         frozenset(),
     )
-    fields.update(review_reasons=["nothing_extracted"], needs_review=True, raw=None)
+    fields.update(review_reasons=["nothing_extracted"], review_notes={}, needs_review=True, raw=None)
     return fields
 
 
@@ -273,7 +359,7 @@ def mark_duplicate(fields: dict, seen: set[tuple[str, str]]) -> None:
         return
     if key in seen:
         fields["review_reasons"].append("possible_duplicate")
-        fields["needs_review"] = True
+        fields["needs_review"] = needs_review_for(fields["review_reasons"])
     seen.add(key)
 
 

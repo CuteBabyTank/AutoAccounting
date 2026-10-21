@@ -25,7 +25,7 @@ interface Step {
 
 /** First-run checklist on Documents. Ticks itself off from the firm's real data and hides once everything is done. */
 export default function GettingStarted({ tree, canManage, memberCount, onAddCompany, onUpload, onOpenQuarter }: Props) {
-  const { open, dismiss } = useGuide("getting-started");
+  const { open, dismiss } = useGuide("getting-started", { once: false });
 
   const quarters = tree.flatMap((c) => c.years.flatMap((y) => y.quarters.map((q) => ({ q, companyId: c.id }))));
   const withDocs = quarters.find(({ q }) => q.document_count > 0);
@@ -78,7 +78,7 @@ export default function GettingStarted({ tree, canManage, memberCount, onAddComp
   const next = steps.find((s) => !s.done);
 
   return (
-    <section aria-label="Getting started" className="page-enter mb-6 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4 sm:p-5">
+    <section aria-label="Getting started" data-tour="getting-started" className="page-enter mb-6 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4 sm:p-5">
       <div className="mb-1 flex items-center gap-3">
         <h2 className="text-base font-semibold text-[var(--text-primary)]">Getting started</h2>
         <span className="text-xs tabular-nums text-[var(--text-secondary)]">{doneCount} of {steps.length} done</span>

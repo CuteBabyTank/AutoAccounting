@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import AmountInput from "@/components/AmountInput";
 import { CaretDown, CaretRight, FileXls, Plus, Spinner, Trash } from "@phosphor-icons/react";
 import OutputViewer from "@/components/accounting/OutputViewer";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
+import { FILING_LOCKED_TITLE, useCanFile } from "@/lib/use-can-file";
 import { apiErrorMessage, formatAmount } from "@/lib/accounting-format";
 import type { AnnualInputs, AnnualPeriod, Asset, OpeningRow } from "@/types/accounting";
 
@@ -119,6 +121,7 @@ interface Props {
 }
 
 export default function AnnualPanel({ companyId, companyName, year, refreshKey, onChanged }: Props) {
+  const canFile = useCanFile();
   const [period, setPeriod] = useState<AnnualPeriod | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -285,7 +288,7 @@ export default function AnnualPanel({ companyId, companyName, year, refreshKey, 
             {showInputs ? <CaretDown size={14} /> : <CaretRight size={14} />} Annual inputs
           </button>
           {period.latest_version && (
-            <button className={BTN} disabled={busy} onClick={toggleFiled}>
+            <button className={BTN} disabled={busy || !canFile} title={canFile ? undefined : FILING_LOCKED_TITLE} onClick={toggleFiled}>
               {period.filed_at ? "Unmark filed" : "Mark as filed"}
             </button>
           )}
@@ -324,12 +327,11 @@ export default function AnnualPanel({ companyId, companyName, year, refreshKey, 
                   {fields.map((f) => (
                     <label key={f.key} className="block">
                       <span className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">{f.label}</span>
-                      <input
-                        inputMode="decimal"
+                      <AmountInput
                         className={INPUT}
                         value={draft[f.key] ?? ""}
                         placeholder={f.optional ? "Not provided" : "0.00"}
-                        onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                        onValueChange={(v) => setDraft((d) => ({ ...d, [f.key]: v }))}
                       />
                       {f.hint && <span className="mt-0.5 block text-[11px] text-[var(--text-secondary)]">{f.hint}</span>}
                     </label>
@@ -417,7 +419,18 @@ export default function AnnualPanel({ companyId, companyName, year, refreshKey, 
               </button>
             ))}
           </div>
-          {selected && <OutputViewer outputId={selected} />}
+          {selected && (
+            <OutputViewer
+              key={selected}
+              outputId={selected}
+              latest={period.outputs[0]?.id === selected}
+              onNewVersion={(o) => {
+                setSelected(o.id);
+                accountingApi.annualPeriod(companyId, year).then(apply).catch(() => undefined);
+                onChanged();
+              }}
+            />
+          )}
         </div>
       )}
     </div>

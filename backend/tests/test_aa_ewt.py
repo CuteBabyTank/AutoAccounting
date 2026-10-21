@@ -3,9 +3,11 @@ from decimal import Decimal
 
 from app.services.accounting.compute.ewt import (
     ATC_NONE,
+    account_suggestions,
     atc_info,
     compute_ewt,
     effective_atc,
+    ewt_codes,
     is_corporate_name,
     month_in_quarter,
     rate_percent,
@@ -99,6 +101,14 @@ def test_month_in_quarter_and_out_of_quarter_dates():
 def test_rates():
     assert atc_info("WC120") == ("Contractors", D("0.02"))
     assert atc_info("wi158")[1] == D("0.01") and atc_info("nope") is None
+
+
+def test_only_expanded_withholding_atcs_are_offered():
+    codes = {code: rate for code, _, rate in ewt_codes()}
+    assert len(codes) > 90 and all(c[:2] in ("WI", "WC") for c in codes)
+    assert codes["WC120"] == D("0.02") and codes["WI156"] == D("0.005") and codes["WC760"] == D("0.005")
+    assert "WI555" not in codes  # sale of real property goes on the 1606
+    assert atc_info("WB301") is None and atc_info("WV012") is None  # business tax / VAT withholding
     assert rate_percent(D("0.15")) == D("15") and format(rate_percent(D("0.10")), "f") == "10"
 
 
@@ -119,3 +129,12 @@ def test_credit_memo_reduces_ewt_without_a_mismatch_warning():
     assert r.month_tax(1) == D("-500.00")
     assert not any("differs" in w or "none was withheld" in w for w in r.warnings)
     assert any("credit" in w for w in r.warnings)
+
+
+def test_account_suggestions_cover_individual_and_corporate_payees():
+    agent = company(**AGENT)
+    assert account_suggestions("rent", agent) == ["WI100", "WC100"]
+    assert account_suggestions("repairs", agent) == ["WI120", "WC120"]
+    assert account_suggestions("utilities", agent) == []
+    assert account_suggestions("rent", company()) == []
+    assert account_suggestions("purchases", company(is_top_withholding_agent=True)) == ["WI158", "WC158"]

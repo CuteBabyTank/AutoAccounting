@@ -8,6 +8,8 @@ import BookMonths from "@/components/accounting/BookMonths";
 import ChartEditor from "@/components/accounting/ChartEditor";
 import JournalEntryForm from "@/components/accounting/JournalEntryForm";
 import OpeningAssets from "@/components/accounting/OpeningAssets";
+import RecurringEntries from "@/components/accounting/RecurringEntries";
+import { useFeatures } from "@/lib/features";
 import type { Account, JournalEntry, JournalEntryInput } from "@/types/accounting";
 
 interface Props {
@@ -23,6 +25,7 @@ const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-m
 
 export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndMonth, canManage, onChanged }: Props) {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const recurringOn = useFeatures().on("recurring");
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [editing, setEditing] = useState<{ id?: string; input: JournalEntryInput } | null>(null);
   const [showChart, setShowChart] = useState(false);
@@ -150,6 +153,16 @@ export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndM
         )}
       </section>
 
+      {recurringOn && <RecurringEntries
+        companyId={companyId}
+        accounts={accounts}
+        defaultDate={manualDate}
+        onPosted={() => {
+          load().catch(() => undefined);
+          onChanged();
+        }}
+      />}
+
       <section>
         <div className="mb-2 flex items-center gap-2">
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">Journal entries</h3>
@@ -163,11 +176,21 @@ export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndM
             <li key={e.id} className="flex flex-wrap items-baseline gap-3 py-2 text-sm">
               <span className="w-24 text-[var(--text-secondary)]">{e.entry_date}</span>
               <span className="w-10 text-xs text-[var(--text-secondary)]">{e.book}</span>
+              {e.is_adjusting && (
+                <span className="rounded-full bg-[var(--badge-blue-bg)] px-1.5 text-[11px] font-medium text-[var(--badge-blue-text)]">Adjusting</span>
+              )}
               <span className="flex-1 text-[var(--text-primary)]">
                 {e.particulars || e.reference || "(no particulars)"} ·{" "}
                 {e.lines.map((l) => `${title(l.account_code)} ${Number(l.debit) ? "Dr" : "Cr"} ${formatPeso(Number(l.debit) || Number(l.credit))}`).join(" / ")}
               </span>
-              <button className="text-[var(--accent)]" onClick={() => setEditing({ id: e.id, input: editable(e) })}>Edit</button>
+              {e.recurring && (
+                <span className="rounded-full bg-[var(--bg-secondary)] px-1.5 text-[11px] text-[var(--text-secondary)]">Recurring</span>
+              )}
+              {e.is_writeoff ? (
+                <span className="rounded-full bg-[var(--badge-yellow-bg)] px-1.5 text-[11px] font-medium text-[var(--badge-yellow-text)]" title="Delete it to reopen the invoices">Write-off</span>
+              ) : (
+                <button className="text-[var(--accent)]" onClick={() => setEditing({ id: e.id, input: editable(e) })}>Edit</button>
+              )}
               <button className="text-[var(--alert-error-text)]" disabled={busy} onClick={() => remove(e.id)}>Delete</button>
             </li>
           ))}

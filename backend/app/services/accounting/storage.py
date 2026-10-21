@@ -12,6 +12,8 @@ from fastapi import UploadFile
 from PIL import Image, UnidentifiedImageError
 
 from app.config import settings
+from app.services.accounting.compress import compress_file
+from app.services.accounting.page_trim import render_pdf_page_trimmed, trimmed_image
 from app.services.file_service import validate_file
 from app.services.gemini_service import get_pdf_page_count_safe, render_pdf_page_webp
 
@@ -103,7 +105,9 @@ async def stream_upload(f: UploadFile, dest_dir: Path) -> StoredUpload:
     except UploadRejected:
         dest.unlink(missing_ok=True)
         raise
-    return StoredUpload(filename, str(dest), total, digest.hexdigest(), file_type, page_count)
+    # Keep a smaller copy (same pages, ~200 dpi). The hash stays the original's so re-drops are still duplicates.
+    kept = await loop.run_in_executor(None, compress_file, str(dest), file_type)
+    return StoredUpload(filename, kept.path, kept.size, digest.hexdigest(), kept.file_type, page_count)
 
 
 def is_stored_path_safe(stored_path: str, root: str | None = None) -> bool:
@@ -145,9 +149,11 @@ def read_page_bytes(stored_path: str, file_type: str, page: int) -> tuple[bytes,
         return None
     try:
         if file_type == "pdf":
-            return render_pdf_page_webp(str(path), page - 1), "image/webp"
+            trimmed = render_pdf_page_trimmed(str(path), page - 1)
+            return (trimmed or render_pdf_page_webp(str(path), page - 1)), "image/webp"
         if page != 1:
             return None
-        return path.read_bytes(), _PAGE_MIME[file_type]
+        data = path.read_bytes()
+        return trimmed_image(data) or (data, _PAGE_MIME[file_type])
     except (OSError, RuntimeError, ValueError, KeyError):
         return None

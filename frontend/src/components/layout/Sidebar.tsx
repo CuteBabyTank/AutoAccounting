@@ -17,6 +17,9 @@ import {
   X,
   List,
   Question,
+  Kanban,
+  SidebarSimple,
+  Camera,
 } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "next-themes";
@@ -24,6 +27,10 @@ import type { UserRole } from "@/types";
 import { HOMEPAGE, roleLabel } from "@/lib/roles";
 import { resetGuides } from "@/lib/guides";
 import LogoMark from "@/components/layout/LogoMark";
+import NotificationBell from "@/components/work/NotificationBell";
+import SearchPalette from "@/components/search/SearchPalette";
+import AvatarPicker from "@/components/layout/AvatarPicker";
+import { useFeatures, type FeatureKey } from "@/lib/features";
 
 interface NavItem {
   id: string;
@@ -33,6 +40,8 @@ interface NavItem {
   roles: UserRole[];
   /** Active only on this exact path (for a parent route like /accounting). */
   exact?: boolean;
+  /** The maintenance switch that hides it. */
+  feature?: FeatureKey;
 }
 
 const FIRM: UserRole[] = ["admin", "enterprise", "manager", "employee"];
@@ -42,14 +51,15 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
     label: "Manage",
     items: [
       { id: "admin", label: "Platform admin", icon: Crown, href: "/admin", roles: ["admin"] },
-      { id: "team", label: "Team", icon: UsersThree, href: "/team", roles: ["admin", "enterprise", "manager"] },
+      { id: "team", label: "Team", icon: UsersThree, href: "/team", roles: ["admin", "enterprise", "manager"], feature: "team" },
     ],
   },
   {
     label: "Workspace",
     items: [
-      { id: "documents", label: "Documents", icon: Files, href: "/accounting", roles: FIRM, exact: true },
-      { id: "companies", label: "Companies", icon: Buildings, href: "/accounting/companies", roles: FIRM },
+      { id: "documents", label: "Documents", icon: Files, href: "/accounting", roles: FIRM, exact: true, feature: "documents" },
+      { id: "work", label: "Work", icon: Kanban, href: "/accounting/work", roles: FIRM, feature: "work" },
+      { id: "companies", label: "Companies", icon: Buildings, href: "/accounting/companies", roles: FIRM, feature: "companies" },
     ],
   },
 ];
@@ -59,6 +69,7 @@ const fade = (i: number) => ({ "--i": i }) as CSSProperties;
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout, updateNickname } = useAuth();
+  const [pickingAvatar, setPickingAvatar] = useState(false);
   const [editingNickname, setEditingNickname] = useState(false);
   const [nicknameDraft, setNicknameDraft] = useState("");
   const [savingNickname, setSavingNickname] = useState(false);
@@ -79,7 +90,25 @@ export default function Sidebar() {
   useEffect(() => () => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
   }, []);
-  const expanded = hovered || focused || editingNickname;
+  // The close button in the open rail's top-right, for when it stays open (focus left inside it, a missed
+  // mouseleave). It drops every reason to be open, and ignores hover until the pointer leaves so the rail
+  // doesn't spring straight back.
+  const [hoverMuted, setHoverMuted] = useState(false);
+  const closeRail = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    setHovered(false);
+    setFocused(false);
+    setEditingNickname(false);
+    setHoverMuted(true);
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  };
+  // The notifications panel opens beside the full-width rail, so the rail stays open while it shows.
+  const [bellOpen, setBellOpen] = useState(false);
+  const expanded = bellOpen || (!hoverMuted && (hovered || focused || editingNickname));
+  const firmMember = !!user && FIRM.includes(user.role);
+  const features = useFeatures();
+  const showSearch = firmMember && features.on("search");
+  const showBell = firmMember && features.on("notifications");
 
   // Close the drawer whenever the route changes (tapping a nav item navigates).
   useEffect(() => {
@@ -100,9 +129,9 @@ export default function Sidebar() {
     const role = user?.role || "unverified";
     return NAV_SECTIONS.map((section) => ({
       ...section,
-      items: section.items.filter((item) => item.roles.includes(role)),
+      items: section.items.filter((item) => item.roles.includes(role) && (!item.feature || features.on(item.feature))),
     })).filter((section) => section.items.length > 0);
-  }, [user?.role]);
+  }, [user?.role, features]);
 
   // Stagger order for the label reveal: logo, then each section heading and its
   // rows top to bottom; the account card and footer share the last step.
@@ -136,6 +165,12 @@ export default function Sidebar() {
         <LogoMark width={34} height={24} />
         <span className="lp-logo-text text-[18px] tracking-tight text-[var(--text-sidebar)]">AutoAccounting</span>
       </a>
+      {(showSearch || showBell) && (
+        <div className="ml-auto flex items-center">
+          {showSearch && <SearchPalette variant="bar" />}
+          {showBell && <NotificationBell variant="bar" />}
+        </div>
+      )}
     </header>
 
     {/* Mobile drawer scrim */}
@@ -154,7 +189,10 @@ export default function Sidebar() {
       className="aa-rail lp-skin w-0 shrink-0 h-screen"
       data-open={expanded}
       onMouseEnter={() => queueOpen(true)}
-      onMouseLeave={() => queueOpen(false)}
+      onMouseLeave={() => {
+        queueOpen(false);
+        setHoverMuted(false);
+      }}
       onFocus={(e) => {
         if (e.target.matches(":focus-visible")) setFocused(true);
       }}
@@ -163,16 +201,27 @@ export default function Sidebar() {
       }}
     >
     <aside
-      className={`aa-rail-panel flex flex-col h-screen fixed md:relative top-0 left-0 z-50 md:z-auto overflow-x-hidden overflow-y-auto text-[var(--text-sidebar)] border-r border-[var(--border-sidebar)] ${
+      className={`aa-rail-panel flex flex-col h-dvh fixed md:relative top-0 left-0 z-50 md:z-auto overflow-x-hidden overflow-y-auto text-[var(--text-sidebar)] border-r border-[var(--border-sidebar)] ${
         drawerOpen ? "translate-x-0" : "-translate-x-full"
       } md:translate-x-0`}
     >
       {/* Logo */}
-      <div className="px-[19px] pt-5 pb-4 flex items-center justify-between gap-2">
+      <div className="aa-rail-logo relative shrink-0 px-[19px] pt-5 pb-4 flex items-center justify-between gap-2">
         <a href={HOMEPAGE} aria-label="AutoAccounting homepage" className="flex items-center gap-2.5 min-w-0 hover:opacity-80 transition-opacity">
           <LogoMark width={34} height={24} className="shrink-0" />
           <span style={fade(0)} className="aa-fade lp-logo-text text-[17px] tracking-tight whitespace-nowrap">AutoAccounting</span>
         </a>
+        {/* Close the rail (desktop; shows once it is open) */}
+        <button
+          type="button"
+          onClick={closeRail}
+          aria-label="Close sidebar"
+          title="Close sidebar"
+          style={fade(0)}
+          className="aa-fade hidden md:flex absolute right-3 top-[18px] items-center justify-center w-8 h-8 rounded-lg text-[var(--text-sidebar-muted)] hover:bg-[var(--bg-sidebar-hover)] hover:text-[var(--text-sidebar)] transition-colors"
+        >
+          <SidebarSimple size={18} />
+        </button>
         {/* Close drawer (mobile only) */}
         <button
           onClick={() => setDrawerOpen(false)}
@@ -183,14 +232,14 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-[14px] pt-1">
+      {/* Nav. On a short window it scrolls on its own so the account card and footer stay in view. */}
+      <nav className="aa-rail-scroll flex-1 min-h-[96px] overflow-y-auto overscroll-contain px-[14px] pt-1">
         {sections.map((section, si) => (
-          <div key={section.label} className="mb-5">
+          <div key={section.label} className="aa-rail-section mb-5">
             <p style={fade(rowIndex(si, -1))} className="aa-fade px-1 h-5 text-[11px] font-medium text-[var(--text-sidebar-muted)] whitespace-nowrap">
               {section.label}
             </p>
-            <div className="h-px mt-1.5 mb-3 bg-[var(--border-sidebar)]" />
+            <div className="aa-rail-rule h-px mt-1.5 mb-3 bg-[var(--border-sidebar)]" />
             {section.items.map((item, ii) => {
               const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
               return (
@@ -199,6 +248,7 @@ export default function Sidebar() {
                   href={item.href}
                   aria-current={active ? "page" : undefined}
                   aria-label={item.label}
+                  data-tour={`nav-${item.id}`}
                   className={`aa-item nav-press flex items-center gap-3 h-11 px-3 rounded-xl mb-1 text-[15px] whitespace-nowrap overflow-hidden ${
                     active
                       ? "aa-item--active text-[var(--text-sidebar)] font-medium"
@@ -207,6 +257,10 @@ export default function Sidebar() {
                 >
                   <item.icon size={20} weight={active ? "regular" : "light"} className="shrink-0" />
                   <span style={fade(rowIndex(si, ii))} className="aa-fade">{item.label}</span>
+                  {/* The admin still sees a page that's off for firms; mark it. */}
+                  {item.feature && features.off.includes(item.feature) && (
+                    <span title="Turned off for firms (maintenance)" className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--error)]" />
+                  )}
                 </Link>
               );
             })}
@@ -214,16 +268,30 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Account card */}
+      {/* Account card. 33px avatar: the collapsed rail (72px less its 1px border) leaves the card 43px, so 1px border + 4px padding + 33 keeps
+          it square with the avatar centred. */}
       {user && (
-        <div className="px-[14px] pb-3">
+        <div className="shrink-0 px-[14px] pt-2 pb-3">
           <div className="aa-card flex items-center gap-2.5 p-1 rounded-2xl">
-            <span
-              aria-hidden="true"
-              className="shrink-0 grid place-items-center w-9 h-9 rounded-xl bg-[var(--lp-accent-soft)] text-[var(--accent)] text-[13px] font-semibold"
+            {/* Tap the avatar to upload or take a profile picture; the server crops it square and keeps a ~10 KB WebP. */}
+            <button
+              type="button"
+              onClick={() => setPickingAvatar(true)}
+              aria-label="Change profile picture"
+              title="Change profile picture"
+              className="group/avatar relative shrink-0 grid place-items-center w-[33px] h-[33px] rounded-[10px] overflow-hidden bg-[var(--lp-accent-soft)] text-[var(--accent)] text-[13px] font-semibold"
             >
-              {initials}
-            </span>
+              {user.avatar ? (
+                // eslint-disable-next-line @next/next/no-img-element -- data: URI, nothing for next/image to optimise
+                <img src={user.avatar} alt="" className="w-full h-full object-cover" />
+              ) : (
+                initials
+              )}
+              <span className="absolute inset-0 grid place-items-center bg-black/45 text-white opacity-0 group-hover/avatar:opacity-100 group-focus-visible/avatar:opacity-100 transition-opacity">
+                <Camera size={15} />
+              </span>
+            </button>
+            {pickingAvatar && <AvatarPicker onClose={() => setPickingAvatar(false)} />}
             <div style={fade(lastRow)} className="aa-fade flex-1 min-w-0 pr-1 text-xs">
               {editingNickname ? (
                 <form
@@ -302,14 +370,21 @@ export default function Sidebar() {
       )}
 
       {/* Footer */}
-      <div className="px-[14px] pb-4">
+      <div className="shrink-0 px-[14px] pb-4">
         <div className="h-px mb-2 bg-[var(--border-sidebar)]" />
+        {(showSearch || showBell) && (
+          <div className="hidden md:block">
+            {showSearch && <SearchPalette variant="rail" fadeStyle={fade(lastRow)} />}
+            {showBell && <NotificationBell variant="rail" fadeStyle={fade(lastRow)} onOpenChange={setBellOpen} />}
+          </div>
+        )}
         <button
           onClick={() => {
             resetGuides();
             setDrawerOpen(false);
           }}
           aria-label="Show guides"
+          data-tour="show-guides"
           title="Bring back every page guide you've hidden"
           className="aa-item nav-press flex items-center gap-3 w-full h-10 px-3 rounded-xl text-sm whitespace-nowrap overflow-hidden text-[var(--text-sidebar-muted)] hover:text-[var(--text-sidebar)]"
         >

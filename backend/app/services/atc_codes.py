@@ -54,6 +54,7 @@ ATC_CODES: list[ATCEntry] = [
     ATCEntry("WI110", "Cinematographic film rentals and other payments", 0.05),
     ATCEntry("WC110", "Cinematographic film rentals and other payments", 0.05),
     ATCEntry("WI120", "Contractors", 0.02),
+    ATCEntry("WC120", "Contractors", 0.02),
     ATCEntry("WI130", "Income distribution to beneficiaries of estates and trusts", 0.15),
     ATCEntry("WI139", "Commissions of customs, insurance & commercial brokers - not exceed 3M", 0.05),
     ATCEntry("WI140", "Commissions of customs, insurance & commercial brokers - more than 3M or VAT reg.", 0.10),
@@ -65,8 +66,8 @@ ATC_CODES: list[ATCEntry] = [
     ATCEntry("WC150", "Professional fees - medical practitioners - exceeds 720,000", 0.15),
     ATCEntry("WI152", "Payment by GPPs to its partners - not exceed 720,000", 0.10),
     ATCEntry("WI153", "Payment by GPPs to its partners - exceeds 720,000", 0.15),
-    ATCEntry("WI156", "Income payments made by credit card companies", None),
-    ATCEntry("WC156", "Income payments made by credit card companies", None),
+    ATCEntry("WI156", "Income payments made by credit card companies", 0.005),
+    ATCEntry("WC156", "Income payments made by credit card companies", 0.005),
     ATCEntry("WI159", "Additional income payments to government personnel for overtime services", 0.15),
     ATCEntry("WI640", "Income payments by GOCCs to suppliers of goods", 0.01),
     ATCEntry("WC640", "Income payments by GOCCs to suppliers of goods", 0.01),
@@ -95,14 +96,14 @@ ATC_CODES: list[ATCEntry] = [
     ATCEntry("WC650", "Refund given by MERALCO to customers with active contracts", 0.15),
     ATCEntry("WI651", "Refund given by MERALCO to customers with terminated contracts", 0.15),
     ATCEntry("WC651", "Refund given by MERALCO to customers with terminated contracts", 0.15),
-    ATCEntry("WI660", "Interest on refund of meter deposit (MERALCO, exceeds 200kwh)", 0.10),
-    ATCEntry("WC660", "Interest on refund of meter deposit (MERALCO, exceeds 200kwh)", 0.10),
-    ATCEntry("WI661", "Interest on refund of meter deposit (MERALCO, exceeds 200kwh)", 0.15),
-    ATCEntry("WC661", "Interest on refund of meter deposit (MERALCO, exceeds 200kwh)", 0.15),
-    ATCEntry("WI662", "Interest on refund of meter deposit (other DU)", 0.10),
-    ATCEntry("WC662", "Interest on refund of meter deposit (other DU)", 0.10),
-    ATCEntry("WI663", "Interest on refund of meter deposit (other DU, exceeds 200kwh)", 0.15),
-    ATCEntry("WC663", "Interest on refund of meter deposit (other DU, exceeds 200kwh)", 0.15),
+    ATCEntry("WI660", "Interest on refund of meter deposit (MERALCO, residential/general service)", 0.10),
+    ATCEntry("WC660", "Interest on refund of meter deposit (MERALCO, residential/general service)", 0.10),
+    ATCEntry("WI661", "Interest on refund of meter deposit (MERALCO, non-residential)", 0.15),
+    ATCEntry("WC661", "Interest on refund of meter deposit (MERALCO, non-residential)", 0.15),
+    ATCEntry("WI662", "Interest on refund of meter deposit (other DU, residential/general service)", 0.10),
+    ATCEntry("WC662", "Interest on refund of meter deposit (other DU, residential/general service)", 0.10),
+    ATCEntry("WI663", "Interest on refund of meter deposit (other DU, non-residential)", 0.15),
+    ATCEntry("WC663", "Interest on refund of meter deposit (other DU, non-residential)", 0.15),
     ATCEntry("WI680", "Purchases related to campaign expenditures", 0.05),
     ATCEntry("WC680", "Purchases related to campaign expenditures", 0.05),
     ATCEntry("WC690", "Income payments received by REIT", 0.01),
@@ -110,7 +111,8 @@ ATC_CODES: list[ATCEntry] = [
     ATCEntry("WC710", "Interest income from other debt instruments", 0.15),
     ATCEntry("WI720", "Income payments on locally produced raw sugar", 0.01),
     ATCEntry("WC720", "Income payments on locally produced raw sugar", 0.01),
-    ATCEntry("WC820", "Gross remittances by e-marketplace operators and digital financial services providers to sellers/merchants", 0.005),
+    ATCEntry("WI760", "Remittances by e-marketplace operators and digital financial services providers to sellers (1% of half)", 0.005),
+    ATCEntry("WC760", "Remittances by e-marketplace operators and digital financial services providers to sellers (1% of half)", 0.005),
     ATCEntry("WI555", "Sale of real property (ordinary asset)", 0.015),
     ATCEntry("WC555", "Sale of real property (ordinary asset)", 0.015),
     ATCEntry("WI556", "Sale of real property (ordinary asset)", 0.03),
@@ -152,6 +154,16 @@ ATC_CODES: list[ATCEntry] = [
 
 # Fast lookup map: ATC code (uppercase) -> ATCEntry
 ATC_MAP: dict[str, ATCEntry] = {e.code.upper(): e for e in ATC_CODES}
+
+
+# Sale of real property (ordinary asset) is withheld on BIR Form 1606, not the 0619-E / 1601-EQ.
+_FORM_1606 = frozenset({f"{p}{n}" for p in ("WI", "WC") for n in (555, 556, 557, 558)})
+
+
+def is_ewt_code(code: str) -> bool:
+    """An expanded withholding ATC (WI / WC) that goes on the 0619-E / 1601-EQ."""
+    code = (code or "").strip().upper()
+    return code[:2] in ("WI", "WC") and code not in _FORM_1606
 
 
 def lookup_atc(code: str) -> ATCEntry | None:

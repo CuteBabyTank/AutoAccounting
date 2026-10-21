@@ -1,0 +1,125 @@
+/* Same-frame mascot art, with all overlays in the original 256px coordinate space. */
+.aa-bot {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  pointer-events: none;
+  vertical-align: middle;
+}
+.aa-bot-art, .aa-bot-image, .aa-bot-neck, .aa-bot-game {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.aa-bot-art { transition: opacity 200ms var(--ease-out); }
+/* Original split retained for the stationary done art. */
+.aa-bot-head {
+  transform-origin: 46.5% 72%;
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 77% 62%, 74% 67%, 70% 71%, 63% 74%, 30% 74%, 24% 70%, 20% 66%, 16% 62%, 0 62%);
+}
+.aa-bot-body {
+  clip-path: polygon(0 61%, 16% 61%, 19% 64%, 24% 67%, 31% 69%, 63% 69%, 70% 67%, 74% 64%, 77% 61%, 100% 61%, 100% 100%, 0 100%);
+}
+/* PNG coordinates: ears end at y=155; the helmet ends at y=185. Follow that
+   contour instead of carrying the shoulders with the head. The body starts
+   below the old helmet outline; the neck SVG fills the otherwise missing chest.
+   Its top edge (y=147.5–152.5) stays inside the head at 0–7% / ±4deg; its
+   bottom edge (y=199.5–204.5) is covered by the opaque body, even at rest.
+   Keep these splits in percentages so they also overlap at 36/72/112px. */
+.aa-bot-art[data-image-state="idle"] .aa-bot-head {
+  clip-path: polygon(0 0, 100% 0, 100% 61%, 77% 61%, 75% 65%, 72% 68%, 68% 71%, 63% 73%, 33% 73%, 28% 71.5%, 24% 69.5%, 21% 67%, 18% 65%, 16% 61%, 0 61%);
+}
+.aa-bot-art[data-image-state="idle"] .aa-bot-body {
+  clip-path: polygon(0 62%, 16% 62%, 18% 66%, 21% 69%, 24% 71%, 29% 73%, 34% 74%, 62% 74%, 68% 72%, 73% 69%, 76% 65%, 78% 62%, 100% 62%, 100% 100%, 0 100%);
+}
+/* Carry the thinking hand to row 193, following its outline above the chest. */
+.aa-bot-art[data-image-state="thinking"] .aa-bot-head {
+  clip-path: polygon(0 0, 100% 0, 100% 61%, 76% 61%, 74% 65%, 71% 68%, 67% 71%, 61% 73%, 43% 73%, 42% 75%, 35% 76%, 31% 74%, 28% 69%, 24% 69%, 21% 66%, 18% 64%, 16% 61%, 0 61%);
+}
+.aa-bot-art[data-image-state="thinking"] .aa-bot-body {
+  clip-path: polygon(0 62%, 17% 62%, 19% 65%, 23% 69%, 28% 72%, 31% 76%, 42% 76%, 44% 74%, 61% 74%, 67% 72%, 72% 69%, 75% 65%, 77% 62%, 100% 62%, 100% 100%, 0 100%);
+}
+/* Split the existing ! from the helmet so only the notification pulses. */
+.aa-bot-art[data-image-state="done"] .aa-bot-head {
+  clip-path: polygon(0 0, 70% 0, 70% 12%, 72% 26%, 78% 31%, 78% 36%, 100% 36%, 100% 62%, 77% 62%, 74% 67%, 70% 71%, 63% 74%, 30% 74%, 24% 70%, 20% 66%, 16% 62%, 0 62%);
+}
+.aa-bot-notification {
+  clip-path: polygon(70% 0, 100% 0, 100% 36%, 78% 36%, 78% 31%, 72% 26%, 70% 12%);
+  transform-origin: 82% 22%;
+}
+.aa-bot[data-state="done"] .aa-bot-notification { animation: aa-bot-notification-pulse 650ms ease-out 2; }
+@keyframes aa-bot-notification-pulse {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(1.12); }
+}
+.aa-bot-art[data-image-state="idle"] .aa-bot-head { animation: aa-bot-head-sway 3s ease-in-out infinite; }
+.aa-bot-art[data-image-state="thinking"] .aa-bot-head { animation: aa-bot-head-nod 1.4s ease-in-out infinite; }
+.aa-bot:not([data-scene="rest"]) .aa-bot-head { animation: none; }
+@keyframes aa-bot-head-sway {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(4%) rotate(-4deg); }
+  50% { transform: translateY(7%) rotate(0deg); }
+  75% { transform: translateY(3%) rotate(4deg); }
+}
+@keyframes aa-bot-head-nod {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(3%) rotate(-1.5deg); }
+}
+.aa-bot-game { overflow: visible; animation: aa-bot-game-in 5.6s var(--ease-out) both; }
+@keyframes aa-bot-game-in {
+  0%, 100% { opacity: 0; }
+  4%, 96% { opacity: 1; }
+}
+.aa-bot-controller { animation: aa-bot-controller 5.6s var(--ease-out) both; }
+@keyframes aa-bot-controller {
+  0%, 100% { opacity: 0; transform: translateY(5%); }
+  5%, 94% { opacity: 1; transform: translateY(0); }
+}
+.aa-bot-piece { animation: aa-bot-drop 900ms steps(6, end) var(--aa-piece-delay) both; }
+@keyframes aa-bot-drop {
+  0% { opacity: 0; transform: translateY(-63px); }
+  1% { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.aa-bot-board { animation: aa-bot-board-out 160ms var(--ease-out) 4s both; }
+@keyframes aa-bot-board-out {
+  to { opacity: 0; }
+}
+.aa-bot-line { animation: aa-bot-line-clear 300ms linear 3.8s both; }
+@keyframes aa-bot-line-clear {
+  0%, 35%, 70%, 100% { opacity: 0; }
+  15%, 50% { opacity: 1; }
+}
+.aa-bot-result { animation: aa-bot-result 200ms var(--ease-out) 4.1s both; }
+@keyframes aa-bot-result {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.aa-bot-topout { animation: aa-bot-result 200ms steps(2, end) 3.65s both; }
+.aa-bot[data-scene="lose"] { animation: aa-bot-shake 300ms var(--ease-in-out) 4.1s; }
+@keyframes aa-bot-shake {
+  0%, 100% { transform: translateX(0); }
+  25%, 75% { transform: translateX(-2%); }
+  50% { transform: translateX(2%); }
+}
+.aa-bot-sparkles {
+  transform-origin: 47% 40%;
+  animation: aa-bot-sparkles 700ms var(--ease-out) 4.1s both;
+}
+@keyframes aa-bot-sparkles {
+  0% { opacity: 0; transform: scale(.95); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.15) translateY(-4%); }
+}
+.aa-bot-sweat { animation: aa-bot-sweat 850ms var(--ease-out) 4.4s both; }
+@keyframes aa-bot-sweat {
+  0% { opacity: 0; transform: translateY(-3%); }
+  25%, 75% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(4%); }
+}
+.aa-bot[data-paused="true"], .aa-bot[data-paused="true"] * { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .aa-bot, .aa-bot * { animation: none !important; transition: none; }
+  .aa-bot-game { display: none; }
+}

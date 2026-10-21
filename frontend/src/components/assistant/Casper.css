@@ -1,0 +1,56 @@
+.aa-casper-anchor { position: fixed; z-index: 55; width: 72px; height: 72px; }
+.aa-casper-launcher { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.aa-casper-anchor .aa-casper-launcher[data-dragging="true"] {
+  cursor: grabbing;
+  transform: scale(1.045) rotate(var(--casper-tilt));
+  filter: drop-shadow(0 9px 8px color-mix(in srgb, var(--text-primary) 30%, transparent));
+}
+.aa-casper-lift { display: inline-flex; transition: transform 220ms ease-out; }
+.aa-casper-launcher[data-dragging="true"] .aa-casper-lift { transform: translateY(-2px); animation: none; }
+.aa-casper-lift[data-notice="true"] { animation: aa-casper-hop 520ms ease-out; }
+@keyframes aa-casper-hop {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-7px); }
+}
+.aa-casper-options {
+  position: absolute; top: 0; right: -2px; display: grid; place-items: center;
+  width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 50%;
+  background: var(--bg-secondary); color: var(--text-secondary); opacity: 0;
+  transition: opacity 120ms ease;
+}
+.aa-casper-anchor:hover .aa-casper-options, .aa-casper-anchor:focus-within .aa-casper-options { opacity: 1; }
+.aa-casper-anchor[data-dragging="true"] .aa-casper-options { visibility: hidden; }
+.aa-casper-bubble {
+  position: fixed; z-index: 56; isolation: isolate; border: 1px solid var(--border); border-radius: 18px;
+  background: var(--bg-secondary); color: var(--text-primary);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--text-primary) 12%, transparent);
+  animation: aa-casper-bubble-in 160ms ease-out both;
+}
+.aa-casper-bubble[data-leaving="true"] { animation: aa-casper-bubble-out 160ms ease-in both; pointer-events: none; }
+.aa-casper-bubble::before {
+  content: ""; position: absolute; z-index: -1; width: 10px; height: 10px;
+  background: var(--bg-secondary); border: 1px solid var(--border); transform: rotate(45deg);
+}
+.aa-casper-bubble[data-side="bottom"]::before { bottom: -6px; left: calc(var(--casper-tail) - 5px); border-top: 0; border-left: 0; }
+.aa-casper-bubble[data-side="top"]::before { top: -6px; left: calc(var(--casper-tail) - 5px); border-bottom: 0; border-right: 0; }
+.aa-casper-bubble[data-side="left"]::before { left: -6px; top: calc(var(--casper-tail) - 5px); border-top: 0; border-right: 0; }
+.aa-casper-bubble[data-side="right"]::before { right: -6px; top: calc(var(--casper-tail) - 5px); border-bottom: 0; border-left: 0; }
+.aa-casper-bubble-content { padding: 12px 14px; overflow-y: auto; border-radius: inherit; }
+.aa-casper-bubble-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 600; color: var(--accent); }
+.aa-casper-bubble-caption { color: var(--text-secondary); font-weight: 400; }
+.aa-casper-small-button { display: grid; place-items: center; width: 28px; height: 28px; margin: -6px -7px -3px 0; border-radius: 50%; color: var(--text-secondary); }
+.aa-casper-small-button:hover, .aa-casper-options:hover { background: var(--bg-hover); color: var(--text-primary); }
+.aa-casper-bubble-message { display: block; width: 100%; padding: 7px 0 10px; text-align: left; font-size: 14px; line-height: 1.5; border-radius: 4px; }
+.aa-casper-bubble-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px; }
+.aa-casper-reset { display: flex; align-items: center; gap: 4px; min-height: 24px; font-size: 11px; color: var(--text-secondary); border-radius: 4px; }
+.aa-casper-reset:hover { color: var(--accent); }
+.aa-casper-bubble button:focus-visible, .aa-casper-options:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@keyframes aa-casper-bubble-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@keyframes aa-casper-bubble-out { to { opacity: 0; } }
+@media (hover: none) { .aa-casper-options { opacity: 1; } }
+@media (max-width: 767px) { .aa-casper-bubble-content { padding: 10px 12px; } }
+@media (prefers-reduced-motion: reduce) {
+  .aa-casper-launcher, .aa-casper-launcher:hover, .aa-casper-anchor .aa-casper-launcher[data-dragging="true"],
+  .aa-casper-lift, .aa-casper-launcher[data-dragging="true"] .aa-casper-lift { transform: none; transition: none; animation: none; }
+  .aa-casper-bubble, .aa-casper-bubble[data-leaving="true"], .aa-casper-options { animation: none; transition: none; }
+}

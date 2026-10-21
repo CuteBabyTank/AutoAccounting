@@ -33,6 +33,7 @@ class DocLine:
     counterparty_vat_registered: bool | None = None    # supplier printed a VAT REG TIN
     gl_account: str = ""                               # chart account override ("" = mapped from account)
     nature: str = ""                                   # what Gemini read: goods_for_resale | services | … ("" unknown)
+    description: str = ""                              # what Gemini read was bought ("" for older extractions)
 
 
 @dataclass(frozen=True)

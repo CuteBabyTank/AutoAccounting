@@ -51,10 +51,15 @@ def _file_name(name: str, used: set[str]) -> str:
     return candidate
 
 
-def build_zip(rows: list[dict], company: dict, period_from: date, period_to: date) -> bytes:
+def zip_forms(forms: list[tuple[str, FilledForm]]) -> bytes:
+    """One PDF per certificate, zipped."""
     buffer = io.BytesIO()
     used: set[str] = set()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for name, form in payee_forms(rows, company, period_from, period_to):
+        for name, form in forms:
             archive.writestr(_file_name(name, used), generate_merged_pdf([form]))
     return buffer.getvalue()
+
+
+def build_zip(rows: list[dict], company: dict, period_from: date, period_to: date) -> bytes:
+    return zip_forms(payee_forms(rows, company, period_from, period_to))

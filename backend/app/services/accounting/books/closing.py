@@ -33,6 +33,27 @@ class CloseError(ValueError):
     pass
 
 
+def open_review_query(company_id: uuid.UUID, start: date, end: date):
+    """Documents dated in the month that still block its close: flagged and not yet reviewed (a reviewed
+    document keeps its reasons for the record)."""
+    return select(AADocument.id).where(
+        AADocument.company_id == company_id, AADocument.deleted_at.is_(None), AADocument.excluded.is_(False),
+        AADocument.needs_review.is_(True), AADocument.reviewed.is_(False),
+        AADocument.doc_date >= start, AADocument.doc_date <= end,
+    )
+
+
+BANK_BLOCK = "bank_unreconciled"
+
+
+def bank_block_message(accounts: list[str], month_start: date, override_reason: str) -> str | None:
+    """The soft block on closing a month whose bank statement isn't reconciled (None = may close)."""
+    if not accounts or len(override_reason.strip()) >= 5:
+        return None
+    return (f"{BANK_BLOCK}: bank account {', '.join(accounts)} has statement lines in {month_start:%B %Y} that "
+            "aren't reconciled. Reconcile it under Bank first, or close anyway with a reason.")
+
+
 @dataclass(frozen=True)
 class MonthStatus:
     start: date
@@ -119,10 +140,7 @@ async def close_month(db: AsyncSession, company: AACompany, user_id: uuid.UUID, 
         previous, previous_bound = await year_status(db, company, fiscal_year - 1)
         if any(m.status == "open" for m in previous):
             raise CloseError(f"Close every month of FY {fiscal_year - 1} first.")
-    open_reviews = (await db.execute(select(AADocument.id).where(
-        AADocument.company_id == company.id, AADocument.deleted_at.is_(None), AADocument.excluded.is_(False),
-        AADocument.needs_review.is_(True), AADocument.doc_date >= month.start, AADocument.doc_date <= month.end,
-    ))).scalars().all()
+    open_reviews = (await db.execute(open_review_query(company.id, month.start, month.end))).scalars().all()
     if open_reviews:
         raise CloseError(f"{len(open_reviews)} document(s) dated in {month_start:%B %Y} still need review.")
 

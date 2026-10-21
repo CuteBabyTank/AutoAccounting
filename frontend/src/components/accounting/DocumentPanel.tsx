@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X } from "@phosphor-icons/react";
+import { ArrowsLeftRight, X } from "@phosphor-icons/react";
 import AssetSection from "@/components/accounting/AssetSection";
+import AtcPicker from "@/components/accounting/AtcPicker";
+import AuditTrail, { formatWhen } from "@/components/accounting/AuditTrail";
 import DuplicateCompare from "@/components/accounting/DuplicateCompare";
+import AmountInput from "@/components/AmountInput";
+import MoveDocumentDialog from "@/components/accounting/MoveDocumentDialog";
 import { accountingApi } from "@/lib/accounting-api";
-import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, EWT_ATC_OPTIONS, REASON_LABELS, apiErrorMessage, formatPeso } from "@/lib/accounting-format";
-import type { AADocument, Account, DocumentPatch, DuplicatePair, PaymentLinks } from "@/types/accounting";
+import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, formatPeso, reasonDetail, formatTin, tinBranch } from "@/lib/accounting-format";
+import type { AADocument, Account, AuditEvent, DocumentPatch, DuplicatePair, PaymentLinks } from "@/types/accounting";
+import PageViewer from "@/components/accounting/PageViewer";
 
 const AMOUNTS = [
   ["gross_amount", "Total"],
@@ -31,9 +36,10 @@ function toDraft(doc: AADocument): Draft {
     category: doc.category,
     account: doc.account,
     seller_name: doc.seller_name,
-    seller_tin: doc.seller_tin,
+    seller_tin: formatTin(doc.seller_tin, doc.seller_branch),
+    seller_address: doc.seller_address,
     buyer_name: doc.buyer_name,
-    buyer_tin: doc.buyer_tin,
+    buyer_tin: formatTin(doc.buyer_tin, doc.buyer_branch),
     gross_amount: doc.gross_amount,
     vatable_amount: doc.vatable_amount,
     vat_amount: doc.vat_amount,
@@ -55,6 +61,8 @@ const ATC_SOURCE: Record<string, string> = {
 
 interface Props {
   doc: AADocument;
+  /** Show the pages from this one (e.g. the statement page of a bank line); ignored outside the document. */
+  focusPage?: number;
   onClose: () => void;
   onChanged: (doc: AADocument) => void;
   onDeleted: (id: string) => void;
@@ -65,11 +73,12 @@ function bookableAccounts(accounts: Account[], docAccount: string, current: stri
   const key = (k: string) => accounts.find((a) => a.system_key === k)?.code;
   const mapped = docAccount === "capital_goods" ? key("ppe") : (key(`doc:${docAccount}`) ?? key("doc:other"));
   return accounts.filter(
-    (a) => (a.active && mapped !== undefined && (a.code === mapped || a.parent_code === mapped)) || (current !== "" && a.code === current),
+    (a) => (a.active && !a.locked && mapped !== undefined && (a.code === mapped || a.parent_code === mapped)) || (current !== "" && a.code === current),
   );
 }
 
-export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Props) {
+export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDeleted }: Props) {
+  const firstPage = focusPage && focusPage >= doc.page_start && focusPage <= doc.page_end ? focusPage : doc.page_start;
   const [draft, setDraft] = useState<Draft>(() => toDraft(doc));
   const [images, setImages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -77,12 +86,40 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
   const [notice, setNotice] = useState("");
   useEffect(() => setNotice(""), [doc.id]);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [moveYear, setMoveYear] = useState(String(doc.period_year ?? new Date().getFullYear()));
-  const [moveQuarter, setMoveQuarter] = useState(String(doc.period_quarter ?? 1));
+  const [moving, setMoving] = useState(false);
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [links, setLinks] = useState<PaymentLinks | null>(null);
   const [dupPairs, setDupPairs] = useState<DuplicatePair[] | null>(null);
+  const [tab, setTab] = useState<"details" | "history">("details");
+  const [history, setHistory] = useState<AuditEvent[] | null>(null);
+  // Accepting flags anyway or excluding asks why (optional); the answer goes to the History tab.
+  const [override, setOverride] = useState<"exclude" | null>(null);
+  const [reason, setReason] = useState("");
+  useEffect(() => {
+    setOverride(null);
+    setReason("");
+  }, [doc.id]);
+
+  useEffect(() => {
+    if (tab !== "history") return;
+    let cancelled = false;
+    setHistory(null);
+    accountingApi
+      .auditEvents({ entity: "document", entity_id: doc.id, limit: 200 })
+      .then((page) => {
+        if (!cancelled) setHistory(page.events);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setHistory([]);
+          setError(apiErrorMessage(e, "Couldn't load the history"));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, doc]);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,9 +162,9 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
     let cancelled = false;
     const urls: string[] = [];
     setImages([]);
-    const last = Math.min(doc.page_end, doc.page_start + 4);
+    const last = Math.min(doc.page_end, firstPage + 4);
     (async () => {
-      for (let p = doc.page_start; p <= last; p++) {
+      for (let p = firstPage; p <= last; p++) {
         try {
           const blob = await accountingApi.pageImage(doc.file_id, p);
           if (cancelled) return;
@@ -143,18 +180,23 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
       cancelled = true;
       urls.forEach((u) => URL.revokeObjectURL(u));
     };
-  }, [doc.file_id, doc.page_start, doc.page_end]);
+  }, [doc.file_id, doc.page_end, firstPage]);
 
-  async function save(extra: DocumentPatch = {}, { onlyExtra = false }: { onlyExtra?: boolean } = {}) {
+  /** Save the edits (plus ``extra``); true when it went through (or there was nothing to save). */
+  async function save(extra: DocumentPatch = {}, { onlyExtra = false }: { onlyExtra?: boolean } = {}): Promise<boolean> {
     const initial = toDraft(doc);
     const patch: DocumentPatch = { ...extra };
     for (const [key, value] of onlyExtra ? [] : Object.entries(draft)) {
       if (value === initial[key]) continue;
       if (key === "doc_date" || key === "paid_on") patch[key] = value || null;
       else if (AMOUNT_KEYS.has(key)) patch[key] = value.trim() || "0";
-      else patch[key] = value;
+      else if (key === "seller_tin" || key === "buyer_tin") {
+        // The server keeps the 9-digit TIN; the branch code as typed goes beside it.
+        patch[key] = value;
+        patch[key === "seller_tin" ? "seller_branch" : "buyer_branch"] = tinBranch(value);
+      } else patch[key] = value;
     }
-    if (Object.keys(patch).length === 0) return;
+    if (Object.keys(patch).length === 0) return true;
     setBusy(true);
     setError("");
     setNotice("");
@@ -165,8 +207,10 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
         setNotice(`Also moved ${others} other unreviewed document${others === 1 ? "" : "s"} from this supplier to the same folder and account.`);
       }
       onChanged(updated);
+      return true;
     } catch (e) {
       setError(apiErrorMessage(e, "Couldn't save the document"));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -203,16 +247,22 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
   const field = (key: string, label: string, type = "text") => (
     <div>
       <label className={LABEL}>{label}</label>
-      <input
-        type={type}
-        className={INPUT}
-        value={draft[key] ?? ""}
-        onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
-      />
+      {AMOUNT_KEYS.has(key) ? (
+        <AmountInput className={INPUT} value={draft[key] ?? ""} onValueChange={(v) => setDraft((d) => ({ ...d, [key]: v }))} />
+      ) : (
+        <input
+          type={type}
+          className={INPUT}
+          value={draft[key] ?? ""}
+          onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+        />
+      )}
     </div>
   );
 
-  const openReasons = doc.needs_review && !doc.reviewed ? doc.review_reasons : [];
+  const needsReview = doc.needs_review && !doc.reviewed;
+  const openReasons = doc.needs_review && !doc.reviewed ? doc.review_reasons.filter((r) => !SOFT_REASONS.has(r)) : [];
+  const notes = doc.reviewed ? [] : doc.review_reasons.filter((r) => SOFT_REASONS.has(r));
 
   async function compareDuplicates() {
     setError("");
@@ -234,12 +284,28 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
     accountingApi.getDocument(doc.id).then(onChanged).catch(() => undefined);
   }
 
+  const [aspect, setAspect] = useState(0.77);   // a Letter page until the first page loads
+
+  const pages = (size: "sm" | "lg") => (
+    <PageViewer images={images} firstPage={firstPage} className={size === "lg" ? "h-full" : "h-[60vh]"}
+      onAspect={size === "lg" ? setAspect : undefined} />
+  );
+
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={onClose}>
       <aside
         onClick={(e) => e.stopPropagation()}
-        className="h-full w-full max-w-xl overflow-y-auto border-l border-[var(--border)] bg-[var(--bg-secondary)] p-5"
+        className="flex h-full w-full max-w-xl border-l border-[var(--border)] bg-[var(--bg-secondary)] lg:w-auto lg:max-w-[96vw]"
       >
+        {/* Wide screens: the document on the left, so every field can be checked against it side by side. The column
+            is as wide as the page is at full height (5rem = padding + zoom bar), so the page fills it, never floats. */}
+        <div
+          className="hidden min-w-[22rem] shrink border-r border-[var(--border)] bg-[var(--bg-primary)] p-5 lg:block"
+          style={{ width: `min(calc((100vh - 5rem) * ${aspect} + 2.5rem), calc(96vw - 36rem))` }}
+        >
+          {pages("lg")}
+        </div>
+        <div className="w-full shrink-0 overflow-y-auto p-5 lg:w-[36rem]">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-[var(--text-primary)]">
@@ -249,13 +315,45 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
               {doc.period_year
                 ? `Filed in ${doc.period_year} Q${doc.period_quarter}${doc.period_locked ? " (moved by hand)" : ""}`
                 : "Undated"}
-              {" · "}pages {doc.page_start}–{doc.page_end} · confidence {Math.round(doc.confidence)}%
+              {" · "}pages {doc.page_start}–{doc.page_end}
+              {firstPage !== doc.page_start && ` · showing from page ${firstPage}`} · confidence {Math.round(doc.confidence)}%
             </p>
           </div>
           <button onClick={onClose} className="rounded p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]" aria-label="Close">
             <X size={18} />
           </button>
         </div>
+
+        <div role="tablist" className="mb-4 flex gap-1 border-b border-[var(--border)]">
+          {(["details", "history"] as const).map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={`-mb-px border-b-2 px-3 py-1.5 text-sm font-medium ${tab === t ? "border-[var(--accent)] text-[var(--text-primary)]" : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
+            >
+              {t === "details" ? "Details" : "History"}
+            </button>
+          ))}
+        </div>
+
+        {tab === "history" ? (
+          <div>
+            {history === null ? (
+              <div className="h-24 animate-pulse rounded-lg bg-[var(--bg-primary)]" />
+            ) : (
+              <>
+                <AuditTrail events={history} />
+                <p className="mt-2 rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--text-secondary)]">
+                  Read from the upload · {formatWhen(doc.created_at)}
+                </p>
+              </>
+            )}
+            {error && <p className="mt-3 text-sm text-[var(--alert-error-text)]">{error}</p>}
+          </div>
+        ) : (
+        <>
 
         {dupPairs && (
           <DuplicateCompare pairs={dupPairs} onClose={() => setDupPairs(null)} onResolved={duplicateResolved} />
@@ -266,7 +364,8 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
             {openReasons.map((r) => (
               <li key={r}>
                 • {REASON_LABELS[r] ?? r}
-                {r === "possible_duplicate" && (
+                {reasonDetail(r, doc.review_notes) && <span className="ml-1 font-medium">{reasonDetail(r, doc.review_notes)}</span>}
+                {(r === "possible_duplicate" || r === "duplicate_invoice_number") && (
                   <button className="ml-2 font-semibold underline" disabled={busy} onClick={compareDuplicates}>
                     Compare side by side
                   </button>
@@ -276,13 +375,15 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
           </ul>
         )}
 
-        <div className="mb-4 space-y-2">
-          {images.map((src, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={src} src={src} alt={`Page ${doc.page_start + i}`} className="w-full rounded-lg border border-[var(--border)]" />
-          ))}
-          {images.length === 0 && <div className="h-40 animate-pulse rounded-lg bg-[var(--bg-primary)]" />}
-        </div>
+        {notes.length > 0 && (
+          <ul className="mb-4 space-y-1 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-sm text-[var(--text-secondary)]">
+            {notes.map((r) => (
+              <li key={r}>• {REASON_LABELS[r] ?? r}</li>
+            ))}
+          </ul>
+        )}
+
+        <div className="mb-4 lg:hidden">{pages("sm")}</div>
 
         <div className="grid grid-cols-2 gap-3">
           {field("doc_date", "Document date", "date")}
@@ -306,14 +407,14 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
           {(draft.category === "purchases" || draft.category === "expenses") && (
             <div className="col-span-2">
               <label className={LABEL}>Expanded withholding (ATC)</label>
-              <select className={INPUT} value={draft.ewt_atc} onChange={(e) => setDraft((d) => ({ ...d, ewt_atc: e.target.value }))}>
-                {EWT_ATC_OPTIONS.map((o) => (
-                  <option key={o.value || "auto"} value={o.value}>{o.label}</option>
-                ))}
-                {draft.ewt_atc && !EWT_ATC_OPTIONS.some((o) => o.value === draft.ewt_atc) && (
-                  <option value={draft.ewt_atc}>{draft.ewt_atc}</option>
-                )}
-              </select>
+              <AtcPicker
+                className={INPUT}
+                value={draft.ewt_atc}
+                blank={!doc.ewt_atc && doc.ewt_atc_effective ? `Auto (${doc.ewt_atc_effective})` : "Auto"}
+                best={[doc.ewt_atc_best]}
+                bestReason={doc.ewt_atc_best_reason}
+                onChange={(v) => setDraft((d) => ({ ...d, ewt_atc: v }))}
+              />
               {draft.ewt_atc === doc.ewt_atc && !doc.ewt_atc && (
                 <span className="mt-0.5 block text-[11px] text-[var(--text-primary)]">
                   {doc.ewt_atc_effective ? `Currently using ${doc.ewt_atc_effective}` : "Currently no withholding"}
@@ -335,6 +436,7 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
           )}
           {field("seller_name", "Seller")}
           {field("seller_tin", "Seller TIN")}
+          <div className="col-span-2">{field("seller_address", "Seller address")}</div>
           {field("buyer_name", "Buyer")}
           {field("buyer_tin", "Buyer TIN")}
           {AMOUNTS.map(([key, label]) => (
@@ -407,44 +509,58 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
           <AssetSection doc={doc} onChanged={() => onChanged(doc)} />
         )}
 
-        <div className="mt-4 rounded-lg border border-[var(--border)] p-3">
-          <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">Move to another quarter</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <input type="number" min={2000} max={2100} className={`${INPUT} w-24`} value={moveYear} onChange={(e) => setMoveYear(e.target.value)} />
-            <select className={`${INPUT} w-20`} value={moveQuarter} onChange={(e) => setMoveQuarter(e.target.value)}>
-              {[1, 2, 3, 4].map((q) => (
-                <option key={q} value={q}>Q{q}</option>
-              ))}
-            </select>
-            <button className={BTN} disabled={busy} onClick={() => save({ period_year: Number(moveYear), period_quarter: Number(moveQuarter) })}>
-              Move
-            </button>
-            {doc.period_locked && (
-              <button className={BTN} disabled={busy} onClick={() => save({ period_year: null, period_quarter: null })}>
-                Use document date
-              </button>
-            )}
-          </div>
-        </div>
-
         {error && <p className="mt-3 text-sm text-[var(--alert-error-text)]">{error}</p>}
         {notice && <p className="mt-3 text-sm text-[var(--text-secondary)]">{notice}</p>}
 
-        <div className="mt-5 flex flex-wrap gap-2">
+        {needsReview && !override && (
+          <div className="mt-5">
+            <label className={LABEL} htmlFor="review-reason">
+              {openReasons.length > 0 ? "Why is it fine anyway? (optional, saved in the History tab)" : "Note (optional, saved in the History tab)"}
+            </label>
+            <input
+              id="review-reason"
+              className={INPUT}
+              maxLength={500}
+              value={reason}
+              placeholder="e.g. Client confirmed this is their delivery receipt"
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </div>
+        )}
+        <div className={`${needsReview && !override ? "mt-3" : "mt-5"} flex flex-wrap gap-2`}>
+          {/* One button: in review it saves the edits and marks the document reviewed together. */}
           <button
             className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
             disabled={busy}
-            onClick={() => save()}
+            onClick={async () => {
+              if (!needsReview) {
+                await save();
+                return;
+              }
+              const extra: DocumentPatch = { reviewed: true };
+              if (reason.trim()) extra.reason = reason.trim();
+              if (await save(extra)) setReason("");
+            }}
           >
-            Save
+            {needsReview ? "Mark reviewed" : "Save"}
           </button>
-          {doc.needs_review && !doc.reviewed && (
-            <button className={BTN} disabled={busy} onClick={() => save({ reviewed: true })}>
-              Mark reviewed
-            </button>
-          )}
-          <button className={BTN} disabled={busy} onClick={() => save({ excluded: !doc.excluded })}>
+          <button
+            className={BTN}
+            disabled={busy}
+            onClick={() => (doc.excluded ? save({ excluded: false }) : setOverride("exclude"))}
+          >
             {doc.excluded ? "Include again" : "Exclude from computation"}
+          </button>
+          {/* Company, folder and quarter in one dialog; unsaved edits are saved first so they move too. */}
+          <button
+            className={`${BTN} inline-flex items-center gap-1.5`}
+            disabled={busy}
+            onClick={async () => {
+              if (await save()) setMoving(true);
+            }}
+          >
+            <ArrowsLeftRight size={15} />
+            Move
           </button>
           <button
             className="ml-auto rounded-lg border border-[var(--alert-error-border)] px-3 py-1.5 text-sm font-medium text-[var(--alert-error-text)] hover:bg-[var(--alert-error-bg)] disabled:opacity-60"
@@ -453,6 +569,48 @@ export default function DocumentPanel({ doc, onClose, onChanged, onDeleted }: Pr
           >
             {confirmDelete ? "Click again to delete" : "Delete"}
           </button>
+        </div>
+        {moving && (
+          <MoveDocumentDialog
+            doc={doc}
+            onClose={() => setMoving(false)}
+            onMoved={(moved, summary) => {
+              onChanged(moved);
+              setNotice(summary);
+            }}
+          />
+        )}
+        {override && (
+          <div className="mt-3 rounded-lg border border-[var(--border)] p-3">
+            <label className={LABEL} htmlFor="override-reason">Why? (optional, saved in the History tab)</label>
+            <input
+              id="override-reason"
+              className={INPUT}
+              maxLength={500}
+              value={reason}
+              placeholder="e.g. Owner's personal purchase"
+              onChange={(e) => setReason(e.target.value)}
+            />
+            <div className="mt-2 flex gap-2">
+              <button
+                className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
+                disabled={busy}
+                onClick={async () => {
+                  const extra: DocumentPatch = { excluded: true };
+                  if (reason.trim()) extra.reason = reason.trim();
+                  await save(extra);
+                  setOverride(null);
+                  setReason("");
+                }}
+              >
+                Exclude
+              </button>
+              <button className={BTN} onClick={() => setOverride(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
+        </>
+        )}
         </div>
       </aside>
     </div>

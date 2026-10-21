@@ -6,12 +6,14 @@ import { Trash, X } from "@phosphor-icons/react";
 import { accountingApi } from "@/lib/accounting-api";
 import { CATEGORY_LABELS, apiErrorMessage, counterpartyName, formatPeso, formatTin } from "@/lib/accounting-format";
 import type { AADocument, DuplicatePair } from "@/types/accounting";
+import PageViewer from "@/components/accounting/PageViewer";
 
 const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-50";
 
 const REASONS: Record<DuplicatePair["reason"], string> = {
   same_number: "Same counterparty and document number.",
   same_details: "Same counterparty, date and total. The number is different or missing, so it may have been misread.",
+  number_reused: "Same supplier and invoice number, but a different date. A supplier shouldn't reuse an invoice number.",
 };
 
 type Side = "original" | "duplicate";
@@ -29,7 +31,7 @@ function useFirstPages(doc: AADocument): string[] {
     let cancelled = false;
     const urls: string[] = [];
     setImages([]);
-    const last = Math.min(doc.page_end, doc.page_start + 1);
+    const last = Math.min(doc.page_end, doc.page_start + 9);
     (async () => {
       for (let p = doc.page_start; p <= last; p++) {
         try {
@@ -98,12 +100,13 @@ function Copy({ doc, other, file, label, selected, onSelect }: {
       <p className="mb-2 truncate text-xs text-[var(--text-secondary)]" title={file}>
         {file || "Uploaded file"} · page{doc.page_end > doc.page_start ? `s ${doc.page_start}–${doc.page_end}` : ` ${doc.page_start}`}
       </p>
-      <div className={`mb-3 max-h-[42vh] space-y-2 overflow-y-auto rounded-lg bg-[var(--bg-primary)] ${selected ? "opacity-70" : ""}`}>
-        {images.map((src, i) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={src} src={src} alt={`${label}, page ${doc.page_start + i}`} className="w-full rounded-lg" />
-        ))}
-        {images.length === 0 && <div className="h-56 animate-pulse rounded-lg" />}
+      {/* Zooming and panning the page must not pick this copy for deletion. */}
+      <div
+        className={`mb-3 ${selected ? "opacity-70" : ""}`}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        <PageViewer images={images} firstPage={doc.page_start} className="h-[42vh]" />
       </div>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
         {ROWS.map(([name, value]) => {
@@ -129,6 +132,7 @@ export default function DuplicateCompare({ pairs: initial, onClose, onResolved }
   const [selected, setSelected] = useState<Side | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [keepReason, setKeepReason] = useState("");
 
   const pair = pairs[Math.min(index, pairs.length - 1)];
 
@@ -171,7 +175,8 @@ export default function DuplicateCompare({ pairs: initial, onClose, onResolved }
     setBusy(true);
     setError("");
     try {
-      await accountingApi.notDuplicate(pair.duplicate.id, pair.original.id);
+      await accountingApi.notDuplicate(pair.duplicate.id, pair.original.id, keepReason.trim());
+      setKeepReason("");
       onResolved(null);
       advance(pairs.filter((p) => p !== pair));
     } catch (e) {
@@ -225,7 +230,15 @@ export default function DuplicateCompare({ pairs: initial, onClose, onResolved }
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
           {pairs.length > 1 && <button className={BTN} disabled={busy} onClick={next}>Next pair</button>}
-          <button className={`${BTN} ml-auto`} disabled={busy} onClick={keepBoth}>Not a duplicate, keep both</button>
+          <input
+            aria-label="Why keep both (optional)"
+            className="ml-auto w-56 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2.5 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+            maxLength={500}
+            placeholder="Why keep both? (optional)"
+            value={keepReason}
+            onChange={(e) => setKeepReason(e.target.value)}
+          />
+          <button className={BTN} disabled={busy} onClick={keepBoth}>Not a duplicate, keep both</button>
           <button
             className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40"
             disabled={busy || !selected}

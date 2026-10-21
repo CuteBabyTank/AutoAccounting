@@ -13,19 +13,33 @@ import AnnualPanel from "@/components/accounting/AnnualPanel";
 import AlphalistChecklist from "@/components/accounting/AlphalistChecklist";
 import EmployeesPanel from "@/components/accounting/EmployeesPanel";
 import AtcDatabankPanel from "@/components/accounting/AtcDatabankPanel";
+import AuditLogPanel from "@/components/accounting/AuditLogPanel";
+import BankPanel from "@/components/accounting/BankPanel";
+import ContactsPanel from "@/components/accounting/ContactsPanel";
+import CompanyOverviewPanel from "@/components/accounting/CompanyOverviewPanel";
+import BooksOffCard from "@/components/accounting/BooksOffCard";
 import PeriodPanel from "@/components/accounting/PeriodPanel";
+import ReportsPanel from "@/components/accounting/ReportsPanel";
+import ReclassifyPanel from "@/components/accounting/ReclassifyPanel";
+import ImportPanel from "@/components/accounting/ImportPanel";
 import AppendPrompt from "@/components/accounting/AppendPrompt";
 import UploadReviewDialog from "@/components/accounting/UploadReviewDialog";
+import RecentUploadMove from "@/components/accounting/RecentUploadMove";
 import DuplicateBanner from "@/components/accounting/DuplicateBanner";
 import GettingStarted from "@/components/guide/GettingStarted";
 import Hint from "@/components/guide/Hint";
-import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
+import { GuideButton } from "@/components/guide/GuideTour";
+import PageGuide from "@/components/guide/PageGuide";
 import { DOCUMENTS_TOUR } from "@/components/guide/tours";
+import { DOCUMENTS_SPOTS } from "@/components/guide/tours/spots";
 import { accountingApi } from "@/lib/accounting-api";
+import { OPEN_COMPANY_EVENT, safeId } from "@/lib/work-api";
+import { OPEN_TARGET_EVENT, parseTarget } from "@/lib/search-nav";
 import { teamApi } from "@/lib/api";
 import { useGuide } from "@/lib/guides";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import { useAuth } from "@/lib/auth";
+import { FeatureOff, useFeatures, type FeatureKey } from "@/lib/features";
 import type {
   AADocument,
   AffectedPeriod,
@@ -40,6 +54,20 @@ import type {
 
 const PICKER_KEY = "aa:lastPicker";
 const ACCEPT = { "application/pdf": [".pdf"], "image/png": [".png"], "image/jpeg": [".jpg", ".jpeg"] };
+
+/** Tree views a maintenance switch can turn off: [switch, name shown while it's off]. */
+const VIEW_FEATURES: Partial<Record<NonNullable<FolderRef["view"]>, [FeatureKey, string]>> = {
+  books: ["books", "Books"],
+  bank: ["bank", "Bank"],
+  employees: ["employees", "Employees"],
+  customers: ["subledgers", "Customers"],
+  suppliers: ["subledgers", "Suppliers"],
+  reports: ["reports", "Reports"],
+  reclassify: ["reclassify", "Reclassify"],
+  import: ["imports", "Import"],
+  atc: ["atc", "The ATC databank"],
+  audit: ["audit", "The audit log"],
+};
 const BUSY: Upload["status"][] = ["detecting", "confirming", "extracting"];
 
 export default function AccountingPage() {
@@ -54,7 +82,10 @@ export default function AccountingPage() {
   const [folder, setFolder] = useState<Folder | null>(null);
   const [category, setCategory] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<AADocument | null>(null);
+  // the page to show first (a bank line's statement page from a report drill-down)
+  const [openDocFocus, setOpenDocFocus] = useState<{ id: string; page: number } | null>(null);
   const [upload, setUpload] = useState<Upload | null>(null);
+  const [uploadsDone, setUploadsDone] = useState(0);   // bumps when an upload finishes (the "Last upload" strip reloads)
   const [reviewOpen, setReviewOpen] = useState(false);
   const [companyForm, setCompanyForm] = useState<{ initial?: Partial<CompanyInput>; id?: string } | null>(null);
   const [notice, setNotice] = useState("");
@@ -62,7 +93,39 @@ export default function AccountingPage() {
   const [append, setAppend] = useState<AffectedPeriod[] | null>(null);
   const [periodRefresh, setPeriodRefresh] = useState(0);
   const [memberCount, setMemberCount] = useState<number | null>(null);
+  const [deepContact, setDeepContact] = useState<string | null>(null);
   const guide = useGuide("documents");
+
+  // Deep links from the work board, notifications and search: /accounting?company=<id>&view=…&doc=<id>
+  // (lib/search-nav parseTarget: only UUIDs and known shapes are accepted; panels load through the firm-scoped API).
+  useEffect(() => {
+    const openTarget = (params: URLSearchParams) => {
+      const t = parseTarget(params);
+      if (t.ref) setSelected(t.ref);
+      setDeepContact(t.contactId);
+      if (t.docId) {
+        accountingApi
+          .getDocument(t.docId)
+          .then(setOpenDoc)
+          .catch((e) => setError(apiErrorMessage(e, "Couldn't open the document")));
+      }
+    };
+    openTarget(new URLSearchParams(window.location.search));
+    const openCompany = (e: Event) => {
+      const id = safeId((e as CustomEvent<unknown>).detail);
+      if (id) setSelected({ companyId: id, year: null, quarter: null, view: "overview" });
+    };
+    const onTarget = (e: Event) => {
+      const detail = (e as CustomEvent<unknown>).detail;
+      if (typeof detail === "string") openTarget(new URLSearchParams(detail));
+    };
+    window.addEventListener(OPEN_COMPANY_EVENT, openCompany);
+    window.addEventListener(OPEN_TARGET_EVENT, onTarget);
+    return () => {
+      window.removeEventListener(OPEN_COMPANY_EVENT, openCompany);
+      window.removeEventListener(OPEN_TARGET_EVENT, onTarget);
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -141,6 +204,7 @@ export default function AccountingPage() {
       setNotice(parts.join(" · "));
       if (upload.affected_periods?.length) setAppend(upload.affected_periods);
       setPeriodRefresh((n) => n + 1);
+      setUploadsDone((n) => n + 1);
       loadTree().catch(() => undefined);
       loadFolder(selected).catch(() => undefined);
     }
@@ -179,12 +243,26 @@ export default function AccountingPage() {
     [target, upload],
   );
 
+  const { on } = useFeatures();
+  const uploadsOn = on("upload");
+  // A tree view whose maintenance switch is off (reached by a link or left open) shows a notice instead.
+  const offView = (() => {
+    if (!selected) return null;
+    const v = selected.view;
+    const key: FeatureKey | null =
+      selected.quarter === 0 ? "annual" : v && VIEW_FEATURES[v] ? VIEW_FEATURES[v]![0] : null;
+    if (!key || on(key)) return null;
+    return selected.quarter === 0 ? "Annual returns" : VIEW_FEATURES[v!]![1];
+  })();
+
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     onDropRejected: () => setError("Only PDF, PNG and JPG files can be dropped here."),
     accept: ACCEPT,
     noClick: true,
     noKeyboard: true,
+    // Files dropped anywhere on the page upload, except over a dialog or the import screen (it takes its own file).
+    noDrag: !uploadsOn || !!openDoc || reviewOpen || !!companyForm || selected?.view === "import",
   });
 
   const filteredTree = useMemo(() => {
@@ -219,7 +297,15 @@ export default function AccountingPage() {
   };
 
   return (
-    <div className="lp relative min-h-screen">
+    <div {...getRootProps({ className: "lp relative min-h-screen" })}>
+      <input {...getInputProps()} />
+      {isDragActive && (
+        <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center bg-[var(--accent-subtle)]/80 p-6">
+          <div className="rounded-xl border-2 border-dashed border-[var(--accent)] bg-[var(--bg-secondary)] px-8 py-6 text-center text-sm font-semibold text-[var(--text-primary)] shadow-lg">
+            {targetName ? `Drop to file under ${targetName}` : "Drop to auto-detect the company"}
+          </div>
+        </div>
+      )}
       <div className="p-4 sm:p-8 page-enter">
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <div className="mr-auto min-w-[16rem] flex-1">
@@ -229,7 +315,7 @@ export default function AccountingPage() {
             </p>
           </div>
           <GuideButton open={guide.open} onClick={guide.toggle} />
-          <div className="flex items-center gap-1">
+          <div data-tour="company-picker" className="flex items-center gap-1">
             <CompanyPicker companies={companies} value={picker} onChange={choosePicker} />
             <Hint align="left">
               Auto-detect reads each document&apos;s TIN and name to find the company. Pick a company instead when every file
@@ -238,7 +324,7 @@ export default function AccountingPage() {
           </div>
         </div>
 
-        <GuideTour open={guide.open} onClose={guide.dismiss} label="Documents" slides={DOCUMENTS_TOUR} />
+        <PageGuide open={guide.open} onClose={guide.dismiss} label="Documents" spots={DOCUMENTS_SPOTS} slides={DOCUMENTS_TOUR} />
         <GettingStarted
           tree={tree}
           canManage={canManage}
@@ -261,6 +347,9 @@ export default function AccountingPage() {
             )}
           </div>
         )}
+        {!(upload && BUSY.includes(upload.status)) && (
+          <RecentUploadMove reloadKey={uploadsDone} onMoved={refreshAfterDocChange} />
+        )}
         {upload && BUSY.includes(upload.status) && (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] px-4 py-2 text-sm text-[var(--text-primary)]">
             <Spinner size={16} className="animate-spin" />
@@ -276,7 +365,7 @@ export default function AccountingPage() {
         )}
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[250px_minmax(0,1fr)]">
-          <aside className="h-fit rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3">
+          <aside data-tour="folders" className="h-fit rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3">
             <label className="relative mb-2 block">
               <span className="sr-only">Search companies or TINs</span>
               <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
@@ -290,18 +379,43 @@ export default function AccountingPage() {
             <FolderTree
               tree={filteredTree}
               selected={selected}
-              onSelect={setSelected}
+              onSelect={(ref) => {
+                setDeepContact(null);
+                setSelected(ref);
+              }}
               canManage={canManage}
               onAddCompany={() => setCompanyForm({})}
             />
           </aside>
 
-          <section
-            {...getRootProps()}
-            className={`relative min-h-[420px] rounded-xl border bg-[var(--bg-secondary)] p-4 ${isDragActive ? "border-[var(--accent)] ring-2 ring-[var(--accent)]" : "border-[var(--border)]"}`}
-          >
-            <input {...getInputProps()} />
+          <section data-tour="workspace" className="relative min-h-[420px] rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
             {folder && <DuplicateBanner folder={folder} onResolved={refreshAfterDocChange} />}
+            {selected?.view !== "import" && (
+              <div data-tour="upload" className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-dashed border-[var(--border)] px-4 py-3">
+                <UploadSimple size={20} className="shrink-0 text-[var(--text-secondary)]" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">
+                    {uploadsOn ? "Drop receipts, invoices or scans anywhere on this page" : "Uploads are paused for maintenance"}
+                  </p>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    {!uploadsOn
+                      ? "Everything already filed is still here. Uploading will be back shortly."
+                      : targetName
+                      ? `They'll be filed under ${targetName.replace(/\.$/, "")}.`
+                      : "We'll detect the company from each document's TIN and name."}
+                  </p>
+                </div>
+                {uploadsOn && <button
+                  type="button"
+                  onClick={open}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)]"
+                >
+                  <UploadSimple size={16} /> Upload files
+                </button>}
+              </div>
+            )}
+            {offView && <FeatureOff label={offView} />}
+            {!offView && (<>
             {folder && folder.year !== null && folder.quarter !== null && (
               <PeriodPanel
                 companyId={folder.company.id}
@@ -355,46 +469,148 @@ export default function AccountingPage() {
                 }}
               />
             )}
+            {selected?.view === "bank" && selected.month && (
+              <BankPanel
+                key={`${selected.companyId}-${selected.bankAccount}-${selected.month}`}
+                companyId={selected.companyId}
+                account={selected.bankAccount ?? ""}
+                month={selected.month}
+                canManage={canManage}
+                onChanged={() => {
+                  loadTree().catch(() => undefined);
+                  setPeriodRefresh((n) => n + 1);
+                }}
+              />
+            )}
+            {(selected?.view === "customers" || selected?.view === "suppliers") && (
+              <ContactsPanel
+                key={`${selected.companyId}-${selected.view}-${deepContact ?? ""}`}
+                companyId={selected.companyId}
+                companyName={tree.find((c) => c.id === selected.companyId)?.registered_name ?? ""}
+                role={selected.view === "customers" ? "customer" : "supplier"}
+                initialContactId={deepContact}
+                canManage={canManage}
+                onOpenDocument={(id) =>
+                  accountingApi
+                    .getDocument(id)
+                    .then(setOpenDoc)
+                    .catch((e) => setError(apiErrorMessage(e, "Couldn't open the document")))
+                }
+              />
+            )}
+            {selected?.view === "reports" && (() => {
+              const company = tree.find((c) => c.id === selected.companyId);
+              return company?.books_start ? (
+                <ReportsPanel
+                  key={selected.companyId}
+                  companyId={selected.companyId}
+                  companyName={company.registered_name}
+                  fiscalYearEndMonth={company.fiscal_year_end_month}
+                  onOpenDocument={(id, page) =>
+                    accountingApi
+                      .getDocument(id)
+                      .then((d) => {
+                        setOpenDocFocus(page ? { id: d.id, page } : null);
+                        setOpenDoc(d);
+                      })
+                      .catch((e) => setError(apiErrorMessage(e, "Couldn't open the document")))
+                  }
+                />
+              ) : (
+                <p className="py-6 text-sm text-[var(--text-secondary)]">Set a Books start on the company to see its reports.</p>
+              );
+            })()}
+            {selected?.view === "reclassify" && (() => {
+              const company = tree.find((c) => c.id === selected.companyId);
+              return company?.books_start ? (
+                <ReclassifyPanel
+                  key={selected.companyId}
+                  companyId={selected.companyId}
+                  companyName={company.registered_name}
+                  fiscalYearEndMonth={company.fiscal_year_end_month}
+                  onOpenDocument={(id) =>
+                    accountingApi
+                      .getDocument(id)
+                      .then(setOpenDoc)
+                      .catch((e) => setError(apiErrorMessage(e, "Couldn't open the document")))
+                  }
+                  onChanged={() => {
+                    loadTree().catch(() => undefined);
+                    setPeriodRefresh((n) => n + 1);
+                  }}
+                />
+              ) : (
+                <p className="py-6 text-sm text-[var(--text-secondary)]">Set a Books start on the company to reclassify its postings.</p>
+              );
+            })()}
+            {selected?.view === "import" && (() => {
+              const company = tree.find((c) => c.id === selected.companyId);
+              return company?.books_start ? (
+                <ImportPanel
+                  key={selected.companyId}
+                  companyId={selected.companyId}
+                  companyName={company.registered_name}
+                  onChanged={() => {
+                    loadTree().catch(() => undefined);
+                    setPeriodRefresh((n) => n + 1);
+                  }}
+                />
+              ) : (
+                <p className="py-6 text-sm text-[var(--text-secondary)]">Set a Books start on the company to import opening balances and journals.</p>
+              );
+            })()}
+            {selected?.view === "overview" && (() => {
+              const c = companies.find((x) => x.id === selected.companyId);
+              return c && !c.books_start && on("books") ? (
+                <BooksOffCard
+                  key={`books-off-${c.id}`}
+                  company={c}
+                  tree={tree.find((t) => t.id === c.id)}
+                  canManage={canManage}
+                  onTurnedOn={(start) => {
+                    setNotice(`Books are on from ${start}. Open Books to enter the opening balances, or import a trial balance under Import.`);
+                    loadCompanies().catch(() => undefined);
+                    loadTree().catch(() => undefined);
+                  }}
+                />
+              ) : null;
+            })()}
+            {selected?.view === "overview" && (
+              <CompanyOverviewPanel
+                key={selected.companyId}
+                companyId={selected.companyId}
+                companyName={tree.find((c) => c.id === selected.companyId)?.registered_name ?? ""}
+                companies={companies}
+              />
+            )}
+            {selected?.view === "audit" && (
+              <AuditLogPanel
+                key={selected.companyId}
+                companyId={selected.companyId}
+                companyName={tree.find((c) => c.id === selected.companyId)?.registered_name ?? ""}
+              />
+            )}
+            </>)}
             {folder ? (
               <FileGrid
                 folder={folder}
                 category={category}
                 onCategory={setCategory}
                 onOpen={setOpenDoc}
+                onBulkResolved={refreshAfterDocChange}
                 onEditCompany={canManage ? () => editCompany(folder.company.id) : undefined}
               />
             ) : selected?.quarter === 0 || selected?.view ? null : (
               <>
                 <p className="py-10 text-center text-sm text-[var(--text-secondary)]">
                   {tree.length === 0
-                    ? "Nothing filed yet. Drop a client's documents below and they'll show up on the left, sorted by company and quarter."
+                    ? "Nothing filed yet. Drop a client's documents anywhere on this page and they'll show up on the left, sorted by company and quarter."
                     : "Open a company on the left and pick a quarter to see its documents and returns."}
                 </p>
-                <AlphalistChecklist onOpen={(companyId, year) => setSelected({ companyId, year, quarter: null, view: "employees" })} />
+                {on("employees") && <AlphalistChecklist onOpen={(companyId, year) => setSelected({ companyId, year, quarter: null, view: "employees" })} />}
               </>
             )}
 
-            <div className="mt-6 rounded-xl border border-dashed border-[var(--border)] p-6 text-center">
-              <p className="text-sm font-semibold text-[var(--text-primary)]">Drop receipts, invoices or scans here</p>
-              <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                {targetName
-                  ? `They'll be filed under ${targetName}.`
-                  : "We'll detect the company from each document's TIN and name."}
-              </p>
-              <button
-                type="button"
-                onClick={open}
-                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)]"
-              >
-                <UploadSimple size={16} /> Upload files
-              </button>
-            </div>
-
-            {isDragActive && (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-[var(--accent-subtle)]/80 text-sm font-semibold text-[var(--text-primary)]">
-                {targetName ? `Drop to file under ${targetName}` : "Drop to auto-detect the company"}
-              </div>
-            )}
           </section>
         </div>
       </div>
@@ -425,6 +641,7 @@ export default function AccountingPage() {
       {openDoc && (
         <DocumentPanel
           doc={openDoc}
+          focusPage={openDocFocus?.id === openDoc.id ? openDocFocus.page : undefined}
           onClose={() => setOpenDoc(null)}
           onChanged={(d) => {
             setOpenDoc(d);

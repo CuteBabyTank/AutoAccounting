@@ -13,11 +13,12 @@ from app.dependencies import get_current_user, get_db
 from app.models.accounting import AAAsset, AACompany, AADocument, AAOutput, AAPeriod
 from app.models.user import User
 from app.routers import accounting_periods as quarters
-from app.routers.accounting_scope import company_or_404, scope_for
+from app.routers.accounting_scope import company_or_404, require_filing_rights, scope_for
 from app.schemas.accounting import (
     AnnualInputsModel, AnnualPeriodOut, AssetOut, AssetPatch, CompanyBrief, FiledIn, OpeningAssetIn, OutputBrief,
     OutputOut,
 )
+from app.services.accounting import audit
 from app.services.accounting.assets import active_assets, is_asset_document, sync_assets, to_asset
 from app.services.accounting.books.loader import touch_books
 from app.services.accounting.compute.annual import (
@@ -151,6 +152,9 @@ async def save_annual_inputs(body: AnnualInputsModel, company_id: uuid.UUID,
     company = await company_or_404(db, ent, company_id)
     period = await quarters._ensure_period(db, ent, company, year, ANNUAL)
     new_inputs = annual_inputs_to_json(annual_inputs_from_json(body.model_dump(mode="json")))
+    audit.record(db, label=f"FY {year} annual",
+                 ent=ent, company_id=company.id, user=user, entity="period", entity_id=quarters._audit_period(period),
+                 action="inputs", before=period.inputs or {}, after=new_inputs)
     if annual_inputs_from_json(period.inputs).ending_inventory != annual_inputs_from_json(new_inputs).ending_inventory:
         touch_books(company)  # Q4's books fall back to this count
     period.inputs = new_inputs
@@ -163,10 +167,15 @@ async def save_annual_inputs(body: AnnualInputsModel, company_id: uuid.UUID,
 async def set_annual_filed(body: FiledIn, company_id: uuid.UUID, year: int = PathParam(ge=2000, le=2100),
                            user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     ent = scope_for(user)
+    await require_filing_rights(db, user, ent)
     company = await company_or_404(db, ent, company_id)
     period = await quarters._ensure_period(db, ent, company, year, ANNUAL)
+    before = dict(period.filed_forms or {})
     await quarters.mark_filed(db, period, body.filed, [annual_form(quarters.company_facts(company))],
                               body.filed_on)
+    audit.record(db, label=f"FY {year} annual",
+                 ent=ent, company_id=company.id, user=user, entity="period", entity_id=quarters._audit_period(period),
+                 action="filed" if body.filed else "unfiled", before=before, after=dict(period.filed_forms or {}))
     await db.commit()
     return await _annual_out(db, company, year)
 
@@ -207,6 +216,8 @@ async def generate_annual(company_id: uuid.UUID, year: int = PathParam(ge=2000, 
 
 
 # --- Asset register ------------------------------------------------------------------------------
+
+_ASSET_FIELDS = ("description", "cost", "in_service", "useful_life_months", "end_date")
 
 def _asset_out(row: AAAsset, doc: AADocument | None, year: int, fye: int) -> AssetOut:
     start, end = fiscal_year_window(year, fye)
@@ -252,6 +263,7 @@ async def patch_asset(asset_id: uuid.UUID, body: AssetPatch, year: int | None = 
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
     row, doc = found
     company = await company_or_404(db, ent, row.company_id)
+    before = audit.snapshot(row, _ASSET_FIELDS)
     for name in body.model_fields_set:
         value = getattr(body, name)
         if value is None and name != "end_date":
@@ -259,6 +271,9 @@ async def patch_asset(asset_id: uuid.UUID, body: AssetPatch, year: int | None = 
         setattr(row, name, value)
     if row.end_date is not None and row.end_date < row.in_service:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "The end date can't be before the in-service date")
+    audit.record(db, label=row.description,
+                 ent=ent, company_id=company.id, user=user, entity="asset", entity_id=row.id, action="update",
+                 before=before, after=audit.snapshot(row, _ASSET_FIELDS))
     await db.commit()
     return _asset_out(row, doc, year or _current_year(company), company.fiscal_year_end_month)
 
@@ -277,6 +292,9 @@ async def add_opening_asset(company_id: uuid.UUID, body: OpeningAssetIn,
                   description=body.description, cost=body.cost, in_service=in_service,
                   useful_life_months=body.useful_life_months)
     db.add(row)
+    audit.record(db, label=row.description,
+                 ent=ent, company_id=company.id, user=user, entity="asset", entity_id=row.id, action="create",
+                 after=audit.snapshot(row, _ASSET_FIELDS))
     if company.books_start is not None:
         touch_books(company)
     await db.commit()
@@ -295,6 +313,9 @@ async def delete_opening_asset(asset_id: uuid.UUID, user: User = Depends(get_cur
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "This asset comes from a document; move or exclude the document instead")
     company = await company_or_404(db, ent, row.company_id)
+    audit.record(db, label=row.description,
+                 ent=ent, company_id=company.id, user=user, entity="asset", entity_id=row.id, action="delete",
+                 before=audit.snapshot(row, _ASSET_FIELDS), after=None)
     await db.delete(row)
     company.facts_updated_at = datetime.now(timezone.utc)  # no row left to date the change: every version is stale
     if company.books_start is not None:

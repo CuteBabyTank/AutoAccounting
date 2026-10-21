@@ -1,10 +1,14 @@
 "use client";
 
+import { FILING_LOCKED_TITLE, useCanFile } from "@/lib/use-can-file";
 import { useEffect, useState } from "react";
 import { CheckCircle, FilePdf, Warning } from "@phosphor-icons/react";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, saveBlob } from "@/lib/accounting-format";
-import type { Period, Prepare, Scope } from "@/types/accounting";
+import PdfPreview from "@/components/accounting/PdfPreview";
+import type { Output, Period, PdfField, Prepare, Scope } from "@/types/accounting";
+
+const FIGURE = /^-?\d+(\.\d+)?$/;
 
 const BTN = "inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-60";
 const SCOPES: Scope[] = ["M1", "M2", "M3", "Q"];
@@ -27,17 +31,20 @@ interface Props {
   quarter: number;
   onPeriod: (p: Period) => void;
   onEditCompany?: () => void;
+  /** Hand edits made in the preview were saved as a new version. */
+  onNewVersion?: (output: Output) => void;
 }
 
-export default function PrepareReturns({ outputId, companyId, year, quarter, onPeriod, onEditCompany }: Props) {
+export default function PrepareReturns({ outputId, companyId, year, quarter, onPeriod, onEditCompany, onNewVersion }: Props) {
   const [scope, setScope] = useState<Scope | null>(null);
   const [prep, setPrep] = useState<Prepare | null>(null);
   const [labels, setLabels] = useState<Partial<Record<Scope, string>>>({});
   const [ticked, setTicked] = useState<Set<string>>(new Set());
-  const [clean, setClean] = useState(false);
+  const [preview, setPreview] = useState<{ form: string; title: string; fields: PdfField[]; output: Output } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [filedOn, setFiledOn] = useState<Record<string, string>>({});
+  const canFile = useCanFile();
 
   // Scope labels ("Month 1 — Jan 2026") come from the server so fiscal years are right.
   useEffect(() => {
@@ -71,14 +78,41 @@ export default function PrepareReturns({ outputId, companyId, year, quarter, onP
     setError("");
     try {
       const forms = prep.forms.filter((f) => ticked.has(f.form)).map((f) => f.form);
-      const { blob, zip } = await accountingApi.pdfs(outputId, forms, clean);
+      const { blob, zip } = await accountingApi.pdfs(outputId, forms, true);
       const what = forms.length === 1 ? forms[0] : "returns";
-      saveBlob(blob, `${prep.label} ${what} v${prep.version}${clean ? " clean" : ""}.${zip ? "zip" : "pdf"}`);
+      saveBlob(blob, `${prep.label} ${what} v${prep.version}.${zip ? "zip" : "pdf"}`);
     } catch (e) {
       setError(apiErrorMessage(e, "Couldn't generate the PDFs"));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function openPreview(form: string, title: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const output = await accountingApi.output(outputId);
+      const items = output.forms.find((f) => f.form === form)?.items ?? [];
+      const fields: PdfField[] = items.map((i) => ({
+        key: i.key, label: i.label.startsWith(i.key) ? i.label : `${i.key} · ${i.label}`, value: i.value, kind: FIGURE.test(i.value) ? "amount" : "text",
+      }));
+      setPreview({ form, title, fields, output });
+    } catch (e) {
+      setError(apiErrorMessage(e, "Couldn't open the preview"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function exportPreview(form: string, values: Record<string, string>) {
+    let target = preview!.output;
+    if (Object.keys(values).length > 0) {
+      target = await accountingApi.saveFormEdits(outputId, form, values);
+      onNewVersion?.(target);
+    }
+    const { blob } = await accountingApi.pdfs(target.id, [form], true);
+    saveBlob(blob, `${prep?.label ?? target.label} ${form} v${target.version}.pdf`);
   }
 
   async function toggleFiled(form: string, filed: boolean) {
@@ -154,6 +188,9 @@ export default function PrepareReturns({ outputId, companyId, year, quarter, onP
                   {f.due && <span className="text-xs text-[var(--text-secondary)]">Due {new Date(f.due).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}</span>}
                   {f.amended && <span className="rounded-full bg-[var(--badge-blue-bg)] px-2 py-0.5 text-xs text-[var(--badge-blue-text)]">Amended</span>}
                   <div className="ml-auto flex items-center gap-2">
+                    <button className={BTN} disabled={busy} onClick={() => openPreview(f.form, f.title)}>
+                      <FilePdf size={16} /> PDF
+                    </button>
                     {f.filed && (
                       <span className="flex items-center gap-1 text-xs text-[var(--badge-green-text)]">
                         <CheckCircle size={14} /> Filed {shortDate(f.filed.paid_on ?? f.filed.filed_at)} from v{f.filed.version}
@@ -170,7 +207,7 @@ export default function PrepareReturns({ outputId, companyId, year, quarter, onP
                         onChange={(e) => setFiledOn((d) => ({ ...d, [f.form]: e.target.value }))}
                       />
                     )}
-                    <button className={BTN} disabled={busy} onClick={() => toggleFiled(f.form, f.filed !== null)}>
+                    <button className={BTN} disabled={busy || !canFile} title={canFile ? undefined : FILING_LOCKED_TITLE} onClick={() => toggleFiled(f.form, f.filed !== null)}>
                       {f.filed ? "Unmark" : "Mark filed"}
                     </button>
                   </div>
@@ -195,15 +232,33 @@ export default function PrepareReturns({ outputId, companyId, year, quarter, onP
 
           <div className="mt-3 flex items-center gap-3">
             <button className={BTN} disabled={busy || ticked.size === 0} onClick={generate}>
-              <FilePdf size={16} /> Generate PDFs{ticked.size > 0 ? ` (${ticked.size})` : ""}
+              <FilePdf size={16} /> Download PDFs{ticked.size > 0 ? ` (${ticked.size})` : ""}
             </button>
-            <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
-              <input type="checkbox" checked={clean} onChange={(e) => setClean(e.target.checked)} /> Clean (no highlights)
-            </label>
           </div>
         </>
       )}
       {error && <p className="mt-2 text-sm text-[var(--alert-error-text)]">{error}</p>}
+      {preview && (() => {
+        const isLatest = !prep || prep.version === prep.latest_version;
+        const editable = isLatest && canFile;
+        const v = preview.output.version;
+        return (
+          <PdfPreview
+            title={`${preview.form} · ${prep?.label ?? preview.output.label} v${v}`}
+            docs={editable ? [{ id: preview.form, label: preview.title, fields: preview.fields }] : undefined}
+            render={(_, values) =>
+              editable ? accountingApi.previewForm(outputId, preview.form, values)
+                : accountingApi.pdfs(outputId, [preview.form], true).then((r) => r.blob)}
+            note={editable
+              ? `Edits are saved as v${v + 1}, so filing, amendments and the books use them. Totals aren't recalculated: change them too if needed. Fields edited by hand are highlighted in the preview only.`
+              : isLatest ? "Your firm has managers approve filings, so only a manager can edit a return's figures."
+                : "This is an older version. Edit the latest version instead."}
+            exportLabel={(edited) => (edited ? `Save as v${v + 1} & download` : "Download PDF")}
+            onExport={(edits) => exportPreview(preview.form, edits[preview.form] ?? {})}
+            onClose={() => setPreview(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

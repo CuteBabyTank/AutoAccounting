@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
+import AtcPicker from "@/components/accounting/AtcPicker";
 import { accountingApi } from "@/lib/accounting-api";
-import { ACCOUNT_LABELS, EWT_ATC_OPTIONS, apiErrorMessage } from "@/lib/accounting-format";
+import { ACCOUNT_LABELS, apiErrorMessage } from "@/lib/accounting-format";
 import type { AtcDatabank } from "@/types/accounting";
 
 interface Props {
@@ -15,18 +16,11 @@ interface Props {
 
 const SELECT = "w-full rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] disabled:opacity-60";
 const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-60";
-const CODES = EWT_ATC_OPTIONS.filter((o) => o.value);
 
-function AtcSelect({ value, blank, disabled, onChange }: { value: string; blank: string; disabled: boolean; onChange: (v: string) => void }) {
-  return (
-    <select className={SELECT} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
-      <option value="">{blank}</option>
-      {CODES.map((o) => (
-        <option key={o.value} value={o.value}>{o.label}</option>
-      ))}
-      {value && !CODES.some((o) => o.value === value) && <option value={value}>{value}</option>}
-    </select>
-  );
+function AtcSelect({ value, blank, best, bestReason, disabled, onChange }: {
+  value: string; blank: string; best?: string[]; bestReason?: string; disabled: boolean; onChange: (v: string) => void;
+}) {
+  return <AtcPicker className={SELECT} value={value} blank={blank} best={best} bestReason={bestReason} disabled={disabled} onChange={onChange} />;
 }
 
 export default function AtcDatabankPanel({ companyId, companyName, onChanged }: Props) {
@@ -67,6 +61,7 @@ export default function AtcDatabankPanel({ companyId, companyName, onChanged }: 
     );
   }, [data, search]);
   const suggested = (data?.suppliers ?? []).filter((s) => s.suggestion && !s.ewt_atc).length;
+  const hinted = (data?.suppliers ?? []).filter((s) => s.hint && !s.ewt_atc).length;
 
   return (
     <div className="mb-6">
@@ -97,7 +92,9 @@ export default function AtcDatabankPanel({ companyId, companyName, onChanged }: 
                   <span className="truncate">{ACCOUNT_LABELS[d.account] ?? d.account}</span>
                   <AtcSelect
                     value={d.ewt_atc}
-                    blank="Suggested by AutoAccounting"
+                    blank={d.suggestion ? `Auto (${d.suggestion})` : "Auto"}
+                    best={d.suggestion ? d.suggestion.split(" / ") : []}
+                    bestReason={d.suggestion ? "WI for an individual supplier, WC for a company" : undefined}
                     disabled={busy}
                     onChange={(v) => run(() => accountingApi.setAccountAtc(companyId, d.account, v))}
                   />
@@ -112,6 +109,11 @@ export default function AtcDatabankPanel({ companyId, companyName, onChanged }: 
               {suggested > 0 && (
                 <button className={BTN} disabled={busy} onClick={() => run(() => accountingApi.useAtcSuggestions(companyId))}>
                   Use {suggested} suggestion{suggested === 1 ? "" : "s"} from other companies
+                </button>
+              )}
+              {hinted > 0 && (
+                <button className={BTN} disabled={busy} onClick={() => run(() => accountingApi.useAtcHints(companyId))}>
+                  Use AutoAccounting&apos;s {hinted} suggestion{hinted === 1 ? "" : "s"}
                 </button>
               )}
               <label className="relative ml-auto">
@@ -149,10 +151,26 @@ export default function AtcDatabankPanel({ companyId, companyName, onChanged }: 
                       <td className="py-1.5 pl-3">
                         <AtcSelect
                           value={s.ewt_atc}
-                          blank="Default for the expense type"
+                          blank={s.automatic ? `Auto (${s.automatic})` : "Auto"}
+                          best={[s.best]}
+                          bestReason={s.best_reason}
                           disabled={busy}
                           onChange={(v) => run(() => accountingApi.setSupplierAtc(companyId, s.tin, v, s.name))}
                         />
+                        {s.hint && (
+                          <span className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                            <span className="min-w-0" title={s.hint_reason}>
+                              AutoAccounting suggests {s.hint === "NONE" ? "no withholding" : s.hint}: {s.hint_reason}
+                            </span>
+                            <button
+                              className="shrink-0 font-semibold text-[var(--accent)]"
+                              disabled={busy}
+                              onClick={() => run(() => accountingApi.setSupplierAtc(companyId, s.tin, s.hint, s.name))}
+                            >
+                              Use
+                            </button>
+                          </span>
+                        )}
                         {s.suggestion && (
                           <span className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
                             {s.suggestion} in {s.suggestion_company}

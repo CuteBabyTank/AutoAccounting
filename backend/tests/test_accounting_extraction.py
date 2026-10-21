@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from app.services.accounting.extraction import EXTRACT_PROMPT, Party, extract_prompt, parse_detection, parse_extraction
+from app.services.accounting.extraction import EXTRACT_PROMPT, Party, due_fields, extract_prompt, parse_detection, parse_extraction
 
 
 def test_parse_detection_reads_parties():
@@ -80,3 +80,40 @@ def test_extract_prompt_tells_the_ai_who_the_client_is():
 def test_extract_prompt_defines_total_and_splits_rescans():
     assert "BEFORE any withholding tax" in EXTRACT_PROMPT
     assert "a second copy or a rescan" in EXTRACT_PROMPT
+
+
+def test_parse_payment_fields():
+    raw = ('{"documents": [{"kind": "receipt", "gross_amount": 560, "cash_tendered": "500.00", "change": "-60.00",'
+           ' "payment_terms": "Credit", "marked_paid": true}]}')
+    doc = parse_extraction(raw)[0]
+    assert doc.cash_tendered == Decimal("500.00") and doc.change_amount == Decimal("-60.00")
+    assert doc.payment_terms == "credit" and doc.marked_paid is True
+    assert parse_extraction('{"documents": [{"change": -60}]}')[0].change_amount == Decimal("-60.00")
+
+
+def test_parse_payment_fields_missing():
+    doc = parse_extraction('{"documents": [{"kind": "invoice", "gross_amount": 100, "payment_terms": "30 days"}]}')[0]
+    assert doc.cash_tendered == Decimal("0.00") and doc.change_amount == Decimal("0.00")
+    assert doc.payment_terms == "" and doc.marked_paid is False
+
+
+def test_prompt_asks_for_payment_fields():
+    for key in ('"cash_tendered"', '"change"', '"payment_terms"', '"marked_paid"'):
+        assert key in EXTRACT_PROMPT
+
+
+def test_parse_due_date_and_terms_days():
+    doc = parse_extraction('{"documents": [{"kind": "invoice", "due_date": "2026-11-02", "terms_days": "30"}]}')[0]
+    assert doc.due_date == date(2026, 11, 2) and doc.terms_days == 30
+    old = parse_extraction('{"documents": [{"kind": "invoice"}]}')[0]
+    assert old.due_date is None and old.terms_days is None
+    bad = parse_extraction('{"documents": [{"due_date": "soon", "terms_days": -4}]}')[0]
+    assert bad.due_date is None and bad.terms_days is None
+
+
+def test_due_fields_read_from_stored_raw():
+    assert due_fields({"due_date": "2026-11-25", "terms_days": 15}) == (date(2026, 11, 25), 15)
+    assert due_fields(None) == (None, None)
+    assert due_fields({"terms_days": "Net 30"}) == (None, None)
+    for key in ('"due_date"', '"terms_days"'):
+        assert key in EXTRACT_PROMPT

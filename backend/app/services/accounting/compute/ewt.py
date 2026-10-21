@@ -5,54 +5,42 @@ withholding whether or not it actually withheld (RR 4-2024 keeps the expense
 deductible, but the tax is still due). Rates come from ``services/atc_codes.py``.
 """
 
-import re
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
+from app.services.accounting.compute.atc_tree import (
+    GOODS_NATURES, TWA_GOODS, TWA_SERVICES, AtcDecision, decide, is_corporate_name,
+)
 from app.services.accounting.compute.due_dates import quarter_start
 from app.services.accounting.compute.inputs import CompanyFacts, DocLine
 from app.services.accounting.compute.money import c2, total
-from app.services.atc_codes import lookup_atc
+from app.services.atc_codes import ATC_CODES, is_ewt_code, lookup_atc
 
 ATC_NONE = "NONE"
-_EXTRA = {"WC120": ("Contractors", Decimal("0.02"))}  # corporate contractors, missing from atc_codes.py
-_CORPORATE_WORDS = frozenset({
-    "INC", "INCORPORATED", "CORP", "CORPORATION", "COMPANY", "LTD", "LIMITED", "OPC", "LLC",
-    "COOPERATIVE", "COOP", "PARTNERSHIP", "PARTNERS",
-})
-_TWA_GOODS = frozenset({"purchases", "raw_materials", "office_supplies", "capital_goods"})
-_TWA_SERVICES = frozenset({"transportation", "other"})
-_GOODS_NATURES = frozenset({"goods_for_resale", "raw_materials", "capital_goods", "other"})
 _PAYMENTS = ("purchases", "expenses")
 _MISMATCH = Decimal("1.00")
 
 
 def atc_info(code: str) -> tuple[str, Decimal] | None:
-    """(nature, rate as a fraction) for an ATC with a fixed rate, else None."""
-    code = (code or "").strip().upper()
-    if code in _EXTRA:
-        return _EXTRA[code]
+    """(nature, rate as a fraction) for an expanded withholding ATC with a fixed rate, else None."""
+    if not is_ewt_code(code):
+        return None
     entry = lookup_atc(code)
     if entry is None or entry.rate is None:
         return None
     return entry.nature, Decimal(str(entry.rate))
 
 
+def ewt_codes() -> list[tuple[str, str, Decimal]]:
+    """Every ATC a payment can carry: (code, nature, rate), in the BIR schedule's order."""
+    return [(e.code, *info) for e in ATC_CODES if (info := atc_info(e.code))]
+
+
 def rate_percent(rate: Decimal) -> Decimal:
     """0.15 -> 15 (whole percentages without decimals)."""
     pct = rate * 100
     return pct.quantize(Decimal("1")) if pct == pct.to_integral_value() else pct.normalize()
-
-
-_CO_ABBREVIATION = re.compile(r"\bCO\.|&\s*CO\b")  # "Co." or "& Co"; a bare "Co" is a common surname
-
-
-def is_corporate_name(name: str) -> bool:
-    upper = (name or "").upper()
-    if _CO_ABBREVIATION.search(upper):
-        return True
-    return any(word in _CORPORATE_WORDS for word in re.findall(r"[A-Z]+", upper))
 
 
 def is_agent(company: CompanyFacts) -> bool:
@@ -63,26 +51,65 @@ def _is_payment(line: DocLine) -> bool:
     return line.client_role == "buyer" and line.category in _PAYMENTS
 
 
+def expected_atc(account: str, counterparty_name: str, vat_registered: bool | None) -> str:
+    """The ATC every withholding agent applies to rent and professional fees ("" for other accounts)."""
+    corporate = is_corporate_name(counterparty_name)
+    if account == "rent":
+        return "WC100" if corporate else "WI100"
+    if account == "professional_fees":
+        if corporate:
+            return "WC010"
+        return "WI011" if vat_registered else "WI010"
+    return ""
+
+
+def tree_suggestion(line: DocLine, company: CompanyFacts) -> AtcDecision:
+    """The decision tree's ATC for this payment, with the branch that chose it (``compute/atc_tree.py``).
+    A hint only: the returns never use it until a person sets it as the supplier's or document's ATC."""
+    if not is_agent(company):
+        return AtcDecision("", "The company isn't a withholding agent")
+    if not _is_payment(line):
+        return AtcDecision("", "Not a payment")
+    return decide(line, company.is_top_withholding_agent)
+
+
+def best_atc(line: DocLine, company: CompanyFacts) -> AtcDecision:
+    """The tree's pick as a choice in an ATC picker: an ATC, NONE (no withholding), or "" when ATCs don't apply."""
+    decision = tree_suggestion(line, company)
+    if not is_agent(company) or not _is_payment(line):
+        return AtcDecision("", decision.reason)
+    return AtcDecision(decision.atc or ATC_NONE, decision.reason)
+
+
 def suggest_atc(line: DocLine, company: CompanyFacts) -> str:
-    """The usual ATC for this payment, or "" when no withholding is expected."""
+    """The standard ATC the returns use for a payment with no ATC chosen, or "" when no withholding is expected."""
     if not is_agent(company) or not _is_payment(line):
         return ""
+    expected = expected_atc(line.account, line.counterparty_name, line.counterparty_vat_registered)
+    if expected:
+        return expected
     prefix = "WC" if is_corporate_name(line.counterparty_name) else "WI"
-    if line.account == "rent":
-        return f"{prefix}100"
-    if line.account == "professional_fees":
-        if prefix == "WC":
-            return "WC010"
-        return "WI011" if line.counterparty_vat_registered else "WI010"
-    goods = line.nature in _GOODS_NATURES  # e.g. parts or materials booked to repairs: not a contractor's fee
+    goods = line.nature in GOODS_NATURES  # e.g. parts or materials booked to repairs: not a contractor's fee
     if line.account == "repairs" and not goods:
         return f"{prefix}120"
     if company.is_top_withholding_agent:
-        if line.account in _TWA_GOODS or (line.account == "repairs" and goods):
+        if line.account in TWA_GOODS or (line.account == "repairs" and goods):
             return f"{prefix}158"
-        if line.account in _TWA_SERVICES:
+        if line.account in TWA_SERVICES:
             return f"{prefix}160"
     return ""
+
+
+def account_suggestions(account: str, company: CompanyFacts) -> list[str]:
+    """The ATCs ``suggest_atc`` picks for a payment booked to ``account``: an individual payee's, then a corporate one's."""
+    out: list[str] = []
+    for name in ("", "Payee Inc."):
+        line = DocLine(id="", category="expenses", account=account, doc_type="", client_role="buyer", doc_date=None,
+                       doc_number="", counterparty_tin="", counterparty_name=name, counterparty_address="")
+        atc = suggest_atc(line, company)
+        if atc and atc not in out:
+            out.append(atc)
+    return out
 
 
 def effective_atc(line: DocLine, company: CompanyFacts) -> str:

@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from app.services.accounting.compute.cogs import claims_input_vat
+from app.services.accounting.compute.cogs import claimed_input_vat, claims_input_vat
 from app.services.accounting.compute.inputs import DocLine, PeriodInputs
 from app.services.accounting.compute.money import ZERO, c2, total
 
@@ -46,12 +46,12 @@ def compute_2550q(lines, inputs: PeriodInputs, carry_in: Decimal) -> VatResult:
     domestic = [l for l in claimed if not _is_import(l)]
     imported = [l for l in claimed if _is_import(l)]
     i["44A"] = total(l.gross - l.vat for l in domestic)
-    i["44B"] = total(l.vat for l in domestic)
+    i["44B"] = total(claimed_input_vat(l, True) for l in domestic)
     i["45A"] = ZERO
     i["45B"] = ZERO
     # An import entry's total is what was paid to Customs; its VAT base is the landed cost.
     i["46A"] = total(l.vatable if l.vatable > 0 else l.gross - l.vat for l in imported)
-    i["46B"] = total(l.vat for l in imported)
+    i["46B"] = total(claimed_input_vat(l, True) for l in imported)
     i["47A"] = ZERO
     i["47B"] = ZERO
     i["48A"] = total(l.gross for l in unclaimed if not _is_import(l))

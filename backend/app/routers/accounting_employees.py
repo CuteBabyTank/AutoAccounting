@@ -9,7 +9,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -21,6 +21,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.accounting import AACompany, AAEmployee, AAOutput, AAPeriod
 from app.models.user import User
 from app.routers.accounting_scope import MANAGER_ROLES, company_or_404, scope_for
+from app.services.accounting import audit
 from app.services.accounting.compute.alphalist import (
     FIELD_LABELS, MonthRemittance, build_alphalist, employee_from_json,
 )
@@ -29,7 +30,10 @@ from app.services.accounting.compute.money import ZERO, c2
 from app.services.spreadsheet_safe import csv_safe as _safe  # imported sheet text is untrusted: never a formula
 from app.services.accounting.filing import credited_output_id
 from app.services.accounting.payroll_import import IMPORT_FIELDS, apply_mapping, parse_sheet, suggest_mapping
-from app.services.accounting.pdf_2316 import build_2316_zip
+from app.schemas.accounting import CertificateOut, CertificatePreviewIn, CertificatesIn, PdfFieldOut
+from app.services.accounting.certificate_edits import apply_2316, fields_2316
+from app.services.accounting.pdf_2316 import build_2316_zip, fill_2316
+from app.services.accounting.xlsx_preview import workbook_preview
 
 router = APIRouter()
 MAX_SHEET_BYTES = 10 * 1024 * 1024
@@ -200,7 +204,13 @@ async def import_employees(company_id: uuid.UUID, year: int, file: UploadFile, m
     if not records:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No employee rows found with that mapping."
                             + (f" {errors[0]}" if errors else ""))
+    replaced = (await db.execute(select(func.count(AAEmployee.id)).where(
+        AAEmployee.company_id == company.id, AAEmployee.year == year))).scalar_one()
     await db.execute(delete(AAEmployee).where(AAEmployee.company_id == company.id, AAEmployee.year == year))
+    audit.record(db, label=f"{year} employees",
+                 ent=ent, company_id=company.id, user=user, entity="employee", entity_id=f"{year}",
+                 action="import", before={"employees": replaced},
+                 after={"employees": len(records), "file": (file.filename or "")[:120]}, always=True)
     for data in records:
         db.add(AAEmployee(enterprise_id=ent, company_id=company.id, year=year, data=_clean(data)))
     company.payroll_mapping = {**(company.payroll_mapping or {}), **chosen}
@@ -218,7 +228,11 @@ async def add_employee(company_id: uuid.UUID, year: int, body: dict, user: User 
     company = await company_or_404(db, ent, company_id)
     data = _clean(body)
     _validate(data)
-    db.add(AAEmployee(enterprise_id=ent, company_id=company.id, year=year, data=data))
+    row = AAEmployee(id=uuid.uuid4(), enterprise_id=ent, company_id=company.id, year=year, data=data)
+    db.add(row)
+    audit.record(db, label=audit.employee_label(data),
+                 ent=ent, company_id=company.id, user=user, entity="employee", entity_id=row.id,
+                 action="create", after={"year": year, **data})
     await db.commit()
     return await _out(db, company, year)
 
@@ -248,6 +262,9 @@ async def update_employee(employee_id: uuid.UUID, body: dict, user: User = Depen
     row = await _employee_or_404(db, ent, employee_id)
     data = _clean(body)
     _validate(data)
+    audit.record(db, label=audit.employee_label(data),
+                 ent=ent, company_id=row.company_id, user=user, entity="employee", entity_id=row.id,
+                 action="update", before=row.data or {}, after=data)
     row.data = data
     await db.commit()
     company = await company_or_404(db, ent, row.company_id)
@@ -261,6 +278,9 @@ async def delete_employee(employee_id: uuid.UUID, user: User = Depends(get_curre
     ent = scope_for(user)
     row = await _employee_or_404(db, ent, employee_id)
     company_id, year = row.company_id, row.year
+    audit.record(db, label=audit.employee_label(row.data),
+                 ent=ent, company_id=company_id, user=user, entity="employee", entity_id=row.id,
+                 action="delete", before={"year": year, **(row.data or {})}, after=None)
     await db.delete(row)
     await db.commit()
     company = await company_or_404(db, ent, company_id)
@@ -393,27 +413,90 @@ def _filename(company: AACompany, what: str, year: int, ext: str) -> str:
 
 
 @router.get("/companies/{company_id}/employees/{year}/alphalist.xlsx")
-async def download_alphalist(company_id: uuid.UUID, year: int, user: User = Depends(get_current_user),
-                             db: AsyncSession = Depends(get_db)):
+async def download_alphalist(company_id: uuid.UUID, year: int, preview: bool = Query(False),
+                             user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     company = await company_or_404(db, scope_for(user), company_id)
     _, tabs, _, warnings = await _build(db, company, year)
     data = await asyncio.get_running_loop().run_in_executor(None, alphalist_workbook, company, year, tabs, warnings)
+    if preview:  # the in-app preview: the workbook's sheets as cells
+        return JSONResponse({"sheets": await asyncio.get_running_loop().run_in_executor(None, workbook_preview, data)})
     return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="{_filename(company, "1604-C alphalist", year, "xlsx")}"'})
 
 
-@router.get("/companies/{company_id}/employees/{year}/2316.zip")
-async def download_2316s(company_id: uuid.UUID, year: int, user: User = Depends(get_current_user),
-                         db: AsyncSession = Depends(get_db)):
+async def _computed_2316(db: AsyncSession, user: User, company_id: uuid.UUID, year: int):
     company = await company_or_404(db, scope_for(user), company_id)
     _, _, computed, _ = await _build(db, company, year)
     if not computed:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No employees for that year")
     employer = {"tin": company.tin + company.branch_code, "name": company.registered_name,
                 "address": company.address, "zip": company.zip_code}
+    return company, computed, employer
+
+
+def _2316_label(c) -> str:
+    return f"{c.employee.last_name}, {c.employee.first_name}".strip(", ") or "(no name)"
+
+
+def _edited_2316(c, values: dict[str, str]):
+    try:
+        return apply_2316(c, values)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+
+
+async def _2316_zip(db: AsyncSession, user: User, company_id: uuid.UUID, year: int,
+                    edits: dict[str, dict[str, str]]) -> Response:
+    company, computed, employer = await _computed_2316(db, user, company_id, year)
+    ids = {c.employee.id for c in computed}
+    if any(key not in ids for key in edits):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Some edited employees are no longer in this year")
+    computed = [_edited_2316(c, edits[c.employee.id]) if c.employee.id in edits else c for c in computed]
     data = await asyncio.get_running_loop().run_in_executor(None, build_2316_zip, computed, employer, year)
     return Response(data, media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{_filename(company, "2316s", year, "zip")}"'})
+
+
+@router.get("/companies/{company_id}/employees/{year}/2316.zip")
+async def download_2316s(company_id: uuid.UUID, year: int, user: User = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)):
+    return await _2316_zip(db, user, company_id, year, {})
+
+
+@router.post("/companies/{company_id}/employees/{year}/2316.zip")
+async def download_edited_2316s(company_id: uuid.UUID, year: int, body: CertificatesIn,
+                                user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """The zip with the preview's edits (they only change these files, not the employee records)."""
+    return await _2316_zip(db, user, company_id, year, body.edits)
+
+
+@router.get("/companies/{company_id}/employees/{year}/2316/certificates", response_model=list[CertificateOut])
+async def list_2316s(company_id: uuid.UUID, year: int, user: User = Depends(get_current_user),
+                     db: AsyncSession = Depends(get_db)):
+    _, computed, _ = await _computed_2316(db, user, company_id, year)
+    return [CertificateOut(id=c.employee.id, label=_2316_label(c), fields=[PdfFieldOut(**f) for f in fields_2316(c)])
+            for c in computed]
+
+
+@router.post("/companies/{company_id}/employees/{year}/2316/preview")
+async def preview_2316(company_id: uuid.UUID, year: int, body: CertificatePreviewIn,
+                       user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    import fitz
+
+    _, computed, employer = await _computed_2316(db, user, company_id, year)
+    c = next((c for c in computed if c.employee.id == body.id), None)
+    if c is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
+    c = _edited_2316(c, body.values)
+
+    def render() -> bytes:
+        doc = fitz.open()
+        fill_2316(doc, c, employer)
+        return doc.tobytes(garbage=3, deflate=True)
+
+    data = await asyncio.get_running_loop().run_in_executor(None, render)
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="2316 preview.pdf"', "Cache-Control": "no-store"})
 
 
 @router.get("/alphalist-status", response_model=list[StatusRow])

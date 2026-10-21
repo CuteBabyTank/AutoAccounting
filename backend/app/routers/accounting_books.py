@@ -10,22 +10,29 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
-from app.models.accounting import AAAccount, AACompany, AADocument, AAJournalEntry
+from app.models.accounting import AAAccount, AACompany, AADocument, AAJournalEntry, AASupplierRule
 from app.models.user import User
 from app.routers.accounting_scope import MANAGER_ROLES, company_or_404, scope_for
 from app.schemas.accounting_books import (
     AccountIn, AccountOut, AccountPatch, BookMonthOut, BooksYearOut, CloseMonthIn, DocRefOut, JournalEntryIn,
-    JournalEntryOut, PaymentLinksOut,
+    JournalEntryOut, PaymentLinksOut, ReopenMonthIn,
 )
+from app.services.accounting import audit
+from app.services.accounting.books import bank
 from app.services.accounting.books.closing import (
-    CloseError, bind_deadline, bind_year, close_month, reopen_month, stored_file, year_status,
+    CloseError, bank_block_message, bind_deadline, bind_year, close_month, reopen_month, stored_file, year_status,
 )
 from app.services.accounting.books.links import doc_ref, invoice_docs, receipt_docs
+from app.services.accounting.books.chart import locked_message
 from app.services.accounting.books.loader import ensure_chart, touch_books
+from app.services.accounting.books.templates import placement
 from app.services.accounting.books.receipts import candidates_for
 from app.services.accounting.compute.depreciation import fiscal_year_window
 
 router = APIRouter()
+
+_ACCOUNT_FIELDS = ("code", "name", "type", "parent_code", "active", "locked", "bank_account_no")
+ENTRY_FIELDS = ("kind", "book", "entry_date", "reference", "particulars", "lines", "is_adjusting")
 
 
 def _require_manager(user: User) -> None:
@@ -45,10 +52,17 @@ async def _account_or_404(db: AsyncSession, ent: uuid.UUID, account_id: uuid.UUI
 async def list_accounts(company_id: uuid.UUID, user: User = Depends(get_current_user),
                         db: AsyncSession = Depends(get_db)):
     company = await company_or_404(db, scope_for(user), company_id)
-    await ensure_chart(db, company)
+    chart = await ensure_chart(db, company)
     await db.commit()
-    return (await db.execute(select(AAAccount).where(AAAccount.company_id == company.id)
+    rows = (await db.execute(select(AAAccount).where(AAAccount.company_id == company.id)
                              .order_by(AAAccount.code))).scalars().all()
+    return [_account_out(r, chart) for r in rows]
+
+
+def _account_out(row: AAAccount, chart) -> AccountOut:
+    out = AccountOut.model_validate(row)
+    out.placement = placement(chart, row.code)
+    return out
 
 
 @router.post("/companies/{company_id}/accounts", response_model=AccountOut, status_code=status.HTTP_201_CREATED)
@@ -62,16 +76,21 @@ async def add_account(company_id: uuid.UUID, body: AccountIn, user: User = Depen
         AAAccount.company_id == company.id, AAAccount.code == body.parent_code))).scalar_one_or_none()
     if parent is None or not parent.active:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Account {body.parent_code} isn't an active account")
-    row = AAAccount(enterprise_id=ent, company_id=company.id, code=body.code, name=body.name.strip(),
-                    type=parent.type, contra=parent.contra, parent_code=parent.code, active=True)
+    row = AAAccount(id=uuid.uuid4(), enterprise_id=ent, company_id=company.id, code=body.code,
+                    name=body.name.strip(), type=parent.type, contra=parent.contra, parent_code=parent.code,
+                    active=True)
     db.add(row)
     touch_books(company)
     try:
+        await db.flush()  # a code clash surfaces here, before the event is added
+        audit.record(db, label=f"{row.code} {row.name}",
+                     ent=ent, company_id=company.id, user=user, entity="account", entity_id=row.id,
+                     action="create", after=audit.snapshot(row, _ACCOUNT_FIELDS))
         await db.commit()
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, f"Account code {body.code} is already in the chart")
-    return row
+    return _account_out(row, await ensure_chart(db, company))
 
 
 @router.patch("/accounts/{account_id}", response_model=AccountOut)
@@ -81,6 +100,7 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, user: User = 
     _require_manager(user)
     row = await _account_or_404(db, ent, account_id)
     company = await company_or_404(db, ent, row.company_id)
+    before = audit.snapshot(row, _ACCOUNT_FIELDS)
     if body.name is not None:
         row.name = body.name.strip()
     if body.active is False and row.active:
@@ -93,20 +113,41 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, user: User = 
             (await db.execute(select(AADocument.id).where(
                 AADocument.company_id == company.id, AADocument.deleted_at.is_(None),
                 AADocument.gl_account_code == row.code).limit(1))).first()
+        used = used or (await db.execute(select(AASupplierRule.id).where(
+            AASupplierRule.company_id == company.id, AASupplierRule.gl_account_code == row.code).limit(1))).first()
         if used:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account is used by journal entries or documents; "
-                                                             "move them to another account first")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account is used by journal entries, documents or a "
+                                                             "supplier's default account; move them with Reclassify "
+                                                             "(or change the supplier default) first")
     if body.active is not None:
         row.active = body.active
+    if body.locked is not None:
+        if body.locked and row.system_key and not row.system_key.startswith("doc:") and row.system_key != "bad_debts":
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "The books post to this account themselves; it can't "
+                                                             "be locked")
+        row.locked = body.locked
+    if body.bank_account_no is not None:
+        if row.type != "asset":
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only asset accounts can carry a bank account number")
+        row.bank_account_no = body.bank_account_no.strip()
+    audit.record(db, label=f"{row.code} {row.name}",
+                 ent=ent, company_id=company.id, user=user, entity="account", entity_id=row.id,
+                 action="update", before=before, after=audit.snapshot(row, _ACCOUNT_FIELDS))
     touch_books(company)
     await db.commit()
-    return row
+    return _account_out(row, await ensure_chart(db, company))
+
+
+def entry_label(row: AAJournalEntry) -> str:
+    return " · ".join(p for p in (row.entry_date.isoformat() if row.entry_date else "", row.reference,
+                                  row.particulars) if p)
 
 
 def _entry_out(row: AAJournalEntry) -> JournalEntryOut:
     return JournalEntryOut(id=row.id, kind=row.kind, book=row.book, entry_date=row.entry_date,
                            reference=row.reference, particulars=row.particulars, lines=row.lines,
-                           created_at=row.created_at)
+                           is_adjusting=bool(row.is_adjusting), is_writeoff=bool(row.writeoff_items),
+                           recurring=row.recurring_id is not None, created_at=row.created_at)
 
 
 async def _check_entry(db: AsyncSession, company: AACompany, body: JournalEntryIn,
@@ -119,17 +160,37 @@ async def _check_entry(db: AsyncSession, company: AACompany, body: JournalEntryI
             AAJournalEntry.deleted_at.is_(None), AAJournalEntry.id != (entry_id or uuid.uuid4())))).first()
         if clash:
             raise HTTPException(status.HTTP_409_CONFLICT, "This company already has opening balances; edit them")
-    elif body.entry_date < company.books_start:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"The books start on {company.books_start:%b %d, %Y}; date the entry on or after it")
     chart = await ensure_chart(db, company)
+    kept: set[str] = set()
+    if entry_id is not None:  # lines already on a locked account (posted before the lock) may stay
+        stored = await db.get(AAJournalEntry, entry_id)
+        kept = {str(x.get("account_code", "")) for x in (stored.lines or [])} if stored else set()
+    message = entry_problem(chart, body, company.books_start, kept)
+    if message:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, message)
+
+
+def entry_problem(chart, body: JournalEntryIn, books_start, kept: set[str] | frozenset = frozenset()) -> str:
+    """Why a typed (or imported) journal entry can't post ("" when it can): date, inactive or locked accounts."""
+    if body.kind != "opening" and body.entry_date < books_start:
+        return f"The books start on {books_start:%b %d, %Y}; date the entry on or after it"
     bad = sorted({l.account_code for l in body.lines
                   if chart.get(l.account_code) is None or not chart.get(l.account_code).active})
     if bad:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Not active accounts in the chart: {', '.join(bad)}")
+        return f"Not active accounts in the chart: {', '.join(bad)}"
+    return locked_message(chart, [l.account_code for l in body.lines if l.account_code not in kept])
 
 
-def _lines_json(body: JournalEntryIn) -> list[dict]:
+def new_entry_row(ent: uuid.UUID, company: AACompany, body: JournalEntryIn, user: User) -> AAJournalEntry:
+    """A journal entry row from a validated body (the opening balances always sit on the books start)."""
+    return AAJournalEntry(id=uuid.uuid4(), enterprise_id=ent, company_id=company.id, kind=body.kind, book=body.book,
+                          entry_date=company.books_start if body.kind == "opening" else body.entry_date,
+                          reference=body.reference, particulars=body.particulars or (
+                              "Opening balances" if body.kind == "opening" else ""),
+                          lines=lines_json(body), is_adjusting=body.is_adjusting, created_by=user.id)
+
+
+def lines_json(body: JournalEntryIn) -> list[dict]:
     return [{"account_code": l.account_code, "debit": str(l.debit), "credit": str(l.credit),
              "party_name": l.party_name.strip(), "party_tin": l.party_tin.strip()} for l in body.lines]
 
@@ -153,12 +214,11 @@ async def create_journal_entry(company_id: uuid.UUID, body: JournalEntryIn, user
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
     await _check_entry(db, company, body)
-    row = AAJournalEntry(enterprise_id=ent, company_id=company.id, kind=body.kind, book=body.book,
-                         entry_date=company.books_start if body.kind == "opening" else body.entry_date,
-                         reference=body.reference, particulars=body.particulars or (
-                             "Opening balances" if body.kind == "opening" else ""),
-                         lines=_lines_json(body), created_by=user.id)
+    row = new_entry_row(ent, company, body, user)
     db.add(row)
+    audit.record(db, label=entry_label(row),
+                 ent=ent, company_id=company.id, user=user, entity="journal_entry", entity_id=row.id,
+                 action="create", after=audit.snapshot(row, ENTRY_FIELDS))
     touch_books(company)
     await db.commit()
     return _entry_out(row)
@@ -179,10 +239,18 @@ async def update_journal_entry(entry_id: uuid.UUID, body: JournalEntryIn, user: 
     ent = scope_for(user)
     row = await _entry_or_404(db, ent, entry_id)
     company = await company_or_404(db, ent, row.company_id)
+    if row.writeoff_items:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A write-off can't be edited (its lines are tied to the "
+                                                         "invoices): delete it, which reopens them, and write off again")
     await _check_entry(db, company, body, entry_id=row.id)
+    before = audit.snapshot(row, ENTRY_FIELDS)
     row.kind, row.book, row.reference, row.particulars = body.kind, body.book, body.reference, body.particulars
     row.entry_date = company.books_start if body.kind == "opening" else body.entry_date
-    row.lines = _lines_json(body)
+    row.lines = lines_json(body)
+    row.is_adjusting = body.is_adjusting
+    audit.record(db, label=entry_label(row),
+                 ent=ent, company_id=company.id, user=user, entity="journal_entry", entity_id=row.id,
+                 action="update", before=before, after=audit.snapshot(row, ENTRY_FIELDS))
     touch_books(company)
     await db.commit()
     return _entry_out(row)
@@ -194,7 +262,12 @@ async def delete_journal_entry(entry_id: uuid.UUID, user: User = Depends(get_cur
     ent = scope_for(user)
     row = await _entry_or_404(db, ent, entry_id)
     company = await company_or_404(db, ent, row.company_id)
+    if row.writeoff_items and user.role not in MANAGER_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and managers can undo a write-off")
     row.deleted_at = datetime.now(timezone.utc)
+    audit.record(db, label=entry_label(row),
+                 ent=ent, company_id=company.id, user=user, entity="journal_entry", entity_id=row.id,
+                 action="delete", before=audit.snapshot(row, ENTRY_FIELDS), after=None)
     touch_books(company)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -231,6 +304,11 @@ async def document_payments(doc_id: uuid.UUID, user: User = Depends(get_current_
 
 # --- Closing months, loose-leaf PDFs and binding -------------------------------------------------------------------
 
+def _month(row) -> dict:
+    return {"fiscal_year": row.fiscal_year, "month_start": row.month_start.isoformat(),
+            "month_end": row.month_end.isoformat()}
+
+
 async def _books_year(db: AsyncSession, company: AACompany, fiscal_year: int) -> BooksYearOut:
     months, bound = await year_status(db, company, fiscal_year)
     return BooksYearOut(
@@ -255,18 +333,28 @@ async def close_books_month(body: CloseMonthIn, company_id: uuid.UUID, user: Use
     _require_manager(user)
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
+    month_start, month_end = bank.month_bounds(body.month_start)
+    unreconciled = await bank.unreconciled_accounts(db, company.id, month_start, month_end)
+    blocked = bank_block_message(unreconciled, month_start, body.override_reason)
+    if blocked:
+        raise HTTPException(status.HTTP_409_CONFLICT, blocked)
     try:
         row = await close_month(db, company, user.id, ent, body.month_start)
     except CloseError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
     touch_books(company)  # entry numbers are final now
+    await db.flush()
+    audit.record(db, label=audit.month_label(row.month_start),
+                 ent=ent, company_id=company.id, user=user, entity="books_month", entity_id=row.id,
+                 action="close", after={**_month(row), **({"unreconciled_bank": unreconciled} if unreconciled else {})},
+                 reason=body.override_reason.strip() if unreconciled else "")
     await db.commit()
     return await _books_year(db, company, row.fiscal_year)
 
 
 @router.post("/companies/{company_id}/books/reopen", response_model=BooksYearOut)
-async def reopen_books_month(company_id: uuid.UUID, user: User = Depends(get_current_user),
-                             db: AsyncSession = Depends(get_db)):
+async def reopen_books_month(company_id: uuid.UUID, body: ReopenMonthIn | None = None,
+                             user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     _require_manager(user)
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
@@ -274,6 +362,10 @@ async def reopen_books_month(company_id: uuid.UUID, user: User = Depends(get_cur
         row = await reopen_month(db, company)
     except CloseError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
+    audit.record(db, label=audit.month_label(row.month_start),
+                 ent=ent, company_id=company.id, user=user, entity="books_month", entity_id=row.id,
+                 action="reopen", before={"status": "closed"}, after={"status": "open"},
+                 reason=body.reason if body else "")
     touch_books(company)
     await db.commit()
     return await _books_year(db, company, row.fiscal_year)
@@ -286,9 +378,13 @@ async def bind_books_year(company_id: uuid.UUID, fiscal_year: int, user: User = 
     ent = scope_for(user)
     company = await company_or_404(db, ent, company_id)
     try:
-        await bind_year(db, company, user.id, ent, fiscal_year)
+        row = await bind_year(db, company, user.id, ent, fiscal_year)
     except CloseError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
+    await db.flush()
+    audit.record(db, label=f"FY {fiscal_year}",
+                 ent=ent, company_id=company.id, user=user, entity="books_month", entity_id=row.id,
+                 action="bind", after={"fiscal_year": fiscal_year, "books": sorted(row.files or {})})
     await db.commit()
     return await _books_year(db, company, fiscal_year)
 

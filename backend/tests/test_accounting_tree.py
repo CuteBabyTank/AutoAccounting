@@ -73,3 +73,21 @@ def test_build_tree_shows_a_year_that_only_has_outputs():
     assert year["year"] == 2025 and [q["quarter"] for q in year["quarters"]] == [4, 3, 2, 1]
     q2 = next(q for q in year["quarters"] if q["quarter"] == 2)
     assert (q2["document_count"], q2["latest_version"], q2["filed"]) == (0, 1, True)
+
+
+def test_bank_nodes_group_accounts_and_months_by_fiscal_year():
+    from datetime import date
+
+    from app.services.accounting.tree import bank_nodes
+
+    rows = [(uuid.UUID(A), "1020", date(2026, 12, 1), 8, 1), (uuid.UUID(A), "1020", date(2026, 11, 1), 5, 0),
+            (uuid.UUID(A), "", date(2026, 12, 1), 3, 3)]
+    nodes = bank_nodes(rows, {(A, "1020", date(2026, 11, 1))},
+                       {(A, "1020"): ("Cash in bank", "0041-2288-7710")}, {A: 12})
+    [bank, unset] = nodes[(A, 2026)]
+    assert bank["account_code"] == "1020" and bank["last4"] == "7710"
+    assert [(m["month_start"], m["open"], m["reconciled"]) for m in bank["months"]] == [
+        (date(2026, 12, 1), 1, False), (date(2026, 11, 1), 0, True)]
+    assert unset["account_code"] == "" and unset["name"] == "Account not set"
+    tree = build_tree([TreeCompanyInput(A, "Juan", "", False, 12)], [], None, nodes)
+    assert tree[0]["years"][0]["year"] == 2026 and tree[0]["years"][0]["bank"][0]["account_code"] == "1020"

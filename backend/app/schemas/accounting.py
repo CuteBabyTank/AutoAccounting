@@ -36,6 +36,7 @@ def _tin_base(value: str) -> str:
 class CompanyIn(BaseModel):
     registered_name: str = Field(min_length=1, max_length=255)
     aliases: list[str] = Field(default_factory=list, max_length=20)
+    owner_names: list[str] = Field(default_factory=list, max_length=20)
     tin: str = Field(min_length=9, max_length=25)
     branch_code: str = "00000"
     rdo_code: str = Field(default="", max_length=5)
@@ -69,7 +70,7 @@ class CompanyIn(BaseModel):
             raise ValueError("Registered name is required")
         return v
 
-    @field_validator("aliases")
+    @field_validator("aliases", "owner_names")
     @classmethod
     def _clean_aliases(cls, v: list[str]) -> list[str]:
         return [a.strip()[:255] for a in v if a and a.strip()]
@@ -102,6 +103,11 @@ class CompanyIn(BaseModel):
         order = ("SJ", "PJ", "CRJ", "CDJ", "GJ", "GL")
         self.books_kept = [b for b in order if b in set(kept) | {"GJ", "GL"}]
         return self
+
+
+class CompanyCreateIn(CompanyIn):
+    # "" = the standard chart (seeded on first use); a built-in template key or a firm template id
+    coa_template: str = Field(default="", max_length=40)
 
 
 class CompanyOut(CompanyIn):
@@ -195,10 +201,25 @@ class TreeAnnualOut(BaseModel):
     filed: bool = False
 
 
+class TreeBankMonthOut(BaseModel):
+    month_start: date
+    lines: int
+    open: int
+    reconciled: bool
+
+
+class TreeBankAccountOut(BaseModel):
+    account_code: str
+    name: str
+    last4: str = ""
+    months: list[TreeBankMonthOut]
+
+
 class TreeYearOut(BaseModel):
     year: int
     quarters: list[TreeQuarterOut]
     annual: TreeAnnualOut = Field(default_factory=TreeAnnualOut)
+    bank: list[TreeBankAccountOut] = Field(default_factory=list)
 
 
 class TreeCompanyOut(BaseModel):
@@ -234,10 +255,12 @@ class DocumentOut(BaseModel):
     period_locked: bool
     seller_name: str
     seller_tin: str
+    seller_branch: str = ""
     seller_address: str
     seller_vat_registered: bool | None
     buyer_name: str
     buyer_tin: str
+    buyer_branch: str = ""
     buyer_address: str
     gross_amount: Decimal
     vatable_amount: Decimal
@@ -250,6 +273,8 @@ class DocumentOut(BaseModel):
     ewt_atc_source: str = ""      # document | supplier | account | "" (built-in suggestion)
     ewt_atc_suggestion: str = ""  # this supplier's ATC in another company of the firm (not applied)
     ewt_atc_suggestion_company: str = ""
+    ewt_atc_best: str = ""        # the decision tree's pick (an ATC or NONE), shown first in the picker
+    ewt_atc_best_reason: str = ""
     rule_applied_to: int = 0  # after a correction: the supplier's other unreviewed documents it also changed
     paid_on: date | None = None
     paid_via: str = ""
@@ -262,6 +287,7 @@ class DocumentOut(BaseModel):
     confidence: float
     needs_review: bool
     review_reasons: list[str]
+    review_notes: dict = Field(default_factory=dict)
     reviewed: bool
     excluded: bool
     created_at: datetime
@@ -281,13 +307,14 @@ class DuplicatePairOut(BaseModel):
 
     original: DocumentOut
     duplicate: DocumentOut
-    reason: Literal["same_number", "same_details"]
+    reason: Literal["same_number", "same_details", "number_reused"]
     original_file: str
     duplicate_file: str
 
 
 class NotDuplicateIn(BaseModel):
     other_id: uuid.UUID
+    reason: str = Field(default="", max_length=500)   # why both are kept (audit log)
 
 
 class DocumentPatch(BaseModel):
@@ -301,8 +328,11 @@ class DocumentPatch(BaseModel):
     period_quarter: int | None = Field(default=None, ge=1, le=4)
     seller_name: str | None = Field(default=None, max_length=255)
     seller_tin: str | None = None
+    seller_branch: str | None = Field(default=None, pattern=r"^\d{0,5}$")
+    seller_address: str | None = Field(default=None, max_length=500)
     buyer_name: str | None = Field(default=None, max_length=255)
     buyer_tin: str | None = None
+    buyer_branch: str | None = Field(default=None, pattern=r"^\d{0,5}$")
     gross_amount: Decimal | None = _money_field()
     vatable_amount: Decimal | None = _money_field()
     vat_amount: Decimal | None = _money_field()
@@ -318,6 +348,8 @@ class DocumentPatch(BaseModel):
     payment_ref: str | None = Field(default=None, max_length=60)
     gl_account_code: str | None = Field(default=None, max_length=10)
     settles_document_id: uuid.UUID | None = None
+    # Why (audit log only, never stored on the document): e.g. accepting a review flag anyway.
+    reason: str | None = Field(default=None, max_length=500)
 
     @field_validator("seller_tin", "buyer_tin")
     @classmethod
@@ -459,6 +491,35 @@ class PdfsIn(BaseModel):
     clean: bool = False
 
 
+class FormEditIn(BaseModel):
+    """Hand edits to one form of a version: item key → new value (preview, or saved as a new version)."""
+    form: str = Field(max_length=20)
+    values: dict[str, str] = Field(default_factory=dict, max_length=400)
+
+
+class PdfFieldOut(BaseModel):
+    key: str
+    label: str
+    value: str
+    kind: Literal["amount", "text"]
+
+
+class CertificateOut(BaseModel):
+    id: str
+    label: str
+    fields: list[PdfFieldOut]
+
+
+class CertificatePreviewIn(BaseModel):
+    id: str = Field(max_length=64)
+    values: dict[str, str] = Field(default_factory=dict, max_length=200)
+
+
+class CertificatesIn(BaseModel):
+    """Edits per certificate id for the exported zip."""
+    edits: dict[str, dict[str, str]] = Field(default_factory=dict, max_length=2000)
+
+
 class PeriodOut(BaseModel):
     company: CompanyBrief
     year: int
@@ -483,6 +544,7 @@ class ItemOut(BaseModel):
     value: str
     changed: bool
     before: str | None
+    engine: str | None = None  # the figure from the books, when this one was edited by hand
 
 
 class FormOut(BaseModel):
@@ -648,11 +710,23 @@ class AtcSupplierOut(BaseModel):
     ewt_atc: str
     suggestion: str = ""
     suggestion_company: str = ""
+    automatic: str = ""          # ATC(s) the returns use for its documents with no supplier ATC
+    hint: str = ""               # the decision tree's ATC (or NONE) to adopt, when it differs
+    hint_reason: str = ""
+    best: str = ""               # the decision tree's pick (an ATC or NONE), shown first in the picker
+    best_reason: str = ""
 
 
 class AtcDefaultOut(BaseModel):
     account: str
     ewt_atc: str
+    suggestion: str = ""  # what AutoAccounting picks with no default, e.g. "WI100 / WC100"
+
+
+class AtcCodeOut(BaseModel):
+    code: str
+    nature: str
+    rate: Decimal  # fraction, e.g. 0.05
 
 
 class AtcDatabankOut(BaseModel):

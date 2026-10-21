@@ -7,7 +7,7 @@ import time
 import uuid as _uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -16,7 +16,8 @@ from app import startup_migrations
 from app.config import settings, validate_secrets_at_startup
 from app.database import DB_POOLER, engine
 from app.logging_config import setup_logging
-from app.routers import accounting, admin, auth, team
+from app.routers import accounting, admin, auth, features, team
+from app.services.features import feature_gate
 from app.auth.security import global_ip_limiter
 
 logger = logging.getLogger("app")
@@ -264,9 +265,12 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> Resp
 # ---------------------------------------------------------------------------
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-app.include_router(team.router, prefix="/api/team", tags=["team"])
+# Maintenance switches (services/features.py): a feature the platform admin turned off answers 503.
+app.include_router(team.router, prefix="/api/team", tags=["team"], dependencies=[Depends(feature_gate)])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
-app.include_router(accounting.router, prefix="/api/accounting", tags=["accounting"])
+app.include_router(features.router, prefix="/api/features", tags=["features"])
+app.include_router(accounting.router, prefix="/api/accounting", tags=["accounting"],
+                   dependencies=[Depends(feature_gate)])
 
 
 @app.get("/api/health")

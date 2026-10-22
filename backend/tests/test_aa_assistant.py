@@ -1427,3 +1427,96 @@ async def test_global_search_route_keeps_existing_response(monkeypatch):
     result = await accounting_search.search(q="ace", types="document", limit=1, user=None, db=None)
     assert result == {"query": "ace", "too_short": False,
                       "groups": [{"type": "document", "items": [best], "more": True}]}
+
+
+# ---- which returns a month / quarter covers -----------------------------------------------------------------------
+
+_Q3_FORMS = ["2550Q", "1702Q", "0619E-M1", "0619E-M2", "1601EQ", "1601C-M1", "1601C-M2", "1601C-M3"]
+_Q3_DUE = {"2550Q": "2026-10-26", "1702Q": "2026-12-01", "0619E-M1": "2026-08-10", "0619E-M2": "2026-09-10",
+           "1601EQ": "2026-11-02", "1601C-M1": "2026-08-10", "1601C-M2": "2026-09-10", "1601C-M3": "2026-10-12"}
+
+
+def test_form_period_resolves_relative_months_and_quarters():
+    from app.services.accounting.assistant.windows import form_period
+    today = date(2026, 10, 22)
+    assert form_period(today, 12, "last_month") == (2026, 3, 3)    # September = month 3 of Q3
+    assert form_period(today, 12, "this_month") == (2026, 4, 1)
+    assert form_period(today, 12, "last_quarter") == (2026, 3, None)
+    assert form_period(date(2026, 1, 5), 12, "last_month") == (2025, 4, 3)
+    assert form_period(today, 6, "last_month") == (2027, 1, 3)     # June year end: September closes fiscal Q1
+
+
+def test_form_rows_say_what_each_return_covers():
+    rows = tools.form_rows(_Q3_FORMS, _Q3_DUE, set(), 2026, 3, 12)
+    by = {r["key"]: r for r in rows}
+    assert by["1601C-M3"]["form"] == "1601-C" and by["1601C-M3"]["covers"] == "September 2026"
+    assert by["0619E-M1"]["covers"] == "July 2026" and by["0619E-M1"]["due"] == "2026-08-10"
+    assert by["2550Q"]["covers"] == "Q3 2026 (July to September 2026)"
+    assert "month 1" not in by["1601C-M1"]["title"] and by["1601C-M1"]["title"].startswith("BIR Form 1601-C")
+    assert by["1601C-M2"]["why"] and by["1601EQ"]["why"] and not by["2550Q"]["filed"]
+
+
+def test_form_rows_for_one_month():
+    sept = tools.form_rows(_Q3_FORMS, _Q3_DUE, {"2550Q"}, 2026, 3, 12, month=3)
+    assert [r["key"] for r in sept] == ["2550Q", "1702Q", "1601EQ", "1601C-M3"]
+    assert next(r for r in sept if r["key"] == "2550Q")["filed"]
+    july = tools.form_rows(_Q3_FORMS, _Q3_DUE, set(), 2026, 3, 12, month=1)
+    assert [r["key"] for r in july] == ["0619E-M1", "1601C-M1"]
+
+
+def test_reference_titles_are_not_month_specific():
+    for e in tools.reference_corpus():
+        assert "of the quarter)" not in e["title"], e["title"]
+
+
+def test_ungrounded_flags_a_date_no_source_gave():
+    sources = ['{"form": "1702Q", "due": "2026-12-01"}', "2550Q is due October 26, 2026."]
+    assert guard.ungrounded("2550Q is due October 26, 2026 and 1702Q December 1, 2026.", sources) == []
+    assert guard.ungrounded("1702Q is due November 26, 2026.", sources) == ["November 26, 2026"]
+
+
+async def test_quarter_returns_without_a_period_takes_the_one_said(monkeypatch):
+    script = Script(_call("quarter_returns", company="Bayanihan"), _say("1601-C for September."))
+    _, calls = await _events(script, monkeypatch, {"quarter_returns": tools.Result({"forms": []})},
+                             question="Which forms are needed for last month?")
+    assert calls == [("quarter_returns", {"company": "Bayanihan", "period": "last_month"})]
+
+
+async def test_answer_from_bir_notes_alone_is_looked_up_in_the_records(monkeypatch):
+    history = [{"role": "user", "text": "Which forms for last month for Bayanihan?"},
+               {"role": "assistant", "text": "2550Q, 0619E-M1 and 1601C-M3."}]
+    script = Script(_call("tax_reference", query="0619-E"), _say("0619-E isn't required, no records found."),
+                    _call("quarter_returns", company="Bayanihan", period="last_month"), _say("Only 1601-C and 2550Q."))
+    events, calls = await _events(script, monkeypatch, {
+        "tax_reference": tools.Result({"matches": []}), "quarter_returns": tools.Result({"forms": []})},
+        question="including month 1 month 2? i thought its only the end of the quarter", history=history)
+    assert [c[0] for c in calls] == ["tax_reference", "quarter_returns"]
+    assert events[-1]["answer"] == "Only 1601-C and 2550Q."
+
+
+def test_humanize_month_range():
+    assert guard.humanize("Q3 2026 (July – September 2026)") == "Q3 2026 (July to September 2026)"
+    assert guard.humanize("Q3 (Jul–Sep)") == "Q3 (Jul to Sep)"
+
+
+async def test_unknown_company_error_names_the_firms_companies(monkeypatch):
+    rows = [SimpleNamespace(registered_name="Alpha Corp."), SimpleNamespace(registered_name="Beta Inc.")]
+
+    class Rows:
+        def __init__(self, data):
+            self.data = data
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return self.data
+
+    results = iter([Rows([]), Rows(rows)])
+
+    async def execute(_query):
+        return next(results)
+
+    ctx = SimpleNamespace(db=SimpleNamespace(execute=execute), ent="e1")
+    with pytest.raises(tools.ToolError, match="Alpha Corp., Beta Inc."):
+        await tools.resolve_company(ctx, "ABC Corp")

@@ -46,3 +46,15 @@ def report_window(today: date, fye: int, period: ReportPeriod) -> tuple[date, da
         return first, today
     last = first - timedelta(days=1)
     return fy_start(last, fye), last
+
+
+FormPeriod = Literal["this_month", "last_month", "this_quarter", "last_quarter"]
+FORM_PERIODS = ("this_month", "last_month", "this_quarter", "last_quarter")
+
+
+def form_period(today: date, fye: int, period: FormPeriod) -> tuple[int, int, int | None]:
+    """(fiscal year, fiscal quarter, month of that quarter) of a relative period; the month is None for a quarter."""
+    if period not in FORM_PERIODS:
+        raise ValueError(f"period must be one of {', '.join(FORM_PERIODS)}")
+    where = period_for(report_window(today, fye, period)[0], fye)
+    return where.fiscal_year, where.quarter, where.month_in_quarter if period.endswith("month") else None

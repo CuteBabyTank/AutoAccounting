@@ -21,7 +21,8 @@ from app.models.accounting import AACompany, AADocument
 from app.models.user import User
 from app.routers.accounting_scope import company_or_404, scope_for
 from app.schemas.accounting import manila_today
-from app.services.accounting.assistant.windows import REPORT_PERIODS, ReportPeriod, day_window, report_window
+from app.services.accounting.assistant.windows import (FORM_PERIODS, REPORT_PERIODS, ReportPeriod, day_window,
+                                                       form_period, report_window)
 from app.services.accounting.report_export import jsonable
 from app.services.accounting.search import like_pattern
 
@@ -88,11 +89,16 @@ async def resolve_company(ctx: Ctx, ref: str | None) -> AACompany:
         except HTTPException:
             raise ToolError("No company with that id in this firm. Call list_companies.") from None
     base = select(AACompany).where(AACompany.enterprise_id == ctx.ent)
+
+    async def firm_names() -> str:  # so the model can ask the person without another lookup
+        rows = (await ctx.db.execute(base.order_by(AACompany.registered_name).limit(13))).scalars().all()
+        return ", ".join(c.registered_name for c in rows[:12]) + (", …" if len(rows) > 12 else "")
+
     if not ref:
         rows = (await ctx.db.execute(base.limit(2))).scalars().all()
         if len(rows) == 1:
             return rows[0]
-        raise ToolError("Which company? This firm has several: call list_companies.")
+        raise ToolError(f"Which company? This firm has several: {await firm_names()}. Ask the person which one.")
     pattern = like_pattern(ref.strip())
     rows = (await ctx.db.execute(base.where(or_(
         AACompany.registered_name.ilike(pattern, escape="\\"),
@@ -102,7 +108,8 @@ async def resolve_company(ctx: Ctx, ref: str | None) -> AACompany:
     if len(exact) == 1 or len(rows) == 1:
         return (exact or rows)[0]
     if not rows:
-        raise ToolError(f"No company matches {ref!r}. Call list_companies to see the firm's companies.")
+        raise ToolError(f"No company matches {ref!r}. This firm's companies: {await firm_names()}. Use one of these "
+                        "names, or ask the person which one.")
     names = ", ".join(c.registered_name for c in rows)
     raise ToolError(f"Several companies match {ref!r}: {names}. Ask the person which one.")
 
@@ -364,32 +371,85 @@ async def filings(ctx: Ctx, company: str | None = None, start: str | None = None
 
 # ---- quarter_returns ----------------------------------------------------------------------------------------------
 
-async def quarter_returns(ctx: Ctx, year: int, quarter: int, company: str | None = None,
-                          form: str | None = None) -> Result:
+_FORM_WHY = {
+    "2550Q": "VAT-registered",
+    "2551Q": "not VAT-registered, so it pays percentage tax",
+    "1701Q": "quarterly income tax (Q1 to Q3; Q4 is the annual return)",
+    "1702Q": "quarterly income tax (Q1 to Q3; Q4 is the annual return)",
+    "0619E": "withholding agent: expanded withholding for months 1 and 2 (month 3 is in the 1601-EQ)",
+    "1601EQ": "withholding agent: the quarter's expanded withholding, months 1 to 3",
+    "1601C": "has employees: withholding on compensation, filed for every month",
+}
+
+
+def _form_title(key: str) -> str:
+    from app.services.accounting.compute.specs import FORM_TITLES
+    return FORM_TITLES.get(key, key).split(" (month ")[0]
+
+
+def form_rows(expected: list[str], due: dict[str, str], filed: set[str], year: int, quarter: int, fye: int,
+              month: int | None = None) -> list[dict]:
+    """Each expected return with the month or quarter it covers; ``month`` (1–3 of the quarter) keeps the returns
+    covering that month: its monthly ones, plus the quarter's own returns when it is the quarter's last month."""
+    from app.services.accounting.compute.due_dates import month_start, quarter_end, quarter_start
+
+    def named(d: date) -> str:
+        return d.strftime("%B %Y")
+
+    quarter_covers = (f"Q{quarter} {year} ({quarter_start(year, quarter, fye).strftime('%B')} to "
+                      f"{named(quarter_end(year, quarter, fye))})")
+    rows = []
+    for key in expected:
+        base, _, m = key.partition("-M")
+        of_month = int(m) if m else None
+        if month is not None and of_month != month and not (of_month is None and month == 3):
+            continue
+        rows.append({"key": key, "form": _form_title(key).split(" — ")[0].removeprefix("BIR Form "),
+                     "title": _form_title(key),
+                     "covers": named(month_start(year, quarter, fye, of_month)) if of_month else quarter_covers,
+                     "due": due.get(key), "filed": key in filed, "why": _FORM_WHY.get(base, "")})
+    return rows
+
+
+async def quarter_returns(ctx: Ctx, year: int | None = None, quarter: int | None = None, company: str | None = None,
+                          form: str | None = None, period: str | None = None) -> Result:
     from app.routers.accounting_periods import get_output, get_period
 
-    try:
-        year, quarter = int(year), int(quarter)
-    except (TypeError, ValueError):
-        raise ToolError("year and quarter must be numbers") from None
-    if not (2000 <= year <= 2100 and 1 <= quarter <= 4):
-        raise ToolError("year must be 2000–2100 and quarter 1–4 (the company's fiscal quarter)")
+    month = None
+    if not period:
+        try:
+            year, quarter = int(year), int(quarter)
+        except (TypeError, ValueError):
+            raise ToolError("Give year and quarter as numbers, or period (e.g. last_month)") from None
+        if not (2000 <= year <= 2100 and 1 <= quarter <= 4):
+            raise ToolError("year must be 2000–2100 and quarter 1–4 (the company's fiscal quarter)")
     c = await resolve_company(ctx, company)
-    period = await _http(get_period(company_id=c.id, year=year, quarter=quarter, user=ctx.user, db=ctx.db))
-    data: dict = {**_company_brief(c), "period": period.label, "forms_expected": period.forms_expected,
-                  "due_dates": period.due_dates, "documents": period.document_count,
-                  "open_reviews": period.open_reviews,
-                  "filed": {k: {"version": v.version, "filed_at": v.filed_at, "paid_on": v.paid_on}
-                            for k, v in period.filed_forms.items()}
-                  if period.filed_forms else {},
-                  "latest_version": period.latest_version,
-                  "stale": period.stale or period.books_stale}
-    if period.outputs:
-        latest = max(period.outputs, key=lambda o: o.version)
+    if period:
+        try:
+            year, quarter, month = form_period(manila_today(), c.fiscal_year_end_month, period)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from None
+    p = await _http(get_period(company_id=c.id, year=year, quarter=quarter, user=ctx.user, db=ctx.db))
+    rows = form_rows(p.forms_expected, p.due_dates, set(p.filed_forms or {}), year, quarter,
+                     c.fiscal_year_end_month, month)
+    data: dict = {**_company_brief(c), "period": p.label}
+    if month is not None:
+        from app.services.accounting.compute.due_dates import month_start
+        data["asked_for"] = (f"{month_start(year, quarter, c.fiscal_year_end_month, month).strftime('%B %Y')}, "
+                             f"month {month} of Q{quarter}")
+    data.update({"forms": rows,
+                 "note": "These are the returns AutoAccounting has this company filing. List them all; never drop "
+                         "one or call it not required.",
+                 "documents": p.document_count, "open_reviews": p.open_reviews,
+                 "latest_version": p.latest_version, "stale": p.stale or p.books_stale})
+    if p.outputs:
+        latest = max(p.outputs, key=lambda o: o.version)
         out = await _http(get_output(output_id=latest.id, user=ctx.user, db=ctx.db))
         wanted = (form or "").replace("-", "").upper()
+        kept = {r["key"] for r in rows}
         data["figures"] = {f.form: [{"item": i.label, "value": i.value} for i in f.items if i.value not in ("", "0.00")]
-                           for f in out.forms if not wanted or f.form.replace("-", "").upper().startswith(wanted)}
+                           for f in out.forms if (f.form in kept or f.form not in p.forms_expected)
+                           and (not wanted or f.form.replace("-", "").upper().startswith(wanted))}
         data["warnings"] = out.warnings
     else:
         data["note"] = "No version generated yet: the figures appear once someone clicks Generate in the quarter folder."
@@ -407,7 +467,8 @@ def reference_corpus() -> list[dict]:
     out = []
     for form, text in _GUIDE.items():
         titles = [t for k, t in FORM_TITLES.items() if k.replace("-", "").startswith(form)]
-        out.append({"kind": "form", "key": form, "title": titles[0] if titles else form, "text": text})
+        out.append({"kind": "form", "key": form, "title": titles[0].split(" (month ")[0] if titles else form,
+                    "text": text})
     for code, nature, rate in ewt_codes():
         out.append({"kind": "atc", "key": code, "title": f"ATC {code}", "text": f"{nature} — {rate_percent(rate)}% "
                                                                               "expanded withholding tax"})
@@ -495,11 +556,14 @@ TOOLS: tuple[Tool, ...] = (
                   "overdue_only": {"type": "boolean", "description": "Overdue filings (any due date in the past "
                                                                      "year); use for 'what is overdue / late'"}}),
          filings),
-    Tool("quarter_returns", "One fiscal quarter's BIR returns for a company: forms expected, due dates, filed or not, "
-         "and the figures of the latest generated version (VAT payable, EWT, percentage tax, income tax).",
+    Tool("quarter_returns", "A company's BIR returns for a month or fiscal quarter: each form with the month or "
+         "quarter it covers, why the company files it, due date, filed or not, and the figures of the latest "
+         "generated version (VAT payable, EWT, percentage tax, income tax). Use period for this/last month or "
+         "quarter (a month gives only the returns covering that month); else year and quarter.",
          _schema({"company": _COMPANY, "year": {"type": "integer", "description": "Fiscal year"},
                   "quarter": {"type": "integer", "description": "1-4"},
-                  "form": {"type": "string", "description": "Optional, e.g. 2550Q, 1601EQ"}}, ("year", "quarter")),
+                  "period": {"type": "string", "enum": list(FORM_PERIODS)},
+                  "form": {"type": "string", "description": "Optional, e.g. 2550Q, 1601EQ"}}),
          quarter_returns),
     Tool("tax_reference", "AutoAccounting's BIR notes: what a return is for and when it's due, and expanded "
          "withholding ATC codes with their nature and rate.",

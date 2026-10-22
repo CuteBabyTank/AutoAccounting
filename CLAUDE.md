@@ -254,6 +254,11 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   names when it asks "which company?" (named ones, else all when ≤ 6), else `["Yes"]` for a yes/no; the dock shows
   them as buttons plus "No, I'll type it" / "Something else". A short reply is read with the question it answers
   (`guard.topic`). The Next dev indicator sits bottom-left (`next.config.ts`) so it doesn't cover the launcher.
+  `quarter_returns` takes `period` (this/last month|quarter, resolved by `windows.form_period`; a month keeps only the
+  returns covering it: its monthly forms, plus the quarter's own on month 3) and lists each form with what it covers,
+  why the company files it, due date and filed (`tools.form_rows`). Grounding also checks dates (ISO or spelled out).
+  An answer from BIR notes alone that claims what the records hold / what is required is sent back to the records once
+  (`guard.claims_records`). Unknown / missing company errors list the firm's company names so the model can ask.
   Per-person rate limit: 40 turns / 10 minutes. Search sends the model the best 10 hits across all record kinds
   (`tools.SEARCH_K`) with true per-kind and overall totals (counts above 1000 per kind are marked as at least 1000);
   sources are limited to 12; list results to 25 (filings 50), GL lines 30.

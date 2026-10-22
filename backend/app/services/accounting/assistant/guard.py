@@ -76,13 +76,29 @@ def _derived(seen: set[str]) -> set[str]:
     return out
 
 
+_ABBR = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+_SPELLED_DATE = re.compile(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),?\s+((?:19|20)\d\d)\b",
+                           re.I)
+_ANY_ISO_DATE = re.compile(r"\b((?:19|20)\d\d)-(\d\d)-(\d\d)\b")
+
+
+def dates(text: str) -> set[str]:
+    """ISO dates in ``text``, whether written 2026-10-26 or October 26, 2026."""
+    out = {m.group() for m in _ANY_ISO_DATE.finditer(text or "")}
+    for m in _SPELLED_DATE.finditer(text or ""):
+        out.add(f"{m.group(3)}-{_ABBR.index(m.group(1).lower()) + 1:02d}-{int(m.group(2)):02d}")
+    return out
+
+
 def ungrounded(answer: str, sources: list[str]) -> list[str]:
-    """Figures in the answer that appear in none of the sources (question, history, tool results)."""
+    """Figures and dates in the answer that appear in none of the sources (question, history, tool results)."""
     seen: set[str] = set()
+    seen_dates: set[str] = set()
     for s in sources:
         seen |= numbers(s)
+        seen_dates |= dates(s)
     seen |= _derived(seen)
-    out = []
+    out = [m.group() for m in _SPELLED_DATE.finditer(answer or "") if not dates(m.group()) <= seen_dates]
     for m in _NUMBER.finditer(answer or ""):
         n = _norm(m.group())
         if n is None or n in seen or float(n) <= _SMALL or _YEAR.fullmatch(m.group()):
@@ -168,8 +184,9 @@ _MONTHS = ("January", "February", "March", "April", "May", "June", "July", "Augu
            "November", "December")
 _ISO_DATE = re.compile(r"\b(20\d\d)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b")
 _MONTH = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b"
-# A range: an en dash or an unspaced dash between numbers, or any dash before a month ("Jul 1 – Sep 30").
-_RANGE_DASH = re.compile(rf"(\d)(?:\s*–\s*(?=\d|{_MONTH})|—(?=\d)|\s*(?:--|—)\s*(?={_MONTH}))")
+# A range: an en dash or an unspaced dash between numbers, or any dash before a month ("Jul 1 – Sep 30",
+# "July – September").
+_RANGE_DASH = re.compile(rf"(\d|{_MONTH})(?:\s*–\s*(?=\d|{_MONTH})|—(?=\d)|\s*(?:--|—)\s*(?={_MONTH}))")
 _DASH = re.compile(r"\s*(?:--+|[–—])\s*|\s+-\s+")  # a spaced single hyphen is a dash too ("2026 - 71 days")
 _EMOJI = re.compile("[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F2FF\uFE0F\u200D]+[ \t]?")
 
@@ -234,6 +251,15 @@ _ABOUT_CHAT = re.compile(r"\b(?:did i (?:say|tell|mention)|i (?:said|told|mentio
 def firm_question(question: str) -> bool:
     """A question about the firm's records (needs a fresh lookup), not chit-chat or a question about the chat itself."""
     return bool(_FIRM_WORDS.search(question or "")) and not _ABOUT_CHAT.search(question or "")
+
+
+_RECORD_CLAIM = re.compile(r"\brecords?\b|\b(?:none|nothing|no \w+(?: \w+)?) (?:was |were )?found\b"
+                           r"|\bnot (?:required|needed|due|filed)\b|\bdoesn'?t (?:need|have) to file\b", re.I)
+
+
+def claims_records(answer: str) -> bool:
+    """An answer stating what the company's records hold or what it must file (needs more than the BIR notes)."""
+    return bool(_RECORD_CLAIM.search(answer or ""))
 
 
 def declines(answer: str) -> bool:

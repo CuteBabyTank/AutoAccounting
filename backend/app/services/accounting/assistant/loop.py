@@ -29,6 +29,7 @@ from app.config import settings
 from app.schemas.accounting import manila_today
 from app.services.accounting.assistant import guard, llm, tools
 from app.services.accounting.assistant.prompt import system_instruction
+from app.services.accounting.assistant.windows import FORM_PERIODS
 
 logger = logging.getLogger("assistant")
 
@@ -264,6 +265,16 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                                      "date. Look this question up again with the tools, then answer."})
                     answer = ""
                     continue
+                if (used and set(used) == {"tax_reference"} and not nudged_fresh and guard.claims_records(answer)
+                        and _step + 1 < MAX_STEPS and remaining >= 1.5 * settings.assistant_llm_timeout_seconds):
+                    # BIR notes say what a return is for, not whether this company owes it.
+                    nudged_fresh = True
+                    contents.append({"role": "assistant", "content": answer})
+                    contents.append({"role": "user", "content": "You only read general BIR notes. Check this "
+                                     "company's own records (quarter_returns or filings) before saying what it "
+                                     "files, owes or has on record, then answer."})
+                    answer = ""
+                    continue
                 if await _needs_clarification(ctx, answer, used, coverage):
                     yield await with_replies(ctx, clarify_event(answer))
                     return
@@ -332,6 +343,10 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                     said = guard.period_from(topic)  # the model dropped the period the person asked for
                     if said:
                         args = {**args, "period": said}
+                if name == "quarter_returns" and not invalid and not (args.get("period") or args.get("quarter")):
+                    said = guard.period_from(topic)
+                    if said in FORM_PERIODS:
+                        args = {**args, "period": said}
                 if index >= MAX_CALLS_PER_STEP:
                     invalid = "Too many calls in one round; use fewer tools."
                 if name == "ask_clarification" and not invalid:
@@ -390,7 +405,7 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
         caveat = (f"\n\nI only checked {coverage.names()}; other companies weren't checked."
                   if guard.overreach(answer) and not coverage.firm_wide else "")
         answer = cap_answer(answer)
-        context = [question, *(t.text for t in turns), *observed]
+        context = [question, manila_today().isoformat(), *(t.text for t in turns), *observed]
         loose = guard.ungrounded(answer, context)
         if loose and guard.unsupported_money_claim(answer, len(used)):
             answer, loose = NO_FIGURE, []

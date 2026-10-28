@@ -218,12 +218,12 @@ export default function FileGrid({ folder, category, onCategory, onOpen, onEditC
                       <input type="checkbox" aria-label={`Select ${d.doc_number || d.id}`} checked={picked.has(d.id)} onChange={() => toggle(d.id)} />
                     </td>
                   )}
-                  <td className="py-2 pr-3 whitespace-nowrap">{d.doc_date ?? "—"}</td>
+                  <td className="py-2 pr-3 whitespace-nowrap">{d.doc_date ?? "No date"}</td>
                   <td className="py-2 pr-3">
                     {d.document_title || CATEGORY_LABELS[d.category]}
                     {d.doc_number && <span className="text-[var(--text-secondary)]"> #{d.doc_number}</span>}
                   </td>
-                  <td className="py-2 pr-3">{counterpartyName(d) || "—"}</td>
+                  <td className="py-2 pr-3">{counterpartyName(d) || "Unknown"}</td>
                   {inReview ? (
                     <td className="py-2">
                       <div className="flex flex-wrap gap-1">

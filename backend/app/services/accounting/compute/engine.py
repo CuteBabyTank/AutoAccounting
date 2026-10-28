@@ -271,7 +271,7 @@ def build_quarter(company: CompanyFacts, periods: list[PeriodData], amended: boo
     # 5. Warnings.
     review_open = sum(1 for l in target.lines if l.open_review)
     if review_open:
-        warnings.insert(0, f"{review_open} document(s) in this quarter still need review — this output is a DRAFT.")
+        warnings.insert(0, f"{review_open} document(s) in this quarter still need review, so this output is a DRAFT.")
     unsplit = sum(1 for l in target.lines if _unsplit(l)) if company.vat_registered else 0
     if unsplit:
         warnings.append(f"{unsplit} sales document(s) have a total but no VATable, zero-rated or exempt amount. "

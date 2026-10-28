@@ -120,7 +120,7 @@ export default function CompanyHealth({ companyId, refreshKey = 0, compact }: Pr
           label="Over 90 days"
           hint="Invoices and bills more than 90 days past their due date and still open. Old receivables may need follow-up or a write-off; old payables may be paid but missing the receipt."
         >
-          A/R {health.ar_over_90_count} · <span className="aa-amount">₱{formatPeso(health.ar_over_90_amount)}</span> — A/P {health.ap_over_90_count} · <span className="aa-amount">₱{formatPeso(health.ap_over_90_amount)}</span>
+          A/R {health.ar_over_90_count} · <span className="aa-amount">₱{formatPeso(health.ar_over_90_amount)}</span>, A/P {health.ap_over_90_count} · <span className="aa-amount">₱{formatPeso(health.ap_over_90_amount)}</span>
         </Check>
         <Check
           ok={health.negative_balances.length === 0}

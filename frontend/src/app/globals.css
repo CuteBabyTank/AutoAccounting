@@ -7,23 +7,23 @@
  *
  * LIGHT MODE DESIGN RATIONALE:
  *
- * 1. Base (#f1f5f9 Slate-100) — NOT pure white. Reduces screen glare
+ * 1. Base (#f1f5f9 Slate-100), NOT pure white. Reduces screen glare
  *    while staying neutral. Cards (#fff) create clear elevation contrast.
  *
- * 2. Text (#0f172a Slate-900) — NOT pure black. 15.4:1 contrast ratio
+ * 2. Text (#0f172a Slate-900), NOT pure black. 15.4:1 contrast ratio
  *    on white surfaces passes WCAG AAA. Dark enough to read, soft enough
  *    to not fatigue the eyes.
  *
- * 3. Borders (#cbd5e1 Slate-300) — Visible structural lines without
+ * 3. Borders (#cbd5e1 Slate-300): visible structural lines without
  *    being heavy. Previous #e2e8f0 disappeared against the background.
  *
- * 4. Badge backgrounds (12% opacity) — Previous 8% was invisible.
+ * 4. Badge backgrounds (12% opacity). Previous 8% was invisible.
  *    12% creates the "tinted pill" look standard in modern UI.
  *
  * 5. Semantic text uses -800 variants (e.g., Red-800 #991b1b) which
  *    maintain 7:1+ contrast on their tinted backgrounds.
  *
- * 6. Sidebar uses #f8fafc (Slate-50) — sits between the base and card
+ * 6. Sidebar uses #f8fafc (Slate-50) sits between the base and card
  *    colors, creating a three-tone hierarchy: sidebar < base < card.
  */
 
@@ -191,7 +191,7 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════
-   Emil Kowalski — Global App Design Utilities
+   Emil Kowalski: Global App Design Utilities
    Button press feedback, card hover lifts, stagger
    reveals, page entrance, modal animations, focus rings.
    ═══════════════════════════════════════════════════ */
@@ -372,7 +372,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
 }
 ::-webkit-scrollbar-thumb {
   /* 2px transparent border + padding-box clip makes the thumb read as a
-     ~5px floating pill inside a 9px gutter — slim and integrated. */
+     ~5px floating pill inside a 9px gutter, slim and integrated. */
   background: var(--scrollbar-thumb);
   border: 2px solid transparent;
   background-clip: padding-box;
@@ -388,7 +388,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
 }
 
 /* ═══════════════════════════════════════════════════
-   Landing Page — Clean white Finpay-style design
+   Landing Page: clean white Finpay-style design
    Emil Kowalski principles: stagger reveals,
    ease-out entries, button press feedback,
    prefers-reduced-motion.
@@ -439,7 +439,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
    landing look without rewriting every var() reference.
 
    Status hues (success / error / warning / badges /
-   alerts / section-*) are intentionally left untouched —
+   alerts / section-*) are intentionally left untouched;
    red/green/amber read correctly on the emerald canvas.
 
    Light + dark follow automatically: the targets are
@@ -482,7 +482,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
 }
 
 /* ───────────────────────────────────────────────────
-   .lp-skin — token-only emerald skin for app chrome.
+   .lp-skin: token-only emerald skin for app chrome.
    ───────────────────────────────────────────────────
    For elements that carry their own positioning utilities
    (sticky sidebar, fixed sign-out modal, fixed chat bubble/
@@ -550,7 +550,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
 
 /* App cards inside .lp inherit the soft, multi-layer landing elevation
    at rest (replacing the flatter default app shadow) so dense pages get
-   the same premium depth as the marketing surfaces — no per-card edits. */
+   the same premium depth as the marketing surfaces, with no per-card edits. */
 .lp .card-hover {
   box-shadow: 0 1px 2px rgba(11,11,18,.04), 0 10px 30px -16px rgba(11,11,18,.16);
 }
@@ -575,7 +575,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
   font-family: var(--font-display), var(--font-sans), ui-sans-serif, sans-serif;
 }
 
-/* Logo wordmark — Lexend Deca, bold */
+/* Logo wordmark: Lexend Deca, bold */
 .lp-logo-text {
   font-family: var(--font-logo), var(--font-sans), ui-sans-serif, sans-serif;
   font-weight: 700;
@@ -617,7 +617,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
   to { transform: rotate(360deg); }
 }
 
-/* Large teal gradient orb — hero top-right */
+/* Large teal gradient orb, hero top-right */
 .lp-bg-orb-1 {
   position: absolute; top: -120px; right: -200px;
   width: 700px; height: 700px; border-radius: 50%;
@@ -626,7 +626,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
   animation: lp-float 14s ease-in-out infinite;
 }
 
-/* Teal gradient orb — hero bottom-left */
+/* Teal gradient orb, hero bottom-left */
 .lp-bg-orb-2 {
   position: absolute; top: 280px; left: -240px;
   width: 600px; height: 600px; border-radius: 50%;
@@ -635,7 +635,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
   animation: lp-float-reverse 16s ease-in-out infinite;
 }
 
-/* Smaller accent orb — "How It Works" section */
+/* Smaller accent orb for the "How It Works" section */
 .lp-bg-orb-3 {
   position: absolute; right: -140px;
   width: 500px; height: 500px; border-radius: 50%;
@@ -644,7 +644,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
   top: 50%; transform: translateY(-50%);
 }
 
-/* Mid-page teal orb — features/stats area */
+/* Mid-page teal orb, features/stats area */
 .lp-bg-orb-4 {
   position: absolute; bottom: -100px; left: 50%;
   width: 500px; height: 500px; border-radius: 50%;
@@ -653,7 +653,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
   transform: translateX(-50%);
 }
 
-/* Decorative ring outlines — thicker, more visible */
+/* Decorative ring outlines, thicker, more visible */
 .lp-ring {
   position: absolute; border-radius: 50%;
   border: 2px solid var(--lp-accent);
@@ -674,7 +674,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
   animation: lp-float-reverse 20s ease-in-out infinite;
 }
 
-/* Cross/plus accent — larger, bolder */
+/* Cross/plus accent, larger and bolder */
 .lp-cross {
   position: absolute; pointer-events: none; z-index: 0; opacity: 0.22;
 }
@@ -690,7 +690,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
 .lp-cross-3 { bottom: 80px; left: 15%; width: 28px; height: 28px; opacity: 0.16; }
 .lp-cross-4 { top: 500px; left: 85%; width: 28px; height: 28px; opacity: 0.12; animation: lp-float 16s ease-in-out infinite; }
 
-/* Diamond accent — larger, more visible */
+/* Diamond accent, larger and more visible */
 .lp-diamond {
   position: absolute; pointer-events: none; z-index: 0;
   width: 18px; height: 18px;
@@ -701,7 +701,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
 .lp-diamond-2 { top: 70px; right: 16%; opacity: 0.18; animation: lp-float 13s ease-in-out infinite; }
 .lp-diamond-3 { bottom: 120px; right: 8%; opacity: 0.15; }
 
-/* Teal circle accents — solid small dots */
+/* Teal circle accents: solid small dots */
 .lp-dot-accent {
   position: absolute; pointer-events: none; z-index: 0;
   border-radius: 50%;
@@ -712,7 +712,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
 .lp-dot-accent-3 { width: 10px; height: 10px; bottom: 160px; left: 80%; opacity: 0.2; }
 .lp-dot-accent-4 { width: 5px; height: 5px; top: 420px; left: 3%; opacity: 0.2; animation: lp-float 15s ease-in-out infinite; }
 
-/* Reduced motion — disable floating */
+/* Reduced motion: disable floating */
 @media (prefers-reduced-motion: reduce) {
   .lp-bg-orb-1, .lp-bg-orb-2, .lp-ring-1, .lp-ring-2, .lp-ring-3,
   .lp-cross-1, .lp-cross-2, .lp-cross-4,
@@ -892,7 +892,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
   animation: lp-float-reverse 10s ease-in-out infinite;
 }
 
-/* Reduced motion — disable all section shapes */
+/* Reduced motion: disable all section shapes */
 @media (prefers-reduced-motion: reduce) {
   .lp-features-ring, .lp-features-cross, .lp-features-dot, .lp-features-diamond,
   .lp-why-ring, .lp-why-dot-1, .lp-why-dot-2,
@@ -1011,7 +1011,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
   box-shadow: 0 0 0 3px var(--lp-accent-soft);
 }
 
-/* ── Hand-drawn underline accent — thin, gradient, glowing ── */
+/* ── Hand-drawn underline accent: thin, gradient, glowing ── */
 .lp-underline { position: relative; white-space: nowrap; }
 .lp-underline svg {
   position: absolute; left: -2%; bottom: -0.30em;
@@ -1182,7 +1182,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
 @media (hover: hover) and (pointer: fine) { .lp-card-btn:hover { background: var(--lp-accent-hover); } }
 .lp-card-btn:active { transform: scale(0.97); }
 
-/* ── Section wrapper — transparent so the page backdrop flows seamlessly,
+/* ── Section wrapper: transparent so the page backdrop flows seamlessly,
       no visible band edges between sections ── */
 .lp-section-gray {
   background: transparent;
@@ -1237,7 +1237,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
   line-height: 1; color: var(--lp-accent);
 }
 
-/* ── Reason cards (legacy — kept for compat) ── */
+/* ── Reason cards (legacy, kept for compat) ── */
 .lp-reason-card {
   padding: 1.35rem; border-radius: var(--lp-radius);
   background: var(--lp-bg-card); border: 1px solid var(--lp-border);
@@ -1285,7 +1285,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
 .lp-delay-2 { transition-delay: 120ms; }
 .lp-delay-3 { transition-delay: 180ms; }
 
-/* ═══════ Hero entrance (CSS — runs on mount, replaces framer-motion) ═══════ */
+/* ═══════ Hero entrance (CSS, runs on mount, replaces framer-motion) ═══════ */
 @keyframes lp-rise {
   from { opacity: 0; transform: translateY(20px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -1296,7 +1296,7 @@ tr.aa-focus-flash { outline-offset: -2px; }
 .lp-rise-3 { animation-delay: 240ms; }
 .lp-rise-4 { animation-delay: 400ms; animation-duration: 800ms; }
 
-/* ═══════ HeroDecor float-in + bob (CSS — replaces framer-motion) ═══════ */
+/* ═══════ HeroDecor float-in + bob (CSS, replaces framer-motion) ═══════ */
 @keyframes lp-pop-in {
   from { opacity: 0; transform: scale(0.9) translateY(8px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }

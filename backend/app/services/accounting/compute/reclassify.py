@@ -43,7 +43,7 @@ class Candidate:
 
 def document_main_account(line: DocLine, chart: Chart) -> str | None:
     """The account a purchase / expense or payroll document debits; None for anything a person can't reclassify
-    (sales, 2307s, capital goods — those go through the asset register)."""
+    (sales, 2307s, capital goods; those go through the asset register)."""
     if line.category in ("purchases", "expenses") and line.client_role == "buyer":
         return None if is_capital_goods(line) else chart.doc_account(line.account, line.gl_account)
     if line.category == "payroll":

@@ -1,21 +1,21 @@
 """Titles, item labels and ledger columns for the workbook, the output viewer and the PDF (pure data)."""
 
 FORM_TITLES = {
-    "2550Q": "BIR Form 2550-Q — Quarterly Value-Added Tax Return",
-    "2551Q": "BIR Form 2551-Q — Quarterly Percentage Tax Return",
-    "1701Q": "BIR Form 1701-Q — Quarterly Income Tax Return (Individuals)",
-    "1702Q": "BIR Form 1702-Q — Quarterly Income Tax Return (Non-Individuals)",
+    "2550Q": "BIR Form 2550-Q: Quarterly Value-Added Tax Return",
+    "2551Q": "BIR Form 2551-Q: Quarterly Percentage Tax Return",
+    "1701Q": "BIR Form 1701-Q: Quarterly Income Tax Return (Individuals)",
+    "1702Q": "BIR Form 1702-Q: Quarterly Income Tax Return (Non-Individuals)",
     "COGS": "Cost of goods sold",
     "Expenses": "Deductions",
 }
 WHOLE_PESO_FORMS = frozenset({"1701Q", "1702Q"})
 WITHHOLDING_MONTHLY = ("0619E-M1", "0619E-M2", "1601C-M1", "1601C-M2", "1601C-M3")
 for _m in (1, 2):
-    FORM_TITLES[f"0619E-M{_m}"] = (f"BIR Form 0619-E — Monthly Remittance of Expanded Withholding Tax "
+    FORM_TITLES[f"0619E-M{_m}"] = (f"BIR Form 0619-E: Monthly Remittance of Expanded Withholding Tax "
                                    f"(month {_m} of the quarter)")
-FORM_TITLES["1601EQ"] = "BIR Form 1601-EQ — Quarterly Remittance Return of Expanded Withholding Tax"
+FORM_TITLES["1601EQ"] = "BIR Form 1601-EQ: Quarterly Remittance Return of Expanded Withholding Tax"
 for _m in (1, 2, 3):
-    FORM_TITLES[f"1601C-M{_m}"] = (f"BIR Form 1601-C — Monthly Remittance Return of Tax Withheld on Compensation "
+    FORM_TITLES[f"1601C-M{_m}"] = (f"BIR Form 1601-C: Monthly Remittance Return of Tax Withheld on Compensation "
                                    f"(month {_m} of the quarter)")
 
 FORM_ORDER = ("2550Q", "2551Q", "1701Q", "1702Q", "0619E-M1", "0619E-M2", "1601EQ", "1601C-M1", "1601C-M2",
@@ -74,17 +74,17 @@ FORM_ITEMS: dict[str, tuple[tuple[str, str], ...]] = {
         ("S2_9", "Sched 2 · 9 Total taxable income to date"), ("S2_10", "Sched 2 · 10 Applicable income tax rate (%)"),
         ("S2_11", "Sched 2 · 11 Income tax due other than MCIT"),
         ("S2_12", "Sched 2 · 12 Minimum corporate income tax (MCIT)"), ("S2_13", "Sched 2 · 13 Total income tax due"),
-        ("S3_1", "Sched 3 · 1 Gross income — 1st quarter"), ("S3_2", "Sched 3 · 2 Gross income — 2nd quarter"),
-        ("S3_3", "Sched 3 · 3 Gross income — 3rd quarter"), ("S3_4", "Sched 3 · 4 Total gross income"),
+        ("S3_1", "Sched 3 · 1 Gross income, 1st quarter"), ("S3_2", "Sched 3 · 2 Gross income, 2nd quarter"),
+        ("S3_3", "Sched 3 · 3 Gross income, 3rd quarter"), ("S3_4", "Sched 3 · 4 Total gross income"),
         ("S3_5", "Sched 3 · 5 MCIT rate (%)"), ("S3_6", "Sched 3 · 6 Minimum corporate income tax"),
         ("S4_1", "Sched 4 · 1 Prior year's excess credits"),
         ("S4_2", "Sched 4 · 2 Tax payments for previous quarters"),
         ("S4_3", "Sched 4 · 3 MCIT payments for previous quarters"),
-        ("S4_4", "Sched 4 · 4 Creditable tax withheld — previous quarters"),
-        ("S4_5", "Sched 4 · 5 Creditable tax withheld per 2307 — this quarter"),
+        ("S4_4", "Sched 4 · 4 Creditable tax withheld in previous quarters"),
+        ("S4_5", "Sched 4 · 5 Creditable tax withheld per 2307 this quarter"),
         ("S4_6", "Sched 4 · 6 Tax paid in return previously filed"), ("S4_7", "Sched 4 · 7 Total tax credits/payments"),
-        ("14", "14 Income tax due — regular rate"), ("15", "15 Less: unexpired excess MCIT"),
-        ("16", "16 Balance/income tax still due"), ("17", "17 Add: income tax due — special rate"),
+        ("14", "14 Income tax due at the regular rate"), ("15", "15 Less: unexpired excess MCIT"),
+        ("16", "16 Balance/income tax still due"), ("17", "17 Add: income tax due at the special rate"),
         ("18", "18 Aggregate income tax due"), ("19", "19 Less: total tax credits/payments"),
         ("20", "20 Net tax payable/(overpayment)"), ("21", "21 Surcharge"), ("22", "22 Interest"),
         ("23", "23 Compromise"), ("24", "24 Total penalties"), ("25", "25 TOTAL AMOUNT PAYABLE/(overpayment)"),
@@ -101,8 +101,8 @@ FORM_ITEMS: dict[str, tuple[tuple[str, str], ...]] = {
         ("51", "51 Cumulative taxable income as of this quarter"),
         ("52", "52 Less: allowable reduction (₱250,000)"), ("53", "53 Taxable income to date"),
         ("54", "54 TAX DUE (8%)"), ("55", "55 Prior year's excess credits"),
-        ("56", "56 Tax payments for previous quarters"), ("57", "57 Creditable tax withheld — previous quarters"),
-        ("58", "58 Creditable tax withheld per 2307 — this quarter"),
+        ("56", "56 Tax payments for previous quarters"), ("57", "57 Creditable tax withheld in previous quarters"),
+        ("58", "58 Creditable tax withheld per 2307 this quarter"),
         ("59", "59 Tax paid in return previously filed"), ("60", "60 Foreign tax credits"),
         ("61", "61 Other tax credits/payments"), ("62", "62 Total tax credits/payments"),
         ("63", "63 Tax payable/(overpayment)"), ("64", "64 Surcharge"), ("65", "65 Interest"),
@@ -125,8 +125,8 @@ _1601EQ_SCHEDULE = tuple(
     for part, label in (("ATC", "ATC"), ("BASE", "tax base"), ("RATE", "tax rate (%)"), ("TAX", "tax withheld"))
 )
 _1601EQ_ITEMS = _1601EQ_SCHEDULE + (
-    ("19", "19 Total taxes withheld for the quarter"), ("20", "20 Less: remittance made — 1st month"),
-    ("21", "21 Less: remittance made — 2nd month"), ("22", "22 Tax remitted in return previously filed"),
+    ("19", "19 Total taxes withheld for the quarter"), ("20", "20 Less: remittance made in the 1st month"),
+    ("21", "21 Less: remittance made in the 2nd month"), ("22", "22 Tax remitted in return previously filed"),
     ("23", "23 Over-remittance from previous quarter"), ("24", "24 Other payments made"),
     ("25", "25 Total remittances made"), ("26", "26 Tax still due/(over-remittance)"), ("27", "27 Surcharge"),
     ("28", "28 Interest"), ("29", "29 Compromise"), ("30", "30 Total penalties"),
@@ -189,10 +189,10 @@ EXPENSE_LABELS = {
     "transportation": "Transportation", "repairs": "Repairs and maintenance", "taxes_licenses": "Taxes and licenses",
     "other": "Other expenses", "payroll": "Salaries and wages (payroll)",
     "contributions": "SSS, PhilHealth and Pag-IBIG (employer share)",
-    "representation": "Representation — total this quarter",
-    "representation_allowed": "Representation — deductible this quarter",
-    "representation_disallowed_ytd": "Representation above the cap — year to date (not deductible)",
-    "capital_goods_not_expensed": "Capital goods bought (in the asset register, depreciated — not expensed)",
+    "representation": "Representation, total this quarter",
+    "representation_allowed": "Representation deductible this quarter",
+    "representation_disallowed_ytd": "Representation above the cap, year to date (not deductible)",
+    "capital_goods_not_expensed": "Capital goods bought (in the asset register, depreciated, not expensed)",
     "depreciation": "Depreciation (asset register)",
     "total_deductions": "Total deductions this quarter",
 }
@@ -200,8 +200,8 @@ EXPENSE_LABELS = {
 LEDGER_ORDER = ("SLS", "SLP", "SAWT", "QAP", "Transactions")
 LEDGER_TITLES = {
     "SLS": "Summary List of Sales", "SLP": "Summary List of Purchases",
-    "SAWT": "SAWT — certificates (2307) received", "Transactions": "Transactions",
-    "QAP": "QAP — alphalist of payees (expanded withholding)",
+    "SAWT": "SAWT: certificates (2307) received", "Transactions": "Transactions",
+    "QAP": "QAP: alphalist of payees (expanded withholding)",
 }
 LEDGER_COLUMNS: dict[str, tuple[tuple[str, str, str], ...]] = {
     "SLS": (("tin", "TIN", "text"), ("name", "Registered name", "text"), ("address", "Address", "text"),
@@ -239,9 +239,9 @@ def form_items(form: str, values: dict) -> list[tuple[str, str]]:
 # --- Annual returns (Phase 4a) ---------------------------------------------------------------
 
 FORM_TITLES.update({
-    "1702RT": "BIR Form 1702-RT — Annual Income Tax Return (Corporations and Partnerships, Regular Rate)",
-    "1701": "BIR Form 1701 — Annual Income Tax Return (Individuals)",
-    "1701A": "BIR Form 1701-A — Annual Income Tax Return (Individuals Earning Purely from Business/Profession)",
+    "1702RT": "BIR Form 1702-RT: Annual Income Tax Return (Corporations and Partnerships, Regular Rate)",
+    "1701": "BIR Form 1701: Annual Income Tax Return (Individuals)",
+    "1701A": "BIR Form 1701-A: Annual Income Tax Return (Individuals Earning Purely from Business/Profession)",
     "BalanceSheet": "Balance sheet (from the annual inputs; not on the January 2018 return)",
 })
 FORM_ORDER = ("2550Q", "2551Q", "1701Q", "1702Q", "1702RT", "1701", "1701A", "0619E-M1", "0619E-M2", "1601EQ",
@@ -254,8 +254,8 @@ ANNUAL_FORMS = ("1702RT", "1701", "1701A")
 _ORDINARY = (("5", "Depreciation"), ("6", "Entertainment, amusement and recreation"), ("11", "Rental"),
              ("13", "Salaries, wages and allowances"), ("14", "SSS, GSIS, PhilHealth, HDMF and other contributions"),
              ("15", "Taxes and licenses"),
-             ("16", "Transportation and travel"), ("17B", "Others — professional fees"),
-             ("17D", "Others — utilities, supplies, repairs and other expenses"),
+             ("16", "Transportation and travel"), ("17B", "Others: professional fees"),
+             ("17D", "Others: utilities, supplies, repairs and other expenses"),
              ("18", "Total ordinary allowable itemized deductions"))
 
 
@@ -295,10 +295,10 @@ FORM_ITEMS["1702RT"] = (
     ("40", "40 Applicable income tax rate (%)"), ("41", "41 Income tax due other than MCIT"),
     ("42", "42 MCIT due (MCIT rate × item 33)"), ("43", "43 Tax due (higher of 41 and 42)"),
     ("44", "44 Prior year's excess credits other than MCIT"),
-    ("45", "45 Income tax payments under MCIT — previous quarters"),
-    ("46", "46 Income tax payments under regular rate — previous quarters"),
-    ("47", "47 Excess MCIT applied this year"), ("48", "48 Creditable tax withheld — previous quarters (2307)"),
-    ("49", "49 Creditable tax withheld — 4th quarter (2307)"), ("50", "50 Foreign tax credits"),
+    ("45", "45 Income tax payments under MCIT in previous quarters"),
+    ("46", "46 Income tax payments under regular rate in previous quarters"),
+    ("47", "47 Excess MCIT applied this year"), ("48", "48 Creditable tax withheld in previous quarters (2307)"),
+    ("49", "49 Creditable tax withheld in the 4th quarter (2307)"), ("50", "50 Foreign tax credits"),
     ("51", "51 Tax paid in return previously filed"), ("52", "52 Special tax credits"),
     ("53", "53 Other tax credits/payments"), ("54", "54 Other tax credits/payments"),
     ("55", "55 Total tax credits/payments"), ("56", "56 Net tax payable/(overpayment)"),
@@ -318,7 +318,7 @@ FORM_ITEMS["1701"] = (
     ("27", "27 Interest"), ("28", "28 Surcharge"), ("29", "29 Compromise"), ("30", "30 Total penalties"),
     ("31", "31 TOTAL AMOUNT PAYABLE/(overpayment)"), ("32", "32 Aggregate amount payable/(overpayment)"),
     ("S2_4", "Sched 2 · 4 Gross compensation income (2316)"), ("S2_5", "Sched 2 · 5 Less: non-taxable/exempt compensation"),
-    ("S2_6", "Sched 2 · 6 Taxable compensation income"), ("S2_7", "Sched 2 · 7 Tax due — compensation income"),
+    ("S2_6", "Sched 2 · 6 Taxable compensation income"), ("S2_7", "Sched 2 · 7 Tax due on compensation income"),
     ("S3_8", "Sched 3.A · 8 Sales/revenues/receipts/fees"), ("S3_9", "Sched 3.A · 9 Less: sales returns"),
     ("S3_10", "Sched 3.A · 10 Net sales/revenues/receipts/fees"), ("S3_11", "Sched 3.A · 11 Less: cost of sales"),
     ("S3_12", "Sched 3.A · 12 Gross income/(loss) from operation"),
@@ -327,13 +327,13 @@ FORM_ITEMS["1701"] = (
     ("S3_16", "Sched 3.A · 16 Total allowable itemized deductions"), ("S3_17", "Sched 3.A · 17 OSD"),
     ("S3_18", "Sched 3.A · 18 Net income/(loss)"), ("S3_19", "Sched 3.A · 19 Other non-operating income"),
     ("S3_20", "Sched 3.A · 20 Other non-operating income"), ("S3_21", "Sched 3.A · 21 Share in GPP income"),
-    ("S3_22", "Sched 3.A · 22 Total other non-operating income"), ("S3_23", "Sched 3.A · 23 Taxable income — business"),
+    ("S3_22", "Sched 3.A · 22 Total other non-operating income"), ("S3_23", "Sched 3.A · 23 Taxable income from business"),
     ("S3_24", "Sched 3.A · 24 Total taxable income"), ("S3_25", "Sched 3.A · 25 Tax due (graduated rates)"),
     ("S3_26", "Sched 3.B · 26 Sales/revenues/receipts/fees"), ("S3_27", "Sched 3.B · 27 Other non-operating income"),
     ("S3_28", "Sched 3.B · 28 Total income"),
     ("S3_29", "Sched 3.B · 29 Less: ₱250,000 (not if with compensation income)"),
-    ("S3_30", "Sched 3.B · 30 Taxable income"), ("S3_31", "Sched 3.B · 31 Tax due — business (8%)"),
-    ("S3_32", "Sched 3.B · 32 Total tax due — compensation and business"),
+    ("S3_30", "Sched 3.B · 30 Taxable income"), ("S3_31", "Sched 3.B · 31 Tax due on business (8%)"),
+    ("S3_32", "Sched 3.B · 32 Total tax due on compensation and business"),
 ) + _ordinary("S4", "Sched 4") + (
     ("S6_1", "Sched 6.A · 1 Gross income"), ("S6_2", "Sched 6.A · 2 Ordinary allowable itemized deductions"),
     ("S6_3", "Sched 6.A · 3 Net operating loss"),
@@ -342,8 +342,8 @@ FORM_ITEMS["1701"] = (
     ("P6_3", "Part VI · 3 Share of other government agency"), ("P6_4", "Part VI · 4 Net special rate tax due"),
     ("P6_5", "Part VI · 5 Total income tax due"), ("P7_1", "Part VII · 1 Prior year's excess credits"),
     ("P7_2", "Part VII · 2 Tax payments for the first three quarters"),
-    ("P7_3", "Part VII · 3 Creditable tax withheld — first three quarters"),
-    ("P7_4", "Part VII · 4 Creditable tax withheld — 4th quarter (2307)"),
+    ("P7_3", "Part VII · 3 Creditable tax withheld in the first three quarters"),
+    ("P7_4", "Part VII · 4 Creditable tax withheld in the 4th quarter (2307)"),
     ("P7_5", "Part VII · 5 Creditable tax withheld per 2316"), ("P7_6", "Part VII · 6 Tax paid in return previously filed"),
     ("P7_7", "Part VII · 7 Foreign tax credits"), ("P7_8", "Part VII · 8 Special tax credits"),
     ("P7_9", "Part VII · 9 Other tax credits/payments"), ("P7_10", "Part VII · 10 Total tax credits/payments"),
@@ -369,8 +369,8 @@ FORM_ITEMS["1701A"] = (
     ("54", "54 Less: allowable reduction (₱250,000)"), ("55", "55 Taxable income/(loss)"),
     ("56", "56 TAX DUE (8%)"), ("57", "57 Prior year's excess credits"),
     ("58", "58 Tax payments for the first three quarters"),
-    ("59", "59 Creditable tax withheld — first three quarters"),
-    ("60", "60 Creditable tax withheld — 4th quarter (2307)"), ("61", "61 Tax paid in return previously filed"),
+    ("59", "59 Creditable tax withheld in the first three quarters"),
+    ("60", "60 Creditable tax withheld in the 4th quarter (2307)"), ("61", "61 Tax paid in return previously filed"),
     ("62", "62 Foreign tax credits"), ("63", "63 Other tax credits/payments"),
     ("64", "64 Total tax credits/payments"), ("65", "65 Net tax payable/(overpayment)"),
 )

@@ -404,7 +404,7 @@ def form_rows(expected: list[str], due: dict[str, str], filed: set[str], year: i
         of_month = int(m) if m else None
         if month is not None and of_month != month and not (of_month is None and month == 3):
             continue
-        rows.append({"key": key, "form": _form_title(key).split(" — ")[0].removeprefix("BIR Form "),
+        rows.append({"key": key, "form": _form_title(key).split(": ")[0].removeprefix("BIR Form "),
                      "title": _form_title(key),
                      "covers": named(month_start(year, quarter, fye, of_month)) if of_month else quarter_covers,
                      "due": due.get(key), "filed": key in filed, "why": _FORM_WHY.get(base, "")})
@@ -470,7 +470,7 @@ def reference_corpus() -> list[dict]:
         out.append({"kind": "form", "key": form, "title": titles[0].split(" (month ")[0] if titles else form,
                     "text": text})
     for code, nature, rate in ewt_codes():
-        out.append({"kind": "atc", "key": code, "title": f"ATC {code}", "text": f"{nature} — {rate_percent(rate)}% "
+        out.append({"kind": "atc", "key": code, "title": f"ATC {code}", "text": f"{nature}, {rate_percent(rate)}% "
                                                                               "expanded withholding tax"})
     return out
 

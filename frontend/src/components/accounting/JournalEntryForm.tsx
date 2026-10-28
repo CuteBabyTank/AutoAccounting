@@ -104,7 +104,7 @@ export default function JournalEntryForm({ accounts, initial, busy, onCancel, on
         </button>
         <span className={problem ? "text-[var(--alert-error-text)]" : "text-[var(--text-secondary)]"}>
           Debits ₱{(debit / 100).toLocaleString("en-PH", { minimumFractionDigits: 2 })} · Credits ₱{(credit / 100).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-          {problem && ` — ${problem}`}
+          {problem && `: ${problem}`}
         </span>
         <span className="ml-auto flex gap-2">
           <button className="rounded-lg border border-[var(--border)] px-3 py-1.5" onClick={onCancel}>Cancel</button>

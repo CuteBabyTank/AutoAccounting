@@ -47,7 +47,7 @@ class User(Base):
     special_page_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Tiered pricing config. When set, takes precedence over page_rate / special_page_rate.
     # Shape: [{"up_to": int|None, "rate": float}, ...] sorted by up_to ascending; trailing
-    # null up_to = unbounded last tier. Tiers apply per-document — each file walks
+    # null up_to = unbounded last tier. Tiers apply per document: each file walks
     # the ladder from page 1 independent of monthly history.
     page_rate_tiers: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     budget: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")

@@ -386,11 +386,11 @@ def _sheet(wb: Workbook, title: str, heading: str, columns, rows: list[dict], co
 def alphalist_workbook(company: AACompany, year: int, tabs: dict, warnings: list[str]) -> bytes:
     wb = Workbook()
     wb.remove(wb.active)
-    _sheet(wb, "Schedule 1", "Schedule 1 – Alphalist of Employees (Declared and Certified using BIR Form No. 2316)",
+    _sheet(wb, "Schedule 1", "Schedule 1: Alphalist of Employees (Declared and Certified using BIR Form No. 2316)",
            _S1 + _PREV_1 + _TAIL, tabs["Schedule1"], company, year)
-    _sheet(wb, "Schedule 2", "Schedule 2 – Alphalist of Minimum Wage Earners (Declared and Certified using BIR Form "
+    _sheet(wb, "Schedule 2", "Schedule 2: Alphalist of Minimum Wage Earners (Declared and Certified using BIR Form "
            "No. 2316)", _S2 + _PREV_2 + _TAIL, tabs["Schedule2"], company, year)
-    _sheet(wb, "1604-C remittances", "BIR Form 1604-C Part II – Summary of Remittances (from the 1601-C returns)",
+    _sheet(wb, "1604-C remittances", "BIR Form 1604-C Part II: Summary of Remittances (from the 1601-C returns)",
            (("month", "", "Month"), ("remitted_on", "", "Date of Remittance"), ("withheld", "", "Taxes Withheld"),
             ("adjustment", "", "Adjustment"), ("penalties", "", "Penalties"), ("total", "", "Total Amount Remitted"),
             ("source", "", "Source")), tabs["Remittances"], company, year)

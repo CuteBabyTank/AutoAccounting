@@ -33,7 +33,7 @@ class Pack:
 
 def _ratio(value, pct: bool) -> str:
     if value is None:
-        return "—"
+        return "n/a"
     return f"{value:,.2f}%" if pct else f"{value:,.2f}"
 
 

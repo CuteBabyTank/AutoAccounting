@@ -1,4 +1,4 @@
-"""Quarterly VAT return, BIR Form 2550-Q (April 2024 ENCS) — pure."""
+"""Quarterly VAT return, BIR Form 2550-Q (April 2024 ENCS). Pure."""
 
 from dataclasses import dataclass
 from decimal import Decimal
@@ -27,7 +27,7 @@ def compute_2550q(lines, inputs: PeriodInputs, carry_in: Decimal) -> VatResult:
     unclaimed = [l for l in buys if not claims_input_vat(l, True)]
 
     i: dict[str, Decimal] = {}
-    # Part IV — sales and output tax
+    # Part IV: sales and output tax
     i["31A"] = total(l.vatable for l in sales)
     i["31B"] = c2(i["31A"] * VAT_RATE)
     i["32A"] = total(l.zero_rated for l in sales)
@@ -70,7 +70,7 @@ def compute_2550q(lines, inputs: PeriodInputs, carry_in: Decimal) -> VatResult:
     i["59B"] = c2(i["57B"] - i["58B"])  # settled payables restore the input VAT 55B took out
     i["60B"] = c2(i["51B"] - i["59B"])
     i["61B"] = c2(i["37B"] - i["60B"])
-    # Part II — total tax payable
+    # Part II: total tax payable
     i["15"] = i["61B"]
     i["16"] = c2(inputs.vat_withheld)
     i["17"] = c2(inputs.advance_vat)

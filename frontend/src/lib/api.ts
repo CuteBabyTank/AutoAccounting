@@ -56,7 +56,7 @@ api.interceptors.response.use(
     }
     if (error.response?.status === 401 && typeof window !== "undefined") {
       sessionStorage.removeItem(TOKEN_KEY);
-      // Don't hard-redirect here — AuthGate handles routing.
+      // Don't hard-redirect here; AuthGate handles routing.
     }
     return Promise.reject(error);
   }

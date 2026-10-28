@@ -54,12 +54,12 @@ function useFirstPages(doc: AADocument): string[] {
 }
 
 const ROWS: [string, (d: AADocument) => string][] = [
-  ["Document no.", (d) => d.doc_number || "—"],
-  ["Date", (d) => d.doc_date ?? "—"],
-  ["Counterparty", (d) => counterpartyName(d) || "—"],
+  ["Document no.", (d) => d.doc_number || "None"],
+  ["Date", (d) => d.doc_date ?? "None"],
+  ["Counterparty", (d) => counterpartyName(d) || "None"],
   ["TIN", (d) => {
     const tin = d.client_role === "seller" ? d.buyer_tin : d.seller_tin;
-    return tin ? formatTin(tin) : "—";
+    return tin ? formatTin(tin) : "None";
   }],
   ["Total", (d) => formatPeso(d.gross_amount)],
   ["VAT", (d) => formatPeso(d.vat_amount)],

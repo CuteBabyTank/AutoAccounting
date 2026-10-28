@@ -104,7 +104,7 @@ def books_warnings(tabs: dict, inputs: PeriodInputs, has_employees: bool, chart:
     row = next((r for r in tabs.get("TB", []) if output_vat and r.get("code") == output_vat), None)
     off = abs(c2((row or {}).get("credit") or 0) - c2((row or {}).get("debit") or 0))
     if off > _VAT_TOLERANCE:  # the quarter's VAT close clears what the 2550-Q carries; the rest stays
-        warnings.append(f"Output VAT in the books differs from the 2550-Q by ₱{off:,.2f} — check sales documents "
+        warnings.append(f"Output VAT in the books differs from the 2550-Q by ₱{off:,.2f}. Check the sales documents "
                         "whose VAT isn't 12% of the VATable amount.")
     if inputs.non_operating_income > 0 and not _gl_activity(tabs, chart.code("other_income")):
         warnings.append(f"Other income of ₱{inputs.non_operating_income:,.2f} is in the quarter inputs but not in "

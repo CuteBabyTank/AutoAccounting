@@ -11,7 +11,7 @@ import type { CompanyKpis } from "@/types/accounting";
 const TILE = "rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2";
 
 function ratio(value: string | null, pct: boolean): string {
-  if (value === null) return "—";
+  if (value === null) return "n/a";
   const n = Number(value);
   return pct ? `${n.toLocaleString("en-PH", { maximumFractionDigits: 1 })}%` : n.toLocaleString("en-PH", { maximumFractionDigits: 2 });
 }
@@ -51,7 +51,7 @@ export default function KpiTiles({ companyId }: { companyId: string }) {
         {shortDate(data.start)} – {shortDate(data.end)} · from the books
         <Hint>
           Margins and the opex ratio are % of net sales for the quarter. Current ratio = current assets ÷ current
-          liabilities; quick ratio counts only cash, receivables and creditable withholding tax. &quot;—&quot; means
+          liabilities; quick ratio counts only cash, receivables and creditable withholding tax. &quot;n/a&quot; means
           there&apos;s nothing to divide by yet.
         </Hint>
       </p>

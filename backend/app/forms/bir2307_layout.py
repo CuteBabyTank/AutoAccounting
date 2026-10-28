@@ -3,7 +3,7 @@ Coordinate map for the BIR Form 2307 (January 2018 ENCS) overlay renderer.
 Coordinates are in PDF points with origin at top-left of page (PyMuPDF convention).
 Calibrated against ``backend/app/forms/templates/bir2307_jan2018.pdf``
 (page rect: 612 x 936, US Letter portrait) by extracting the template's vector
-rectangles and dividers — see ``_extract_layout.py`` (one-shot).
+rectangles and dividers; see ``_extract_layout.py`` (one-shot).
 """
 from pathlib import Path
 
@@ -61,7 +61,7 @@ PAYEE_ZIP_BASELINE_Y: float = 204.0  # rect y=192.7..208.5
 PAYOR_ZIP_BASELINE_Y: float = 319.0  # rect y=307.9..323.7
 
 # --- Free-text rows (single-line input strips) -------------------------------
-# (x_left, baseline_y, max_width_pt) — x_left = a hair inside the input rect.
+# (x_left, baseline_y, max_width_pt): x_left = a hair inside the input rect.
 PAYEE_NAME:                  tuple[float, float, float] = (36.0, 176.0, 555.0)
 PAYEE_REGISTERED_ADDRESS:    tuple[float, float, float] = (36.0, 204.0, 500.0)
 PAYEE_FOREIGN_ADDRESS:       tuple[float, float, float] = (36.0, 233.0, 555.0)

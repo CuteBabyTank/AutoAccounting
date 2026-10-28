@@ -210,7 +210,7 @@ export default function ImportPanel({ companyId, companyName, onChanged }: Props
                       run({ ...opts, columns: next });
                     }}
                   >
-                    <option value="">—</option>
+                    <option value="">Choose…</option>
                     {preview.headers.filter(Boolean).map((h) => <option key={h} value={h}>{h}</option>)}
                   </select>
                 </div>

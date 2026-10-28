@@ -46,9 +46,9 @@ def _mark(cell, before, after, parent: int, version: int) -> None:
 def _summary(wb, header, snapshot, warnings, review_open, due, version, parent_version, highlighting) -> None:
     ws = wb.active
     ws.title = "Summary"
-    ws["A1"] = f"AutoAccounting — {header['company']}"
+    ws["A1"] = f"AutoAccounting: {header['company']}"
     ws["A1"].font = TITLE
-    version_text = f"v{version}" + (f" — changes since v{parent_version} in yellow" if highlighting else "")
+    version_text = f"v{version}" + (f", changes since v{parent_version} in yellow" if highlighting else "")
     row = 3
     for label, value in (("TIN", header["tin"]), ("Period", header["period"]), ("Version", version_text),
                          ("Generated", header["generated"])):
@@ -56,7 +56,7 @@ def _summary(wb, header, snapshot, warnings, review_open, due, version, parent_v
         ws.cell(row, 2, _safe(value))
         row += 1
     if review_open:
-        ws.cell(row, 1, f"DRAFT — {review_open} document(s) still need review").font = RED
+        ws.cell(row, 1, f"DRAFT: {review_open} document(s) still need review").font = RED
         row += 1
     row += 1
     for col, text in enumerate(("Return", "Amount payable / (excess)", "Due date"), start=1):

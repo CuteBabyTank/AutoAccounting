@@ -47,7 +47,7 @@ export default function AppendPrompt({ periods, onGenerate, onReview, onClose }:
             const finished = done.has(keyOf(p));
             return (
               <div key={keyOf(p)} className="rounded-xl border border-[var(--border)] p-4 text-sm text-[var(--text-primary)]">
-                <p className="font-semibold">Add to {p.company_name} — {p.label}?</p>
+                <p className="font-semibold">Add to {p.company_name}, {p.label}?</p>
                 <p className="mt-1">
                   This quarter already has output <strong>v{p.latest_version}</strong>. {p.new_documents} new document
                   {p.new_documents === 1 ? "" : "s"} will be <strong>added to v{p.latest_version}</strong> and saved as{" "}

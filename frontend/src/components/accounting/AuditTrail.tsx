@@ -150,7 +150,7 @@ const humanize = (key: string) => FIELD_LABELS[key] ?? (key.charAt(0).toUpperCas
 const isAmountKey = (key: string) => key.endsWith("_amount") || ["amount", "cost", "budget", "debit", "credit"].includes(key);
 
 function formatValue(key: string, value: unknown): string {
-  if (value === null || value === undefined || value === "") return "—";
+  if (value === null || value === undefined || value === "") return "empty";
   if (isAmountKey(key) && (typeof value === "number" || (typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value)))) {
     return formatPeso(value);
   }
@@ -158,7 +158,7 @@ function formatValue(key: string, value: unknown): string {
   if (key === "category" && typeof value === "string") return CATEGORY_LABELS[value] ?? value;
   if (key === "account" && typeof value === "string") return ACCOUNT_LABELS[value] ?? value;
   if (Array.isArray(value)) {
-    if (key === "overridden_reasons") return value.map((r) => REASON_LABELS[String(r)] ?? String(r)).join(", ") || "—";
+    if (key === "overridden_reasons") return value.map((r) => REASON_LABELS[String(r)] ?? String(r)).join(", ") || "none";
     if (key === "lines") {
       return value
         .map((l) => {
@@ -169,7 +169,7 @@ function formatValue(key: string, value: unknown): string {
         .join(" · ");
     }
     if (value.some((v) => v !== null && typeof v === "object")) return `${value.length} row${value.length === 1 ? "" : "s"}`;
-    return value.map(String).join(", ") || "—";
+    return value.map(String).join(", ") || "none";
   }
   if (typeof value === "object") {
     const o = value as Record<string, unknown>;

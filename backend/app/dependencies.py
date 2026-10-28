@@ -56,7 +56,7 @@ async def bind_session_user(db: AsyncSession, user_id: str) -> None:
     Stored in ``Session.info`` and re-applied via ``SET LOCAL`` on every
     transaction begin (see ``_reapply_rls_guc``). ``is_local=true`` keeps
     the GUC scoped to the current transaction, so it cannot leak across
-    pooled connections. Anonymous sessions (no bind) leave the GUC unset —
+    pooled connections. Anonymous sessions (no bind) leave the GUC unset,
     ``current_setting('app.current_user_id', true)`` returns NULL and every
     RLS USING/WITH CHECK clause evaluates false, denying all access.
     """

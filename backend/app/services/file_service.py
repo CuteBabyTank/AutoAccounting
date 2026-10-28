@@ -48,7 +48,7 @@ def validate_file(
         return False, f"File exceeds {settings.max_file_size_mb}MB limit"
 
     if pdf_only:
-        # PDF magic bytes are mandatory — never trust the extension alone.
+        # PDF magic bytes are mandatory; never trust the extension alone.
         if not content or len(content) < PDF_MIN_HEADER:
             return False, "Cannot verify PDF signature: file header missing"
         if not content.startswith(PDF_MAGIC):

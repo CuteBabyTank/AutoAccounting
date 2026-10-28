@@ -91,17 +91,17 @@ def _highlight(page, spec: Amount) -> None:
 def banner_text(draft_reviews: int, missing: Sequence[str]) -> str | None:
     parts = []
     if missing:
-        parts.append("missing: " + ", ".join(missing))
+        parts.append("Missing: " + ", ".join(missing))
     if draft_reviews:
         parts.append(f"{draft_reviews} document(s) unreviewed")
-    return f"DRAFT — {' · '.join(parts)} — not for filing" if parts else None
+    return f"DRAFT, not for filing. {' · '.join(parts)}." if parts else None
 
 
 def draw_banner(doc, point: tuple[float, float], text: str, size: float) -> None:
     """The red draft line on every page, shrunk to fit the page width."""
     for page in doc:
         room = page.rect.width - point[0] - 12
-        width = sum(_width(char, size) for char in text)  # whole-string length undercounts non-ASCII (— ·)
+        width = sum(_width(char, size) for char in text)  # whole-string length undercounts non-ASCII (· ₱)
         fitted = min(size, size * room / max(width, 1))
         page.insert_text(point, text, fontname=FONT, fontsize=fitted, color=RED_RGB)
 

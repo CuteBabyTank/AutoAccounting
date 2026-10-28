@@ -46,7 +46,7 @@ function AuthGate({ children }: { children: ReactNode }) {
   }, [mounted, user, loading, pathname, router, isPublicRoute]);
 
   // Public routes render immediately. Protected routes hold off mounting children
-  // until auth resolves — otherwise their effects fire API calls before the
+  // until auth resolves, otherwise their effects fire API calls before the
   // redirect lands.
   if (!mounted || loading) {
     if (isPublicRoute) return <>{children}</>;
@@ -60,7 +60,7 @@ function AuthGate({ children }: { children: ReactNode }) {
 
   if (!user && !isPublicRoute) return null;
   if (isPublicRoute) return <>{children}</>;
-  // Unverified users live on /pending — full-bleed, no sidebar.
+  // Unverified users live on /pending: full-bleed, no sidebar.
   if (user?.role === "unverified") return <>{children}</>;
   // Wrong-role route: the effect above is redirecting; don't mount the page.
   if (user && !canAccess(user.role, pathname)) return null;

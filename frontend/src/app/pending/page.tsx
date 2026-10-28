@@ -32,7 +32,7 @@ export default function PendingPage() {
   };
 
   const gmailHref = useMemo(() => {
-    const subject = "AutoAccounting — Set up our firm";
+    const subject = "Setting up our firm on AutoAccounting";
     const body = [
       "Drop your details and we’ll reach out to get you set up.",
       "",
@@ -85,7 +85,7 @@ export default function PendingPage() {
             </p>
           </div>
 
-          {/* Path 1 — already on a team */}
+          {/* Path 1: already on a team */}
           <div className="px-8 py-7 border-b border-[var(--border)]">
             <div className="flex items-start gap-4">
               <div className="shrink-0 w-10 h-10 rounded-xl bg-[var(--badge-blue-bg)] text-[var(--badge-blue-text)] flex items-center justify-center">
@@ -101,7 +101,7 @@ export default function PendingPage() {
                 <div className="mt-4 flex items-center gap-2 bg-[var(--bg-primary)] rounded-xl border border-[var(--border)] px-4 py-3">
                   <EnvelopeSimple size={18} className="text-[var(--text-secondary)] shrink-0" />
                   <span className="text-[var(--text-primary)] font-mono text-sm truncate flex-1">
-                    {user?.email ?? "—"}
+                    {user?.email ?? "your Google account"}
                   </span>
                   <button
                     onClick={copyEmail}
@@ -122,7 +122,7 @@ export default function PendingPage() {
             </div>
           </div>
 
-          {/* Path 2 — not on a team */}
+          {/* Path 2: not on a team */}
           <div className="px-8 py-7">
             <div className="flex items-start gap-4">
               <div className="shrink-0 w-10 h-10 rounded-xl bg-[var(--accent-subtle)] text-[var(--accent)] flex items-center justify-center">

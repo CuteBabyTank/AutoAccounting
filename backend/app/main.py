@@ -179,7 +179,7 @@ async def abuse_protection_middleware(request: Request, call_next) -> Response:
     # --- Global per-IP rate limit (unauthenticated traffic only) ---
     # Authenticated requests are already gated per-user inside get_current_user
     # via global_user_limiter. Counting them per-IP penalises distinct accounts
-    # that share an egress IP (corporate NAT, mobile carriers, ISP CGNAT) — a
+    # that share an egress IP (corporate NAT, mobile carriers, ISP CGNAT), and a
     # stress test with many real accounts behind one IP would otherwise trip
     # 429s that aren't actually abuse. The IP cap still applies to anonymous
     # endpoints (login, OAuth callback, public assets) where it does block
@@ -209,7 +209,7 @@ async def abuse_protection_middleware(request: Request, call_next) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# CORS — Must be added LAST to be the outermost middleware (processed first for requests)
+# CORS: must be added LAST to be the outermost middleware (processed first for requests)
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,

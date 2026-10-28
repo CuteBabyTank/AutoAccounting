@@ -459,7 +459,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
                 <div>
                   <label className={LABEL}>Paid via</label>
                   <select className={INPUT} value={draft.paid_via} onChange={(e) => setDraft((d) => ({ ...d, paid_via: e.target.value }))}>
-                    <option value="">—</option>
+                    <option value="">Choose…</option>
                     <option value="cash">Cash</option>
                     <option value="bank">Bank / check</option>
                     <option value="ewallet">E-wallet</option>

@@ -70,7 +70,7 @@ export default function CashFlowTile({ companyId }: { companyId: string }) {
               <div key={label} className={TILE} title={detail}>
                 <p className="text-[11px] font-medium text-[var(--text-secondary)]">{label}</p>
                 <p className={`aa-amount text-lg font-semibold tabular-nums ${value !== null && Number(value) < 0 ? "text-[var(--badge-red-text)]" : "text-[var(--text-primary)]"}`}>
-                  {value === null ? "—" : `₱${formatAmount(value, true)}`}
+                  {value === null ? "n/a" : `₱${formatAmount(value, true)}`}
                 </p>
               </div>
             ))}
@@ -90,8 +90,8 @@ export default function CashFlowTile({ companyId }: { companyId: string }) {
                 {weeks.map((w) => (
                   <tr key={w.start} className="border-t border-[var(--border)]">
                     <td className="whitespace-nowrap py-1 pr-2 text-[var(--text-secondary)]">{shortDate(w.start)} – {shortDate(w.end)}</td>
-                    <td className="aa-amount py-1 pr-2 text-right tabular-nums text-[var(--text-primary)]">{Number(w.inflow) ? formatAmount(w.inflow, true) : "—"}</td>
-                    <td className="aa-amount py-1 pr-2 text-right tabular-nums text-[var(--text-primary)]">{Number(w.outflow) ? formatAmount(w.outflow, true) : "—"}</td>
+                    <td className="aa-amount py-1 pr-2 text-right tabular-nums text-[var(--text-primary)]">{Number(w.inflow) ? formatAmount(w.inflow, true) : "0.00"}</td>
+                    <td className="aa-amount py-1 pr-2 text-right tabular-nums text-[var(--text-primary)]">{Number(w.outflow) ? formatAmount(w.outflow, true) : "0.00"}</td>
                     <td className="hidden w-1/3 py-1 pr-2 sm:table-cell">
                       <div className="flex flex-col gap-0.5">
                         <span className="block h-1.5 rounded-full bg-[var(--accent)]" style={{ width: `${(Number(w.inflow) / scale) * 100}%` }} />
@@ -99,7 +99,7 @@ export default function CashFlowTile({ companyId }: { companyId: string }) {
                       </div>
                     </td>
                     <td className={`aa-amount py-1 text-right tabular-nums ${w.closing !== null && Number(w.closing) < 0 ? "font-semibold text-[var(--badge-red-text)]" : "text-[var(--text-primary)]"}`}>
-                      {w.closing === null ? "—" : formatAmount(w.closing, true)}
+                      {w.closing === null ? "n/a" : formatAmount(w.closing, true)}
                     </td>
                   </tr>
                 ))}

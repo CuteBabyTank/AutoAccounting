@@ -131,7 +131,7 @@ export default function AccountingPage() {
     try {
       setPicker(localStorage.getItem(PICKER_KEY) || "auto");
     } catch {
-      // storage unavailable (private mode) — keep auto-detect
+      // storage unavailable (private mode), so keep auto-detect
     }
   }, []);
 

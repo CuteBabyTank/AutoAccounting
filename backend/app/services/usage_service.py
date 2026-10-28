@@ -21,7 +21,7 @@ async def get_enterprise_for_user(db: AsyncSession, user: User) -> Optional[User
         return None
     if user.role == UserRole.ENTERPRISE:
         return user
-    # Employee or unverified — load their parent enterprise
+    # Employee or unverified: load their parent enterprise
     if user.enterprise_id:
         result = await db.execute(select(User).where(User.id == user.enterprise_id))
         return result.scalar_one_or_none()
@@ -60,7 +60,7 @@ DEFAULT_USAGE_CAP: Optional[int] = None  # default = unlimited (no free-page all
 def _effective_cap(user: User) -> Optional[int]:
     """Effective monthly free-page allowance. Pages within this allowance are not
     charged against budget; pages beyond are billable at the effective rate.
-    global_usage_cap overrides usage_cap. None = unlimited (display) — billing
+    global_usage_cap overrides usage_cap. None = unlimited (display); billing
     proceeds via budget without a free tier."""
     if user.global_usage_cap is not None:
         return user.global_usage_cap
@@ -88,7 +88,7 @@ async def get_effective_rate_config(
     """Resolve enterprise's effective rate config.
 
     Per-enterprise tiers override per-enterprise flat which override admin's
-    tiers which override admin's flat. Returns (flat_rate, tiers) — at most
+    tiers which override admin's flat. Returns (flat_rate, tiers), at most
     one of the two is non-null in normal config.
     """
     if enterprise.page_rate_tiers:
@@ -104,7 +104,7 @@ async def get_effective_rate_config(
 async def get_effective_page_rate(db: AsyncSession, enterprise: User) -> Optional[float]:
     """Single-rate compatibility shim. Returns flat rate if configured,
     otherwise the FIRST tier rate (which is the effective rate for sub-cap
-    pages). Used as a snapshot fallback for activity logs only — billing
+    pages). Used as a snapshot fallback for activity logs only; billing
     itself walks the tiers exactly via `charge_for_pages`.
     """
     flat, tiers = await get_effective_rate_config(db, enterprise)

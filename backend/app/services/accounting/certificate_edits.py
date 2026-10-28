@@ -96,7 +96,7 @@ _2316_AMOUNTS: tuple[tuple[str, str], ...] = (
     ("21", "21 Taxable compensation income from present employer"),
     ("22", "22 Add: taxable compensation from previous employer"),
     ("23", "23 Gross taxable compensation income"), ("24", "24 Tax due"),
-    ("25A", "25A Tax withheld — present employer"), ("25B", "25B Tax withheld — previous employer"),
+    ("25A", "25A Tax withheld by the present employer"), ("25B", "25B Tax withheld by the previous employer"),
     ("26", "26 Total amount of taxes withheld as adjusted"), ("27", "27 5% tax credit (PERA)"),
     ("28", "28 Total taxes withheld"),
     *((str(n), f"{n} {FIELD_LABELS[k]}") for n, k in zip(range(29, 38), NON_TAXABLE)),

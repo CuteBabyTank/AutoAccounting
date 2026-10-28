@@ -1,4 +1,4 @@
-# AutoAccounting — Claude Code Guide
+# AutoAccounting: Claude Code Guide
 
 AI back office for Philippine accounting firms: drop client receipts/invoices/2307s/payroll → Gemini extracts and sorts them into a per-firm company databank, filed Company → Year → Quarter → BIR returns (2550-Q, 2551-Q, 1701-Q/1702-Q, 0619-E, 1601-EQ/C, annual 1701/1701-A/1702-RT, 1604-C alphalist + 2316s, outgoing 2307s) as filled PDFs + versioned XLSX, and BIR loose-leaf books of accounts (journals, GL, TB, closing entries, financial statements, month close). Multi-tenant: `admin` = platform owner, `enterprise` = firm owner, `manager`, `employee`, `unverified`. Auth is **Google SSO only**.
 
@@ -127,7 +127,7 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   (`compute/notifications.build`, incl. recurring entries due); `aa_notification_states` only keeps read / dismissed
   per person and key, and keys carry the count or date so a changed situation reappears. The board loads only the
   fiscal years in `compute/work.year_bounds(start, end)`. `aa_firm_settings.approve_before_close` gates every
-  "filed" route through `accounting_scope.require_filing_rights` — add it to any new route that marks a return
+  "filed" route through `accounting_scope.require_filing_rights`; add it to any new route that marks a return
   filed. Firm-level audit events (settings, tasks without a company) have `company_id` NULL.
 - **Subledgers (A/R, A/P):** `aa_contacts` is synced from documents on read (`books/subledger.load_subledger`), keyed
   by TIN else normalized name; merges follow `merged_into_id` (`contacts.resolve`). Open items use the books' own
@@ -140,9 +140,9 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
 - **Live reports (`routers/accounting_reports.py`):** every report is reshaped from `books.bank.book_entries` by pure
   `compute/reports.py` (accrual only). Closing entries (`close:*`, `fix:close:*`) are left out; earlier fiscal years'
   P&L shows as "Prior years' earnings not yet closed". Report windows go through `reports.check_window` (2000-01-01 to
-  the end of next fiscal year, ≤ 10 years) — keep any new report route behind it, since the engine's work grows with
+  the end of next fiscal year, ≤ 10 years); keep any new report route behind it, since the engine's work grows with
   the date. An engine `ValueError` becomes an Invalid Journal Transactions row and a 409 elsewhere. Drill-down maps
-  entry ids to sources in `compute/reports.entry_ref` — add a branch there when the engine gets a new id prefix.
+  entry ids to sources in `compute/reports.entry_ref`; add a branch there when the engine gets a new id prefix.
   Adjusting entries = JEs with `is_adjusting` + `depreciation` / `inventory` sources. The management pack is saved
   in the quarter's output folder; latest paths on `aa_periods.pack_files`, notes in `pack_notes`.
 - **Spreadsheet output:** run every untrusted cell through `spreadsheet_safe.csv_safe` (formula injection).
@@ -157,7 +157,7 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   builders); sheets read by `payroll_import.parse_sheet`. The opening TB writes the single `kind="opening"` JE; imported
   JEs go through `accounting_books.entry_problem` (shared with the JE form). Opening open items live in
   `aa_opening_items` and enter the engine via `opening_items.opening_doc_line` (dated the day before `books_start`,
-  so only their payments post — never give them a document entry or the opening A/R / A/P doubles); anything that
+  so only their payments post; never give them a document entry or the opening A/R / A/P doubles); anything that
   loads documents for open items / payments (loader, subledger, bank candidates) must add them too.
   **Undo:** every confirm writes an `aa_import_batches` row and tags what it wrote with `import_batch_id` (JEs, opening
   items); `written` keeps each row's `import_undo.fingerprint`, and the opening TB batch keeps the opening entry it

@@ -32,7 +32,7 @@ def ssl_context(mode: str, root_cert: str) -> ssl.SSLContext | None:
 
     With a root cert the server certificate and hostname are verified (needed
     once traffic crosses the public internet, e.g. to Supabase). Without one,
-    "require" only encrypts — fine over the Cloud SQL unix socket.
+    "require" only encrypts, which is fine over the Cloud SQL unix socket.
     """
     if mode != "require":
         return None
@@ -91,7 +91,7 @@ if DB_POOLER == "transaction":
 # worst case counts against the pooler's max client connections (~200 on the
 # free tier), not Postgres max_connections. Server-side work is multiplexed
 # over the pooler's pool (~15), so a connection only holds a server slot while
-# it is inside a transaction — long-running transactions (process_batch)
+# it is inside a transaction. Long-running transactions (process_batch)
 # still pin one each.
 DB_POOL_SIZE = 15
 DB_MAX_OVERFLOW = 0

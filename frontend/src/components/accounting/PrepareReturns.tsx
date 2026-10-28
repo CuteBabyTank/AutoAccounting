@@ -46,7 +46,7 @@ export default function PrepareReturns({ outputId, companyId, year, quarter, onP
   const [filedOn, setFiledOn] = useState<Record<string, string>>({});
   const canFile = useCanFile();
 
-  // Scope labels ("Month 1 — Jan 2026") come from the server so fiscal years are right.
+  // Scope labels ("Month 1: Jan 2026") come from the server so fiscal years are right.
   useEffect(() => {
     let cancelled = false;
     setScope(null);
@@ -201,7 +201,7 @@ export default function PrepareReturns({ outputId, companyId, year, quarter, onP
                         type="date"
                         className={INPUT}
                         aria-label={`Date ${f.form} was filed and paid`}
-                        title="Date filed and paid — the books post the payment on this day"
+                        title="Date filed and paid. The books post the payment on this day"
                         max={manilaToday()}
                         value={filedOn[f.form] ?? manilaToday()}
                         onChange={(e) => setFiledOn((d) => ({ ...d, [f.form]: e.target.value }))}

@@ -2,8 +2,8 @@
 
 Two workbook perspectives are supported (auto-detected on upload):
 
-* **Payee Form** — payee identity once at the top, then one row per *payor*.
-* **Payor Form** — payor identity once at the top, then one row per *payee*.
+* **Payee Form**: payee identity once at the top, then one row per *payor*.
+* **Payor Form**: payor identity once at the top, then one row per *payee*.
 
 Both use the same compact, single-sheet layout::
 
@@ -187,7 +187,7 @@ def _detect_kind(ws, rows: list[tuple]) -> str:
             if "payee_name" in norm:
                 return PAYOR_KIND
     raise ValueError(
-        "Could not detect form type — expected a 'Payee Form' or 'Payor Form' workbook"
+        "Could not tell the form type. Expected a 'Payee Form' or 'Payor Form' workbook"
     )
 
 
@@ -283,7 +283,7 @@ def _parse_compact(rows: list[tuple], kind: str) -> ParseResult:
         if li is not None:
             if current is None:
                 raise ValueError(
-                    f"Line item on row {idx + 1} has no {var_prefix} above it — "
+                    f"Line item on row {idx + 1} has no {var_prefix} above it. "
                     f"the first {var_prefix} row must include a name"
                 )
             block_kind = _str(rowd.get("block")).lower()
@@ -392,7 +392,7 @@ def _check_line_item(li: LineItem, sheet: str, fallback_row: int,
     row = li.excel_row or fallback_row
     if not li.description or not li.atc:
         errors.append(_err(sheet, row, "description", "LINE_ITEM_PARTIAL",
-                           "Incomplete line item — fill all required cells or leave entire row blank"))
+                           "Incomplete line item. Fill in every required cell or leave the whole row blank."))
     else:
         if lookup_atc(li.atc) is None:
             errors.append(_err(sheet, row, "atc", "ATC_UNKNOWN",
@@ -538,13 +538,13 @@ def build_template(kind: str = PAYEE_KIND) -> bytes:
             cell.alignment = align
             cell.border = border
 
-    # Row 1 — title banner.
+    # Row 1: title banner.
     ws.cell(row=1, column=1, value=title)
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
     _style_row(1, title_fill, title_font, center, ncols)
     ws.row_dimensions[1].height = 28
 
-    # Row 2 / 3 — identity header + data.
+    # Row 2 / 3: identity header + data.
     for c, h in enumerate(identity_headers, start=1):
         cell = ws.cell(row=2, column=c, value=h)
         cell.font = header_font
@@ -557,7 +557,7 @@ def build_template(kind: str = PAYEE_KIND) -> bytes:
         cell.border = border
     ws.row_dimensions[2].height = 20
 
-    # Row 5 — decorative month labels above the amount columns (m1..tax_withheld).
+    # Row 5: decorative month labels above the amount columns (m1..tax_withheld).
     month_labels = {8: "JANUARY", 9: "FEBRUARY", 10: "MARCH",
                     11: "QTR (total)", 12: "WITHHELD"}
     for c, label in month_labels.items():
@@ -567,7 +567,7 @@ def build_template(kind: str = PAYEE_KIND) -> bytes:
         cell.fill = month_fill
         cell.border = border
 
-    # Row 6 — entity (repeating) header.
+    # Row 6: entity (repeating) header.
     for c, h in enumerate(entity_headers, start=1):
         cell = ws.cell(row=6, column=c, value=h)
         cell.font = header_font
@@ -576,7 +576,7 @@ def build_template(kind: str = PAYEE_KIND) -> bytes:
         cell.fill = entity_fill
     ws.row_dimensions[6].height = 20
 
-    # Rows 7+ — sample data then blank rows.
+    # Rows 7+: sample data then blank rows.
     next_row = 7
     for r in sample_rows:
         for c, v in enumerate(r, start=1):
@@ -896,11 +896,11 @@ def apply_signature_to_custom_pdf(
     ``placement`` may be:
 
     * a **list** of ``{page, x, y, w, h}`` (fractions, top-left origin, ``page``
-      1-based) — each listed page is stamped at its own box; unlisted pages are
+      1-based); each listed page is stamped at its own box; unlisted pages are
       left untouched (per-page placement with include/exclude).
     * a **dict** ``{page, x, y, w, h}`` with ``page`` 1-based, or ``page=None``
       for every page (legacy single/all-page form).
-    * ``None`` — falls back to a self-contained strip on the last page only.
+    * ``None``: falls back to a self-contained strip on the last page only.
 
     The signature image is fitted into each box with the printed name beneath it.
     """

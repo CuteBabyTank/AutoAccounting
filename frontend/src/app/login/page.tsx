@@ -27,7 +27,7 @@ export default function LoginPage() {
   const [deactivated, setDeactivated] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
 
-  // Already signed in (e.g. a bookmarked /login) — go straight home.
+  // Already signed in (e.g. a bookmarked /login), so go straight home.
   useEffect(() => {
     if (!authLoading && user) router.replace(roleHome(user.role));
   }, [authLoading, user, router]);

@@ -213,10 +213,10 @@ export default function AnnualPanel({ companyId, companyName, year, refreshKey, 
   const next = (period.latest_version ?? 0) + 1;
   const chip = period.filed_at
     ? period.stale
-      ? { text: `Filed — changed since v${period.latest_version}`, cls: CHIP.stale }
+      ? { text: `Filed, but changed since v${period.latest_version}`, cls: CHIP.stale }
       : { text: "Filed", cls: CHIP.filed }
     : period.stale
-      ? { text: `Stale — new changes since v${period.latest_version}`, cls: CHIP.stale }
+      ? { text: `Stale: changed since v${period.latest_version}`, cls: CHIP.stale }
       : period.latest_version
         ? { text: `Generated v${period.latest_version}`, cls: CHIP.generated }
         : { text: "Not generated yet", cls: CHIP.collecting };
@@ -269,7 +269,7 @@ export default function AnnualPanel({ companyId, companyName, year, refreshKey, 
     <div className="mb-5 rounded-xl border border-[var(--border)] p-4">
       <div className="mb-3">
         <h2 className="text-base font-semibold text-[var(--text-primary)]">
-          {companyName} — FY {year} annual return ({FORM_NAMES[period.form] ?? period.form}){" "}
+          {companyName}: FY {year} annual return ({FORM_NAMES[period.form] ?? period.form}){" "}
           <Hint align="right">
             Generate this after the last quarter is in. It adds up all four quarters, subtracts the income tax already paid
             on the quarterly returns, and uses the asset register for depreciation. Fill in anything the documents can&apos;t
@@ -300,7 +300,7 @@ export default function AnnualPanel({ companyId, companyName, year, refreshKey, 
 
       {period.open_reviews > 0 && (
         <p className="mt-2 text-xs text-[var(--alert-warning-text)]">
-          {period.open_reviews} document(s) this year still need review — new versions will be marked DRAFT.
+          {period.open_reviews} document(s) this year still need review, so new versions will be marked DRAFT.
         </p>
       )}
       {period.filed_at && (
@@ -372,7 +372,7 @@ export default function AnnualPanel({ companyId, companyName, year, refreshKey, 
 
       {assets.length > 0 && (
         <div className="mt-4">
-          <p className="mb-1 text-xs font-semibold text-[var(--text-primary)]">Asset register — FY {year}</p>
+          <p className="mb-1 text-xs font-semibold text-[var(--text-primary)]">Asset register for FY {year}</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>

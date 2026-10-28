@@ -143,7 +143,7 @@ export default function WriteOffPanel({ companyId, asOf, onClose, onDone }: Prop
                     />
                   </td>
                   <td className={`${TD} text-[var(--text-primary)]`}>{i.contact_name}</td>
-                  <td className={TD}>{i.doc_number || "—"}{i.opening ? " · opening" : ""}</td>
+                  <td className={TD}>{i.doc_number || "No number"}{i.opening ? " · opening" : ""}</td>
                   <td className={TD}>{i.due}</td>
                   <td className={`${TD} text-right tabular-nums`}>{Math.max(i.days_past_due, 0)}</td>
                   <td className={`${TD} text-right tabular-nums`}>{formatPeso(i.open)}</td>

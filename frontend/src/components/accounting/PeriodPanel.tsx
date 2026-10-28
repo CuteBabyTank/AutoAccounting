@@ -48,8 +48,8 @@ const FIELDS: Field[] = [
   { key: "prior_gross_income", label: "Earlier quarters: gross income", hint: "For MCIT (1702-Q Schedule 3)", optional: true, show: (p) => p.quarter > 1 && p.forms_expected.includes("1702Q") },
   { key: "amended_paid_business_tax", label: "Paid on the original VAT/percentage tax return", hint: "Amended returns only (2550-Q 18 / 2551-Q 16)", show: (p) => filedAny(p, ["2550Q", "2551Q"]) },
   { key: "amended_paid_income_tax", label: "Paid on the original income tax return", hint: "Amended returns only (1702-Q Sched 4 · 6 / 1701-Q 59)", show: (p) => filedAny(p, ["1701Q", "1702Q"]) },
-  { key: "ewt_remitted_m1", label: "EWT actually remitted — month 1", hint: "Only if the 0619-E paid differs from the computed amount", optional: true, show: ewt },
-  { key: "ewt_remitted_m2", label: "EWT actually remitted — month 2", hint: "Only if the 0619-E paid differs from the computed amount", optional: true, show: ewt },
+  { key: "ewt_remitted_m1", label: "EWT actually remitted in month 1", hint: "Only if the 0619-E paid differs from the computed amount", optional: true, show: ewt },
+  { key: "ewt_remitted_m2", label: "EWT actually remitted in month 2", hint: "Only if the 0619-E paid differs from the computed amount", optional: true, show: ewt },
   { key: "ewt_over_remittance", label: "EWT over-remitted last quarter", hint: "1601-EQ item 23", show: ewt },
   { key: "amended_paid_withholding", label: "Paid on the original 1601-EQ", hint: "Amended returns only (1601-EQ item 22)", show: (p) => ewt(p) && filedAny(p, ["1601EQ"]) },
 ];
@@ -171,10 +171,10 @@ export default function PeriodPanel({ companyId, year, quarter, refreshKey, onCh
   const next = (period.latest_version ?? 0) + 1;
   const chip = period.filed_at
     ? period.stale
-      ? { text: `Filed — changed since v${period.latest_version}`, cls: CHIP.stale }
+      ? { text: `Filed, but changed since v${period.latest_version}`, cls: CHIP.stale }
       : { text: "Filed", cls: CHIP.filed }
     : period.stale
-      ? { text: `Stale — new changes since v${period.latest_version}`, cls: CHIP.stale }
+      ? { text: `Stale: changed since v${period.latest_version}`, cls: CHIP.stale }
       : period.latest_version
         ? { text: `Generated v${period.latest_version}`, cls: CHIP.generated }
         : { text: "Collecting", cls: CHIP.collecting };
@@ -217,12 +217,12 @@ export default function PeriodPanel({ companyId, year, quarter, refreshKey, onCh
 
       {period.open_reviews > 0 && (
         <p className="mt-2 text-xs text-[var(--alert-warning-text)]">
-          {period.open_reviews} document(s) still need review — new versions will be marked DRAFT.
+          {period.open_reviews} document(s) still need review, so new versions will be marked DRAFT.
         </p>
       )}
       {period.books_stale && (
         <p className="mt-1 text-xs text-[var(--alert-warning-text)]">
-          Books changed since v{period.latest_version} — generate a new version to update the book tabs.
+          The books changed since v{period.latest_version}. Generate a new version to update the book tabs.
         </p>
       )}
       {period.filed_at && (
@@ -265,7 +265,7 @@ export default function PeriodPanel({ companyId, year, quarter, refreshKey, onCh
           {period.forms_expected.includes("1601C-M1") && payroll.length === 3 && (
             <div className="mt-4">
               <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">
-                1601-C — amounts the payroll register doesn&apos;t show (gross pay and tax withheld come from the payroll documents)
+                1601-C: amounts the payroll register doesn&apos;t show (gross pay and tax withheld come from the payroll documents)
               </p>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">

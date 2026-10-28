@@ -1,4 +1,4 @@
-"""Quarterly percentage tax return, BIR Form 2551-Q (January 2018 ENCS) — pure."""
+"""Quarterly percentage tax return, BIR Form 2551-Q (January 2018 ENCS). Pure."""
 
 from datetime import date
 from decimal import Decimal

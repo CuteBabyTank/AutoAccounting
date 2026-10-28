@@ -26,10 +26,10 @@ def test_unknown_scope():
 
 
 def test_labels_use_calendar_months():
-    assert scope_label("M1", 2026, 1, 12) == "Month 1 — Jan 2026"
-    assert scope_label("M3", 2026, 3, 12) == "Month 3 — Sep 2026"
-    assert scope_label("Q", 2026, 1, 12).startswith("Quarter — Q1")
-    assert scope_label("M1", 2026, 1, 6) == "Month 1 — Jul 2025"   # FY ending June: Q1 starts July of the prior year
+    assert scope_label("M1", 2026, 1, 12) == "Month 1: Jan 2026"
+    assert scope_label("M3", 2026, 3, 12) == "Month 3: Sep 2026"
+    assert scope_label("Q", 2026, 1, 12).startswith("Quarter: Q1")
+    assert scope_label("M1", 2026, 1, 6) == "Month 1: Jul 2025"   # FY ending June: Q1 starts July of the prior year
 
 
 def test_notes():

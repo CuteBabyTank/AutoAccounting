@@ -63,22 +63,22 @@ class RateLimiter:
             return max(0, self._max - len(recent))
 
 
-# Expensive ops: file upload — 20 batches per 10 minutes per user
+# Expensive ops: file upload, 20 batches per 10 minutes per user
 upload_limiter = RateLimiter(max_attempts=20, window_seconds=600)
 
-# Expensive ops: export/download — 30 per 10 minutes per user
+# Expensive ops: export/download, 30 per 10 minutes per user
 export_limiter = RateLimiter(max_attempts=30, window_seconds=600)
 
-# Chat send — 60 messages per minute per user. Caps the data a single account
+# Chat send: 60 messages per minute per user. Caps the data a single account
 # can flood into the messages table without throttling normal-volume chat.
 chat_limiter = RateLimiter(max_attempts=60, window_seconds=60)
 
-# Global: per-IP across all *unauthenticated* endpoints — 200 requests per minute.
+# Global: per-IP across all *unauthenticated* endpoints, 200 requests per minute.
 # Applied in main.py only when no Bearer token is present, so users sharing
 # one egress IP (corp NAT, CGNAT) don't compete for a single bucket.
 global_ip_limiter = RateLimiter(max_attempts=200, window_seconds=60)
 
-# Authenticated: per-user across all endpoints — 300 requests per minute.
+# Authenticated: per-user across all endpoints, 300 requests per minute.
 # Headroom for power users running several batches concurrently: each batch
 # polls /status every 2s (~30 req/min), and a user may also be exporting,
 # editing, and viewing files in parallel. 120 was tight; 300 leaves room

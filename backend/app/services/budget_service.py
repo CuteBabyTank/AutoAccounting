@@ -5,10 +5,10 @@ def compute_new_budget(current: float | None, operation: str, amount: float) -> 
     """Apply a budget operation and return the new value.
 
     Operations:
-      add      — current + amount
-      subtract — max(0, current - amount)
-      set      — amount (replace)
-      reset    — 0 (amount ignored)
+      add:      current + amount
+      subtract: max(0, current - amount)
+      set:      amount (replace)
+      reset:    0 (amount ignored)
 
     Result is rounded to 2 decimal places. Negative current is treated as 0.
     """

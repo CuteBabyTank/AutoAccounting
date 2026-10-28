@@ -277,7 +277,7 @@ export function FileArt() {
     { tone: "gray", text: "Collecting", note: "Documents coming in" },
     { tone: "blue", text: "Generated v1", note: "Ready to download" },
     { tone: "green", text: "Filed", note: "You marked it submitted" },
-    { tone: "yellow", text: "Filed — changed since v1", note: "A late receipt arrived" },
+    { tone: "yellow", text: "Filed, but changed since v1", note: "A late receipt arrived" },
     { tone: "blue", text: "v2 · Amended", note: "Only the forms that changed" },
   ];
   return (

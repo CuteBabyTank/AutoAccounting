@@ -121,7 +121,7 @@ export default function UploadReviewDialog({ upload, companies, canManage, onCom
                   <p className="text-sm text-[var(--text-primary)]">
                     {count === 1 ? "This file looks like it belongs" : `These ${count} files look like they belong`} to{" "}
                     <strong>{g.company.registered_name}</strong> (TIN {formatTin(g.company.tin)})
-                    {g.level === "likely" && <span className="text-[var(--text-secondary)]"> — matched by name</span>}. Correct?
+                    {g.level === "likely" && <span className="text-[var(--text-secondary)]">, matched by name</span>}. Correct?
                   </p>
                 ) : (
                   <p className="text-sm text-[var(--text-primary)]">

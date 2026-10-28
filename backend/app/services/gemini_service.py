@@ -22,7 +22,7 @@ from app.config import settings
 logger = logging.getLogger("gemini")
 
 # ---------------------------------------------------------------------------
-# Gemini API rate limiters — global (platform-wide) + per-user
+# Gemini API rate limiters: global (platform-wide) + per-user
 # ---------------------------------------------------------------------------
 
 _EVICTION_INTERVAL = 300  # clean up stale user buckets every 5 min
@@ -276,7 +276,7 @@ def _encode_pixmap_webp(pix, quality: int = 80) -> bytes:
     """Encode a PyMuPDF pixmap to WebP via Pillow (PyMuPDF cannot emit WebP).
 
     WebP is ~25-40% smaller than JPEG for scanned document pages at equivalent
-    quality, with fast encode and decode — the best balance for the review page's
+    quality, with fast encode and decode, the best balance for the review page's
     rapid page-flipping (AVIF compresses more but decodes slower client-side).
     method=4 is Pillow's speed/size balance point.
     """
@@ -298,7 +298,7 @@ def render_pdf_page_webp(pdf_path: str, page_number: int, dpi: int = 130, qualit
 
 
 # Blur-up thumbnail: a tiny low-res WebP shown (scaled + blurred) while the
-# full page render loads on a cold review page. ~1 KB each — first paint goes
+# full page render loads on a cold review page. ~1 KB each, so first paint goes
 # from spinner to instant blurry page. Width in CSS px; low quality is fine
 # since it is always displayed heavily blurred.
 _THUMB_WIDTH = 32
@@ -401,7 +401,7 @@ async def _call_gemini(
     model: str, thinking_config: types.ThinkingConfig,
 ) -> str:
     """Send content to Gemini and return raw text response.
-    Enforces per-user RPM limit. Single attempt — retries are handled by the frontend.
+    Enforces per-user RPM limit. Single attempt; retries are handled by the frontend.
     Uses a server-side prompt cache when available; falls back to inline prompt on any
     cache failure so behavior is preserved when caching is unsupported.
     """

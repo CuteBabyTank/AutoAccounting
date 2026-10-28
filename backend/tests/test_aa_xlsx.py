@@ -70,7 +70,7 @@ def test_clean_copy_has_no_highlights(tmp_path):
 def test_summary_has_payables_draft_banner_and_warnings(tmp_path):
     wb = _write(tmp_path, review_open=2, warnings=["Ending inventory was not provided."])
     texts = [str(c.value) for row in wb["Summary"].iter_rows() for c in row if c.value is not None]
-    assert "DRAFT — 2 document(s) still need review" in texts
+    assert "DRAFT: 2 document(s) still need review" in texts
     assert "• Ending inventory was not provided." in texts
     assert "2026-10-26" in texts
 

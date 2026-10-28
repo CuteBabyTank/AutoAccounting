@@ -328,7 +328,7 @@ export default function AdminPage() {
                         )}
                       </td>
                       <td className="px-3 py-2 text-[var(--lp-muted)]">
-                        {isFirm ? a.organization_name || "—" : a.enterprise_email || "—"}
+                        {isFirm ? a.organization_name || "Not set" : a.enterprise_email || "Not set"}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{isFirm ? a.pages_used.toLocaleString() : ""}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{isFirm ? `₱${formatPeso(a.budget)}` : ""}</td>

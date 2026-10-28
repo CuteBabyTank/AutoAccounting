@@ -2,9 +2,9 @@
 
 Two input perspectives share one normalized output unit (``FilledForm``):
 
-* **Payee Form** — you are the payee; you list every *payor* who withheld from
+* **Payee Form**: you are the payee; you list every *payor* who withheld from
   you. The payee identity is filled once at the top.
-* **Payor Form** — you are the withholding agent; you list every *payee* you
+* **Payor Form**: you are the withholding agent; you list every *payee* you
   withheld from. The payor identity is filled once at the top.
 
 Both collapse to a flat ``list[FilledForm]``, one BIR 2307 PDF page each.
@@ -41,7 +41,7 @@ class Payor(BaseModel):
 
 
 class FilledForm(BaseModel):
-    """One fully-resolved 2307 — both parties, period, and line items."""
+    """One fully-resolved 2307: both parties, period, and line items."""
 
     excel_row: int
     payee: Payee

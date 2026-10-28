@@ -48,7 +48,7 @@ def _payable(output: AAOutput, form: str) -> Decimal | None:
 
 async def _filed_or_latest(db: AsyncSession, period: AAPeriod,
                            form: str | None = None) -> tuple[AAOutput | None, AAOutput | None, bool]:
-    """(the version credited — the one ``form`` was filed from if recorded, else latest; the latest; filed?)."""
+    """(the version credited: the one ``form`` was filed from if recorded, else latest; the latest; filed?)."""
     latest = await quarters.latest_output(db, period.id)
     legacy = str(period.filed_output_id) if period.filed_output_id else None
     filed_id = credited_output_id(period.filed_forms or {}, form, legacy) if form else legacy

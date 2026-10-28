@@ -148,7 +148,7 @@ async def company_summaries(db: AsyncSession, ent: uuid.UUID, companies: list[AA
 
 async def cwt_pending(db: AsyncSession, ent: uuid.UUID, companies: list[AACompany],
                       today: date) -> dict[str, tuple[int, int]]:
-    """Per company: (2307s to receive still pending, of which overdue — the sale's quarter ended over 20 days ago, the
+    """Per company: (2307s to receive still pending, of which overdue: the sale's quarter ended over 20 days ago, the
     customer's deadline to issue it). Uses the contacts as last synced (merges followed); no sync on this path."""
     from app.models.accounting import AAContact
     from app.services.accounting.books.receipts import party_key

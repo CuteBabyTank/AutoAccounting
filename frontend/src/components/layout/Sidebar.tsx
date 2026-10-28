@@ -150,7 +150,7 @@ export default function Sidebar() {
 
   return (
     <>
-    {/* Mobile top bar — hamburger + wordmark. Only below md; the static sidebar takes over at md+. */}
+    {/* Mobile top bar: hamburger + wordmark. Only below md; the static sidebar takes over at md+. */}
     <header className="lp-skin md:hidden fixed top-0 inset-x-0 z-40 h-14 flex items-center gap-2 px-3 bg-[var(--bg-sidebar)] border-b border-[var(--border-sidebar)]">
       <button
         onClick={() => setDrawerOpen(true)}
@@ -410,7 +410,7 @@ export default function Sidebar() {
       </div>
     </aside>
     </div>
-    {/* Sign Out Confirmation Modal — rendered via portal to escape sidebar stacking context */}
+    {/* Sign Out Confirmation Modal, rendered via portal to escape sidebar stacking context */}
     {showSignOut && createPortal(
       <div className="lp-skin overlay-enter fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
         <div className="modal-enter bg-[var(--bg-secondary)] rounded-xl border border-[var(--border)] p-6 w-80 shadow-xl">

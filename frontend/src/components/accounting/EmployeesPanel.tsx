@@ -169,7 +169,7 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
                     <td className="py-1">
                       <select className={INPUT} value={mapping[h] ?? ""}
                         onChange={(e) => setMapping((m) => ({ ...m, [h]: e.target.value }))}>
-                        <option value="">— ignore —</option>
+                        <option value="">Ignore this column</option>
                         {Object.entries(preview.fields).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
                       </select>
                     </td>
@@ -265,7 +265,7 @@ export default function EmployeesPanel({ companyId, companyName, year, canManage
                   <td className="py-1.5 pr-3 text-right">{formatPeso(e.tax_due)}</td>
                   <td className="py-1.5 pr-3 text-right">{formatPeso(e.withheld)}</td>
                   <td className="py-1.5 pr-3 text-right">
-                    {Number(e.december) ? formatPeso(e.december) : Number(e.refund) ? `(${formatPeso(e.refund)})` : "—"}
+                    {Number(e.december) ? formatPeso(e.december) : Number(e.refund) ? `(${formatPeso(e.refund)})` : "0.00"}
                   </td>
                   <td className="py-1.5 pr-3 text-xs">{e.substituted ? "Yes" : "No"}</td>
                   <td className="py-1.5 text-right text-xs">

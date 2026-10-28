@@ -225,7 +225,7 @@ async def _features_out(db: AsyncSession) -> dict:
             {"key": k, "label": label, "group": group, "description": desc, "enabled": toggles.get(k, True)}
             for k, label, group, desc in features.FEATURES
         ],
-        # {firm id: {key: bool}} — only firms with at least one override.
+        # {firm id: {key: bool}}, only firms with at least one override.
         "overrides": {str(firm): o for firm, o in overrides.items() if o},
     }
 

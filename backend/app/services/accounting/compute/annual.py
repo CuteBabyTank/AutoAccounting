@@ -1,4 +1,4 @@
-"""Annual income tax return — 1702-RT (non-individuals), 1701 or 1701-A (individuals) — pure.
+"""Annual income tax return: 1702-RT (non-individuals), 1701 or 1701-A (individuals). Pure.
 
 Built from the fiscal year's quarters of documents and inputs, the annual inputs, the asset
 register, the NOLCO and excess MCIT carried in from earlier years, and the income tax paid
@@ -68,7 +68,7 @@ def carry_in_from_snapshot(carry: dict | None) -> CarryIn:
     credits = carry.get("excess_credits")
     try:
         excess = c2(credits) if credits not in (None, "") else None
-    except Exception:  # noqa: BLE001 — malformed stored value: no carried credit
+    except Exception:  # noqa: BLE001 (malformed stored value, so no carried credit)
         excess = None
     return CarryIn(rows_from_json(carry.get("nolco")), rows_from_json(carry.get("excess_mcit")), excess)
 
@@ -486,8 +486,8 @@ def build_annual(company: CompanyFacts, periods: list[PeriodData], fiscal_year: 
 
     review_open = sum(1 for l in lines if l.open_review)
     if review_open:
-        warnings.insert(0, f"{review_open} document(s) in this fiscal year still need review — this output is a "
-                           "DRAFT.")
+        warnings.insert(0, f"{review_open} document(s) in this fiscal year still need review, so "
+                           "this output is a DRAFT.")
     warnings.extend(credit_warnings)
     if nolco.expired:
         warnings.append(f"{_peso_text(nolco.expired)} of NOLCO from {', '.join(map(str, nolco.expired_years))} "

@@ -94,7 +94,7 @@ export default function AssetSection({ doc, onChanged }: { doc: AADocument; onCh
   return (
     <div className="mt-4 rounded-lg border border-[var(--border)] p-3">
       <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">
-        Asset register — depreciated straight-line, not expensed
+        Asset register (depreciated straight-line, not expensed)
       </p>
       {!asset.active && (
         <p className="mb-2 text-xs text-[var(--alert-warning-text)]">
@@ -115,7 +115,7 @@ export default function AssetSection({ doc, onChanged }: { doc: AADocument; onCh
           <input type="date" className={INPUT} value={draft.end_date} onChange={(e) => set("end_date", e.target.value)} />
         </div>
         <div>
-          <label className={LABEL}>Useful life — years</label>
+          <label className={LABEL}>Useful life in years</label>
           <input inputMode="numeric" className={INPUT} value={draft.years} onChange={(e) => set("years", e.target.value.replace(/\D/g, ""))} />
         </div>
         <div>

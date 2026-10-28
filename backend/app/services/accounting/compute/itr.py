@@ -1,4 +1,4 @@
-"""Quarterly income tax: 1701-Q (individuals) and 1702-Q (non-individuals), January 2018 ENCS — pure.
+"""Quarterly income tax: 1701-Q (individuals) and 1702-Q (non-individuals), January 2018 ENCS. Pure.
 
 Both returns are cumulative within the fiscal year: each quarter reports this
 quarter, adds the previous quarters, computes tax to date and subtracts what was
@@ -27,7 +27,7 @@ _TABLE_1 = (  # TRAIN, taxable years 2018 to 2022
     (Decimal("400000"), Decimal("30000"), Decimal("0.25")),
     (Decimal("250000"), Decimal("0"), Decimal("0.20")),
 )
-_TABLE_2 = (  # (over, base tax, rate on the excess) — effective January 1, 2023
+_TABLE_2 = (  # (over, base tax, rate on the excess), effective January 1, 2023
     (Decimal("8000000"), Decimal("2202500"), Decimal("0.35")),
     (Decimal("2000000"), Decimal("402500"), Decimal("0.30")),
     (Decimal("800000"), Decimal("102500"), Decimal("0.25")),

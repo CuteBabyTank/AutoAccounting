@@ -22,9 +22,9 @@ def _words(pdf: bytes, page: int = 0):
 
 def test_banner_text():
     assert banner_text(0, []) is None
-    assert banner_text(2, []) == "DRAFT — 2 document(s) unreviewed — not for filing"
-    assert banner_text(0, ["RDO code", "Email address"]) == "DRAFT — missing: RDO code, Email address — not for filing"
-    assert banner_text(1, ["RDO code"]) == "DRAFT — missing: RDO code · 1 document(s) unreviewed — not for filing"
+    assert banner_text(2, []) == "DRAFT, not for filing. 2 document(s) unreviewed."
+    assert banner_text(0, ["RDO code", "Email address"]) == "DRAFT, not for filing. Missing: RDO code, Email address."
+    assert banner_text(1, ["RDO code"]) == "DRAFT, not for filing. Missing: RDO code · 1 document(s) unreviewed."
 
 
 @pytest.mark.parametrize("form", [f for f in LAYOUTS if "contact" in LAYOUTS[f].cells])
@@ -62,7 +62,7 @@ def test_missing_banner_on_every_page_and_shrinks():
     doc = fitz.open("pdf", pdf)
     for page in doc:
         text = page.get_text()
-        assert "missing: TIN (9 digits)" in text and "not for filing" in text
+        assert "Missing: TIN (9 digits)" in text and "not for filing" in text
         banner = [b for b in page.get_text("dict")["blocks"] if "missing:" in str(b)]
         assert all(b["bbox"][2] <= page.rect.width - 10 for b in banner)
-    assert "missing: RDO code" in fitz.open("pdf", render_2550q({}, H50, missing=["RDO code"]))[1].get_text()
+    assert "Missing: RDO code" in fitz.open("pdf", render_2550q({}, H50, missing=["RDO code"]))[1].get_text()

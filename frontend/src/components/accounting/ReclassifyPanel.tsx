@@ -190,8 +190,8 @@ export default function ReclassifyPanel({ companyId, companyName, fiscalYearEndM
                     )}
                     {c.kind === "journal_entry" && <span className="ml-1 text-xs">(journal entry)</span>}
                   </td>
-                  <td className="py-1.5 pr-3">{c.party || "—"}</td>
-                  <td className="py-1.5 pr-3 text-xs">{c.atc || "—"}</td>
+                  <td className="py-1.5 pr-3">{c.party || "Unknown"}</td>
+                  <td className="py-1.5 pr-3 text-xs">{c.atc || "None"}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{formatAmount(c.amount)}</td>
                   <td className="py-1.5 text-right text-xs">
                     {c.closed && <Chip tone="blue" title="This month is closed: a move posts as a correcting entry">Closed month</Chip>}

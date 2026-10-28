@@ -42,14 +42,14 @@ def scope_forms(expected: list[str], scope: str) -> list[str]:
 
 def scope_label(scope: str, year: int, quarter: int, fye: int) -> str:
     if scope == "Q":
-        return f"Quarter — {quarter_label(quarter, fye)} {year}"
+        return f"Quarter: {quarter_label(quarter, fye)} {year}"
     month = int(scope[1])
-    return f"Month {month} — {month_start(year, quarter, fye, month).strftime('%b %Y')}"
+    return f"Month {month}: {month_start(year, quarter, fye, month).strftime('%b %Y')}"
 
 
 def scope_note(scope: str, quarter: int, forms: list[str]) -> str | None:
     if scope == "Q" and quarter == 4:
-        return "Income tax: Q4 is covered by the annual return — see Annual."
+        return "Income tax: Q4 is covered by the annual return. See Annual."
     if not forms and scope == "M3":
         return ("No month 3 returns: month 3's expanded withholding goes on the quarter's 1601-EQ, and there's no "
                 "payroll to report on a 1601-C.")

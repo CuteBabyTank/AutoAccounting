@@ -29,7 +29,7 @@ def doc(id, kind, name, on, total, *, withheld="0", counter=False, due=None, ter
                    due_date=due, terms_days=terms_days, payment_unverified=unverified, period=period)
 
 
-# (number, supplier, date, printed due, terms, total) — 05_bills_import.csv summed per bill
+# (number, supplier, date, printed due, terms, total), from 05_bills_import.csv summed per bill
 BILLS = [
     ("88548", "Pacific Steel & Cement Supply Inc.", "10/01/2026", "10/31/2026", "Net 30", "160227.20"),
     ("5838", "Luzon Paint Distributors Corp.", "11/05/2026", "11/20/2026", "Net 15", "70089.60"),

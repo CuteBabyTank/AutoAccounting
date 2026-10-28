@@ -35,7 +35,7 @@ async def google_login(db: AsyncSession, credential: str, client_id: str) -> tup
                 credential, requests.Request(), client_id, clock_skew_in_seconds=10
             )
         except ValueError:
-            # Token verification failure: do NOT propagate Google's error text —
+            # Token verification failure: do NOT propagate Google's error text;
             # it can vary across SDK versions and may include diagnostic detail.
             logger.warning("google_login_failed reason=invalid_token")
             raise HTTPException(status_code=401, detail="Invalid Google token")

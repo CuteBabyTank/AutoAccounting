@@ -61,5 +61,5 @@ def test_output_vat_that_the_return_does_not_carry_warns():
     off = abs(balances(entries, END).get(C("output_vat"), ZERO))
     assert off > D("1")
     [w] = [w for w in books_warnings(tabs, PeriodInputs(), False, CHART, 3) if "Output VAT" in w]
-    assert w == (f"Output VAT in the books differs from the 2550-Q by ₱{off:,.2f} — check sales documents whose VAT "
+    assert w == (f"Output VAT in the books differs from the 2550-Q by ₱{off:,.2f}. Check the sales documents whose VAT "
                  "isn't 12% of the VATable amount.")

@@ -1,4 +1,4 @@
-"""JWT issue + verify. Critical auth boundary — covers tampering and expiry."""
+"""JWT issue + verify. Critical auth boundary; covers tampering and expiry."""
 
 import time
 import uuid

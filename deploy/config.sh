@@ -13,8 +13,8 @@ BUILD_BUCKET="${PROJECT_ID}-cloudbuild-asia"  # Cloud Build source staging in-re
 
 # Public URLs. Empty = the services' default run.app URLs (deploy.sh works them out).
 # With a custom domain: API_URL="https://api.example.com", FRONTEND_URL="https://example.com,https://<run.app url>".
-API_URL=""
-FRONTEND_URL=""
+API_URL="https://api.autoaccounting.ph"
+FRONTEND_URL="https://autoaccounting.ph,https://www.autoaccounting.ph,https://aa-frontend-415242727441.asia-southeast1.run.app"
 
 # Google OAuth web client ID (public; same value as NEXT_PUBLIC_GOOGLE_CLIENT_ID).
 GOOGLE_CLIENT_ID="415242727441-dtd3ipiukurk52rjg35v4rjfn5to668d.apps.googleusercontent.com"

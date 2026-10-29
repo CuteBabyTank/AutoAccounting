@@ -13,7 +13,7 @@ from fastapi import UploadFile
 from PIL import Image, UnidentifiedImageError
 
 from app.config import settings
-from app.services.accounting.compress import PDF_POOL, Compressed, compress_file
+from app.services.accounting.compress import PDF_POOL, PDF_WORKERS, Compressed, compress_file
 from app.services.accounting.page_trim import render_pdf_page_trimmed, trimmed_image
 from app.services.file_service import validate_file
 from app.services.gemini_service import get_pdf_page_count_safe, render_pdf_page_webp
@@ -21,7 +21,7 @@ from app.services.gemini_service import get_pdf_page_count_safe, render_pdf_page
 ALLOWED_EXTS = {".pdf": "pdf", ".png": "png", ".jpg": "jpg", ".jpeg": "jpg"}
 _CHUNK = 1024 * 1024
 logger = logging.getLogger(__name__)
-PDF_QUEUE_MAX = 8  # ~12 min worst case at the 90 s per-file timeout; seconds normally
+PDF_QUEUE_MAX = 4 * PDF_WORKERS  # ~6 min worst case at the 90 s per-file timeout; seconds normally
 
 
 class UploadRejected(ValueError):

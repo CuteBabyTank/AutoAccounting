@@ -123,6 +123,8 @@ and redeploy. An empty base URL turns it off ("not configured"); the `assistant`
   screen polls (every 2 s). A job killed by scale-in or a deploy is resumed on the next read of that upload
   (`jobs.stale_action`: no progress for 30 min → resume; older than 24 h → failed, re-drop). On shutdown the
   backend dates its unfinished uploads back so they resume at once (`pipeline.release_running`).
+- **Upload compression.** Up to 3 PDFs compress at once (`compress.PDF_WORKERS`, 768 MB cap each), which is
+  why the backend has 4 GiB. Lower the workers before lowering `--memory`.
 - **One backend instance.** Rate limiters and per-firm job slots are in memory. Raising `--max-instances` multiplies
   them; move them to Postgres/Redis first.
 - **Uploads bucket.** Versioned with 30-day noncurrent retention + 30-day soft delete. No retention lock: the app

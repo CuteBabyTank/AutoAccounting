@@ -120,11 +120,15 @@ def _pdf_bytes(data: bytes) -> bytes | None:
     return out
 
 
-PDF_MEMORY_BYTES = 1536 * 1024 * 1024  # address-space cap for the rewrite process
+# Address-space cap per rewrite process. A 50 MB scanned PDF peaks around 370 MB resident, so 768 MB is ~2x
+# headroom; a PDF that needs more is kept as uploaded.
+PDF_MEMORY_BYTES = 768 * 1024 * 1024
 PDF_TIMEOUT_S = 90
-# One rewrite at a time: two capped workers could exceed a 2 GiB instance together.
+# Rewrites running at once. PDF_WORKERS x PDF_MEMORY_BYTES (~2.3 GB) plus the app and spooled uploads must fit the
+# instance (Cloud Run --memory 4Gi in cloudbuild.yaml); raise them together.
+PDF_WORKERS = 3
 # Uploads queue here (awaited, no shared executor thread held), so every PDF is still compressed.
-PDF_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pdf-compress")
+PDF_POOL = ThreadPoolExecutor(max_workers=PDF_WORKERS, thread_name_prefix="pdf-compress")
 _APP_ROOT = str(Path(__file__).resolve().parents[3])  # backend/, so the child can import app.*
 
 # The child caps its own memory before reading the input, then writes the result (or nothing) to a file.

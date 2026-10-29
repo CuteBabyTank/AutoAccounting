@@ -4,9 +4,9 @@
 
 AutoAccounting is web software for accounting and bookkeeping firms in the Philippines that handle many client businesses. It turns a batch of mixed client paperwork into BIR returns and BIR loose-leaf books of accounts, with every figure traceable to its source document. It does not e-file: the firm reviews the returns and submits them through eFPS or eBIRForms.
 
-- Homepage: https://aa-frontend-415242727441.asia-southeast1.run.app/
+- Homepage: https://autoaccounting.ph/
 - Book a demo: matthewfrasersim@gmail.com
-- Sign in (Google account): https://aa-frontend-415242727441.asia-southeast1.run.app/login
+- Sign in (Google account): https://autoaccounting.ph/login
 
 ## How it works
 

@@ -40,7 +40,9 @@ class BodySizeLimitMiddleware:
             if started:
                 raise _BodyTooLarge()  # a streaming response has already sent its status
             rejected = True
-            body = b'{"detail":"Request body too large"}'
+            detail = (f"Upload too large: drop up to {limit // (1024 * 1024)} MB at a time" if multipart
+                      else f"Request body too large (max {limit // (1024 * 1024)} MB)")
+            body = ('{"detail":"%s"}' % detail).encode()
             await send({"type": "http.response.start", "status": 413, "headers": [
                 (b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
             await send({"type": "http.response.body", "body": body})

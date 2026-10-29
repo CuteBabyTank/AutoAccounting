@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -121,6 +122,8 @@ def _pdf_bytes(data: bytes) -> bytes | None:
 
 PDF_MEMORY_BYTES = 1536 * 1024 * 1024  # address-space cap for the rewrite process
 PDF_TIMEOUT_S = 90
+# One rewrite at a time: two capped workers could exceed a 2 GiB instance together.
+_PDF_SLOTS = threading.BoundedSemaphore(1)
 _APP_ROOT = str(Path(__file__).resolve().parents[3])  # backend/, so the child can import app.*
 
 # The child caps its own memory before reading the input, then writes the result (or nothing) to a file.
@@ -144,10 +147,11 @@ def _pdf_file_isolated(src: Path, dest: Path) -> bool:
     """``_pdf_bytes`` in a separate process with a memory cap and a timeout: a PDF that would make MuPDF decode
     something enormous (an inline or annotation image the pre-check can't see) kills only that process."""
     try:
-        proc = subprocess.run([sys.executable, "-I", "-c", _WORKER, _APP_ROOT, str(PDF_MEMORY_BYTES),
-                               str(src.resolve()), str(dest.resolve())],
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                              timeout=PDF_TIMEOUT_S, check=False)
+        with _PDF_SLOTS:
+            proc = subprocess.run([sys.executable, "-I", "-c", _WORKER, _APP_ROOT, str(PDF_MEMORY_BYTES),
+                                   str(src.resolve()), str(dest.resolve())],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                  timeout=PDF_TIMEOUT_S, check=False)
     except subprocess.TimeoutExpired:
         logger.warning("compress_skipped type=pdf error=timeout")
         return False

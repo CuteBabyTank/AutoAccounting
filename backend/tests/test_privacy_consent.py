@@ -74,9 +74,38 @@ def test_new_person_who_agrees_is_registered_with_the_policy_version():
     assert user.privacy_policy_version == auth_service.PRIVACY_POLICY_VERSION
 
 
-def test_existing_account_signs_in_without_being_asked_again():
-    existing = User(id=uuid.uuid4(), email="new.person@example.com", role=UserRole.EMPLOYEE, is_active=True)
+def _existing(version: str | None) -> User:
+    return User(id=uuid.uuid4(), email="new.person@example.com", role=UserRole.EMPLOYEE, is_active=True,
+                privacy_policy_version=version)
+
+
+def test_existing_account_on_the_current_policy_is_not_asked_again():
+    existing = _existing(auth_service.PRIVACY_POLICY_VERSION)
     db = _Session(existing)
     user, token = _login(db, accept=False)
     assert user is existing and token
-    assert db.added == []
+    assert db.added == [] and db.commits == 0
+
+
+@pytest.mark.parametrize("version", [None, "2000-01-01"])
+def test_existing_account_without_current_consent_must_accept(version):
+    existing = _existing(version)
+    db = _Session(existing)
+    with pytest.raises(HTTPException) as exc:
+        _login(db, accept=False)
+    assert exc.value.status_code == 428
+    assert exc.value.detail == auth_service.CONSENT_UPDATED
+    assert existing.privacy_policy_version == version and db.commits == 0
+
+    user, token = _login(db, accept=True)
+    assert user is existing and token and db.added == []
+    assert user.privacy_policy_version == auth_service.PRIVACY_POLICY_VERSION
+    assert user.privacy_accepted_at is not None
+
+
+def test_deactivated_account_is_refused_before_any_consent_step():
+    existing = _existing(None)
+    existing.is_active = False
+    with pytest.raises(HTTPException) as exc:
+        _login(_Session(existing), accept=False)
+    assert exc.value.status_code == 403

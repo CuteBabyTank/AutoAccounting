@@ -21,8 +21,9 @@ logger = logging.getLogger("auth.audit")
 
 # Effective date of frontend/public/privacy.html; bump it when the policy changes.
 PRIVACY_POLICY_VERSION = "2026-10-29"
-# 428 detail the login page answers with the consent step.
+# 428 details the login page answers with the consent step: a new account, or one that hasn't accepted this version.
 CONSENT_REQUIRED = "privacy_consent_required"
+CONSENT_UPDATED = "privacy_consent_updated"
 
 
 class _GoogleSession(requests.Session):
@@ -89,6 +90,16 @@ async def google_login(
             if not user.is_active:
                 logger.warning("google_login_failed reason=deactivated user_id=%s email=%s", user.id, email)
                 raise _AccountDeactivated()
+            if user.privacy_policy_version != PRIVACY_POLICY_VERSION:
+                if not accept_privacy:
+                    logger.info("google_login_needs_consent user_id=%s privacy_version=%s",
+                                user.id, user.privacy_policy_version)
+                    raise HTTPException(status_code=428, detail=CONSENT_UPDATED)
+                user.privacy_accepted_at = datetime.now(timezone.utc)
+                user.privacy_policy_version = PRIVACY_POLICY_VERSION
+                await db.commit()
+                await db.refresh(user)
+                logger.info("privacy_consent_recorded user_id=%s privacy_version=%s", user.id, PRIVACY_POLICY_VERSION)
             logger.info("google_login_success user_id=%s email=%s", user.id, email)
 
         if user.role == UserRole.UNVERIFIED:

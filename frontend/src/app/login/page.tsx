@@ -26,8 +26,10 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [deactivated, setDeactivated] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
-  // A new Google account: its token waits here until the person agrees to the privacy policy (nothing is stored yet).
+  // A Google token waits here until the person agrees to the privacy policy: a new account (nothing is stored yet)
+  // or one that hasn't accepted the current version.
   const [consentCredential, setConsentCredential] = useState<string | null>(null);
+  const [consentIsNew, setConsentIsNew] = useState(true);
   const [agreed, setAgreed] = useState(false);
 
   // Already signed in (e.g. a bookmarked /login), so go straight home.
@@ -45,8 +47,9 @@ export default function LoginPage() {
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number; data?: { detail?: string } } };
       const detail = axiosErr.response?.data?.detail || "";
-      if (axiosErr.response?.status === 428 && detail === "privacy_consent_required" && credential) {
+      if (axiosErr.response?.status === 428 && detail.startsWith("privacy_consent_") && credential) {
         setConsentCredential(credential);
+        setConsentIsNew(detail === "privacy_consent_required");
         setAgreed(false);
       } else if (axiosErr.response?.status === 403 && /deactivat/i.test(detail)) {
         setDeactivated(true);
@@ -102,10 +105,13 @@ export default function LoginPage() {
 
         {consentCredential && (
           <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-tertiary)] p-4">
-            <p className="mb-1 text-sm font-semibold text-[var(--text-primary)]">Create your account</p>
+            <p className="mb-1 text-sm font-semibold text-[var(--text-primary)]">
+              {consentIsNew ? "Create your account" : "Privacy Policy"}
+            </p>
             <p className="mb-4 text-xs leading-relaxed text-[var(--text-secondary)]">
-              This Google account isn&apos;t registered yet. To create an account, please read and accept how we handle
-              your data. If you don&apos;t accept, no account is created and nothing is saved.
+              {consentIsNew
+                ? "This Google account isn't registered yet. To create an account, please read and accept how we handle your data. If you don't accept, no account is created and nothing is saved."
+                : "Before you continue, please read and accept how we handle your data. You can't sign in until you accept."}
             </p>
             <label className="mb-4 flex cursor-pointer items-start gap-2.5 text-sm text-[var(--text-primary)]">
               <input
@@ -138,7 +144,7 @@ export default function LoginPage() {
                 disabled={!agreed || signingIn}
                 className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
               >
-                Create account
+                {consentIsNew ? "Create account" : "Accept and continue"}
               </button>
             </div>
           </div>

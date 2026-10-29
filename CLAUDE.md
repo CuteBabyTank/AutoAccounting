@@ -262,12 +262,19 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
   Per-person rate limit: 40 turns / 10 minutes. Search sends the model the best 10 hits across all record kinds
   (`tools.SEARCH_K`) with true per-kind and overall totals (counts above 1000 per kind are marked as at least 1000);
   sources are limited to 12; list results to 25 (filings 50), GL lines 30.
+- **Production (`deploy/README.md`):** Cloud Run `asia-southeast1` (`aa-backend` ≤ 1 instance, request-based CPU,
+  scale to zero; `aa-frontend`), Supabase via the 6543 pooler as `aa_app` (NOBYPASSRLS; never `postgres`, which
+  bypasses RLS; Data API off), uploads in a versioned bucket mounted at `/data` = `ACCOUNTING_DIR`, nightly
+  `aa-db-backup` job. `bash deploy/setup-gcp.sh` once, `bash deploy/deploy.sh` per release (settings in
+  `deploy/config.sh`, secrets `AA_*` in Secret Manager). Upload jobs are in-process tasks: a dead one is resumed on
+  the next read of its upload (`jobs.stale_action`, `pipeline.resume`; failed after 24 h) and shutdown dates running
+  ones back (`pipeline.release_running`). Keep anything new that runs after a response resumable the same way.
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.
 - **Frontend token** lives in `sessionStorage` (`autoaccounting_token`). The axios interceptor attaches it, and on 401 it is cleared and AuthGate redirects.
 
 ## Open items carried over
 
-Alphalist DAT export (BIR layout unverified), Gemini read of scanned payroll registers, 1604-E, 1702-RT balance sheet not yet defaulted from books, manual contribution remittances, WC010 vs WC011 manual, whether IEIRD landed cost feeds COGS (ask CPA). Deploy pipeline not set up yet (`Dockerfile.prod` files exist for both apps).
+Alphalist DAT export (BIR layout unverified), Gemini read of scanned payroll registers, 1604-E, 1702-RT balance sheet not yet defaulted from books, manual contribution remittances, WC010 vs WC011 manual, whether IEIRD landed cost feeds COGS (ask CPA).
 
 ## Conventions
 

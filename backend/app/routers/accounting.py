@@ -53,7 +53,7 @@ from app.services.accounting.review_rules import BULK_MAX, LOCKED_REASON, bulk_t
 from app.services.accounting import duplicates
 from app.services.accounting.classify import document_nature, needs_review_for, rule_conflicts
 from app.services.accounting.matching import file_detection_from_json, suggest_groups
-from app.services.accounting.jobs import is_stale_job
+from app.services.accounting.jobs import stale_action
 from app.services.accounting.periods import period_fields, period_for, quarter_label
 from app.services.accounting.storage import (
     UploadRejected, filed_hashes, is_stored_path_safe, read_page_bytes, stream_upload, upload_dir,
@@ -211,14 +211,32 @@ async def _upload_out(db: AsyncSession, ent: uuid.UUID, upload_id: uuid.UUID) ->
     files = (await db.execute(
         select(AAFile).where(AAFile.upload_id == upload_id).order_by(AAFile.created_at)
     )).scalars().all()
-    if is_stale_job(upload.status, upload.updated_at, datetime.now(timezone.utc)):
-        # The background job died (deploy/restart). Fail it so the files can be re-dropped.
-        upload.status = "failed"
-        for f in files:
-            if f.status in ("uploaded", "detected", "extracting"):
-                f.status = "error"
-                f.error_message = "Processing was interrupted. Drop the file again."
-        await db.commit()
+    now = datetime.now(timezone.utc)
+    action = None if pipeline.is_running(upload.id) else stale_action(
+        upload.status, upload.created_at, upload.updated_at, now)
+    if action:
+        # The background job died (deploy, restart, scale-in). Claim it so only one reader acts, then resume it
+        # where it stopped, or fail it once it is too old so the files can be re-dropped.
+        claimed = await db.execute(
+            update(AAUpload)
+            .where(AAUpload.id == upload.id, AAUpload.status == upload.status, AAUpload.updated_at == upload.updated_at)
+            .values(updated_at=now)
+        )
+        if claimed.rowcount == 1:
+            job_status = upload.status
+            if action == "resume":
+                for f in files:
+                    if f.status == "extracting":  # claimed by the dead job; none of its work was committed
+                        f.status = "detected"
+            else:
+                upload.status = "failed"
+                for f in files:
+                    if f.status in ("uploaded", "detected", "extracting"):
+                        f.status = "error"
+                        f.error_message = "Processing was interrupted. Drop the file again."
+            await db.commit()
+            if action == "resume":
+                pipeline.resume(upload.id, str(upload.uploaded_by), upload.enterprise_id, job_status)
 
     groups: list[UploadGroupOut] = []
     if upload.status == "awaiting_confirmation":

@@ -1,0 +1,8 @@
+# What `gcloud builds submit` leaves out of the uploaded source (deploy/deploy.sh).
+.gcloudignore
+.git
+.gitignore
+#!include:.gitignore
+.env.*
+docs/
+.claude/

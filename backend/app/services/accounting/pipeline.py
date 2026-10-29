@@ -8,6 +8,7 @@ no transaction is held open across the network (transaction pooler).
 import asyncio
 import logging
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy import exists, select, update
@@ -26,7 +27,7 @@ from app.services.accounting.books import bank
 from app.services.accounting.books.chart import Chart
 from app.services.accounting.books.links import relink_receipts
 from app.services.accounting.review_rules import flag_locked
-from app.services.accounting.jobs import JobSlots
+from app.services.accounting.jobs import RUNNING_STATUSES, STALE_AFTER, JobSlots
 from app.services.accounting.extraction import (
     DETECT_PROMPT, extract_prompt, parse_detection, parse_extraction,
 )
@@ -38,6 +39,8 @@ logger = logging.getLogger(__name__)
 # Accounting jobs per instance (each holds a DB session for its run), one per firm.
 _SLOTS = JobSlots(total=4)
 _TASKS: set[asyncio.Task] = set()
+# Uploads with a job on this instance (queued for a slot or running) -> the user it runs as.
+_ACTIVE: dict[uuid.UUID, str] = {}
 _IMAGE_MIME = {"png": "image/png", "jpg": "image/jpeg"}
 
 
@@ -56,18 +59,60 @@ def company_profile(c: AACompany) -> CompanyProfile:
     )
 
 
-def _spawn(coro) -> None:
+def _spawn(upload_id: uuid.UUID, user_id: str, coro) -> None:
+    _ACTIVE[upload_id] = user_id
     task = asyncio.create_task(coro)
     _TASKS.add(task)
-    task.add_done_callback(_TASKS.discard)
+
+    def done(t: asyncio.Task) -> None:
+        _TASKS.discard(t)
+        _ACTIVE.pop(upload_id, None)
+
+    task.add_done_callback(done)
 
 
 def start_detection(upload_id: uuid.UUID, user_id: str, firm_id: uuid.UUID) -> None:
-    _spawn(_guarded(run_detection, upload_id, user_id, firm_id))
+    _spawn(upload_id, user_id, _guarded(run_detection, upload_id, user_id, firm_id))
 
 
 def start_extraction(upload_id: uuid.UUID, user_id: str, firm_id: uuid.UUID) -> None:
-    _spawn(_guarded(run_extraction, upload_id, user_id, firm_id))
+    _spawn(upload_id, user_id, _guarded(run_extraction, upload_id, user_id, firm_id))
+
+
+def is_running(upload_id: uuid.UUID) -> bool:
+    """A job for this upload is queued or running on this instance (it may look stale while it waits for a slot)."""
+    return upload_id in _ACTIVE
+
+
+def resume(upload_id: uuid.UUID, user_id: str, firm_id: uuid.UUID, status: str) -> None:
+    """Restart a dead job where it stopped: both jobs only pick up files they haven't finished."""
+    (start_detection if status == "detecting" else start_extraction)(upload_id, user_id, firm_id)
+
+
+async def release_running() -> None:
+    """Shutdown: stop this instance's jobs and date their uploads back past ``STALE_AFTER``, so the next read
+    resumes them at once instead of waiting for them to go stale (deploys, Cloud Run scale-in)."""
+    if not _ACTIVE:
+        return
+    active = dict(_ACTIVE)
+    tasks = list(_TASKS)
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.wait(tasks, timeout=3)
+    back = datetime.now(timezone.utc) - STALE_AFTER - timedelta(minutes=1)
+    for upload_id, user_id in active.items():
+        try:
+            async with async_session() as db:
+                await bind_session_user(db, user_id)
+                await db.execute(
+                    update(AAUpload)
+                    .where(AAUpload.id == upload_id, AAUpload.status.in_(RUNNING_STATUSES))
+                    .values(updated_at=back)
+                )
+                await db.commit()
+        except Exception:
+            logger.exception("accounting_job_release_failed upload_id=%s", upload_id)
 
 
 async def _guarded(job, upload_id: uuid.UUID, user_id: str, firm_id: uuid.UUID) -> None:

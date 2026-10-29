@@ -1,0 +1,131 @@
+# Production build + deploy (Cloud Build → Artifact Registry → Cloud Run, asia-southeast1).
+# Run through deploy/deploy.sh, which fills the substitutions from deploy/config.sh.
+# One-time infrastructure (buckets, secrets, service accounts, backups): deploy/setup-gcp.sh.
+
+substitutions:
+  _REGION: asia-southeast1
+  _REPO: autoaccounting
+  _BACKEND_SERVICE: aa-backend
+  _FRONTEND_SERVICE: aa-frontend
+  _UPLOADS_BUCKET: ''
+  _API_URL: ''
+  _FRONTEND_URL: ''
+  _GOOGLE_CLIENT_ID: ''
+  _BOOTSTRAP_ADMIN_EMAIL: ''
+  _GEMINI_MODEL: ''
+  _GEMINI_THINKING_LEVEL: ''
+  _ASSISTANT_LLM_BASE_URL: ''
+  _ASSISTANT_LLM_MODEL: ''
+
+steps:
+  # ── Backend image ──
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/backend:$BUILD_ID'
+      - '-f'
+      - 'Dockerfile.prod'
+      - '.'
+    dir: 'backend'
+    id: 'build-backend'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/backend:$BUILD_ID']
+    id: 'push-backend'
+    waitFor: ['build-backend']
+
+  # ── Frontend image (NEXT_PUBLIC_* are baked in at build time) ──
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/frontend:$BUILD_ID'
+      - '-f'
+      - 'Dockerfile.prod'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_API_URL=${_API_URL}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID}'
+      - '.'
+    dir: 'frontend'
+    id: 'build-frontend'
+    waitFor: ['-']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/frontend:$BUILD_ID']
+    id: 'push-frontend'
+    waitFor: ['build-frontend']
+
+  # ── Backend service ──
+  # Scales to zero with request-based CPU: extraction runs as a background task that gets CPU while the upload
+  # screen polls; a job killed by scale-in/deploy is resumed on the next read (services/accounting/jobs.py).
+  # One instance at most: rate limiters and per-firm job slots live in memory.
+  # Uploads live in a Cloud Storage bucket mounted as ACCOUNTING_DIR (versioned; tax records are kept ≥ 5 years).
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_BACKEND_SERVICE}'
+      - '--image'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/backend:$BUILD_ID'
+      - '--region'
+      - '${_REGION}'
+      - '--service-account'
+      - 'aa-backend@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--allow-unauthenticated'
+      - '--use-http2'
+      - '--timeout'
+      - '3600'
+      - '--cpu'
+      - '2'
+      - '--memory'
+      - '2Gi'
+      - '--execution-environment'
+      - 'gen2'
+      - '--cpu-throttling'
+      - '--min-instances'
+      - '0'
+      - '--max-instances'
+      - '1'
+      - '--add-volume'
+      - 'name=uploads,type=cloud-storage,bucket=${_UPLOADS_BUCKET}'
+      - '--add-volume-mount'
+      - 'volume=uploads,mount-path=/data'
+      - '--set-secrets'
+      - 'DATABASE_URL=AA_DATABASE_URL:latest,GEMINI_API_KEY=AA_GEMINI_API_KEY:latest,JWT_SECRET=AA_JWT_SECRET:latest,ASSISTANT_LLM_API_KEY=AA_ASSISTANT_LLM_API_KEY:latest'
+      - '--set-env-vars'
+      - '^##^ENVIRONMENT=production##ENABLE_DEV_LOGIN=false##GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID}##BOOTSTRAP_ADMIN_EMAIL=${_BOOTSTRAP_ADMIN_EMAIL}##FRONTEND_URL=${_FRONTEND_URL}##ACCOUNTING_DIR=/data##DATABASE_SSL_ROOT_CERT=/app/certs/supabase-prod-ca-2021.crt##ACCOUNTING_GEMINI_MODEL=${_GEMINI_MODEL}##ACCOUNTING_GEMINI_THINKING_LEVEL=${_GEMINI_THINKING_LEVEL}##ASSISTANT_LLM_PROVIDER=openai##ASSISTANT_LLM_BASE_URL=${_ASSISTANT_LLM_BASE_URL}##ASSISTANT_LLM_MODEL=${_ASSISTANT_LLM_MODEL}'
+    id: 'deploy-backend'
+    waitFor: ['push-backend']
+
+  # ── Frontend service ──
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_FRONTEND_SERVICE}'
+      - '--image'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/frontend:$BUILD_ID'
+      - '--region'
+      - '${_REGION}'
+      - '--service-account'
+      - 'aa-frontend@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--allow-unauthenticated'
+      - '--memory'
+      - '512Mi'
+      - '--min-instances'
+      - '0'
+      - '--max-instances'
+      - '3'
+    id: 'deploy-frontend'
+    waitFor: ['push-frontend', 'deploy-backend']
+
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/backend:$BUILD_ID'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/frontend:$BUILD_ID'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

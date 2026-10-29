@@ -17,6 +17,7 @@ from app.config import settings, validate_secrets_at_startup
 from app.database import DB_POOLER, engine
 from app.logging_config import setup_logging
 from app.routers import accounting, admin, auth, features, team
+from app.services.accounting import pipeline
 from app.services.features import feature_gate
 from app.auth.security import global_ip_limiter
 
@@ -41,6 +42,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await pipeline.release_running()
         await engine.dispose()
 
 

@@ -72,8 +72,9 @@ async def google_login(
 
         if not user:
             if not accept_privacy:
-                # Nothing is stored until the person agrees; the login page asks and sends the same token back.
-                logger.info("google_registration_needs_consent email=%s", email)
+                # Nothing is stored (not even the email in logs) until the person agrees; the login page asks
+                # and sends the same token back.
+                logger.info("google_registration_needs_consent")
                 raise HTTPException(status_code=428, detail=CONSENT_REQUIRED)
             user = User(
                 email=email, role=UserRole.UNVERIFIED,

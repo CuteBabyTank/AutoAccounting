@@ -26,13 +26,16 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [deactivated, setDeactivated] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  // A new Google account: its token waits here until the person agrees to the privacy policy (nothing is stored yet).
+  const [consentCredential, setConsentCredential] = useState<string | null>(null);
+  const [agreed, setAgreed] = useState(false);
 
   // Already signed in (e.g. a bookmarked /login), so go straight home.
   useEffect(() => {
     if (!authLoading && user) router.replace(roleHome(user.role));
   }, [authLoading, user, router]);
 
-  const signIn = async (attempt: () => Promise<{ role: Parameters<typeof roleHome>[0] }>) => {
+  const signIn = async (attempt: () => Promise<{ role: Parameters<typeof roleHome>[0] }>, credential?: string) => {
     setError("");
     setDeactivated(false);
     setSigningIn(true);
@@ -42,7 +45,10 @@ export default function LoginPage() {
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number; data?: { detail?: string } } };
       const detail = axiosErr.response?.data?.detail || "";
-      if (axiosErr.response?.status === 403 && /deactivat/i.test(detail)) {
+      if (axiosErr.response?.status === 428 && detail === "privacy_consent_required" && credential) {
+        setConsentCredential(credential);
+        setAgreed(false);
+      } else if (axiosErr.response?.status === 403 && /deactivat/i.test(detail)) {
         setDeactivated(true);
       } else {
         setError(detail || "Sign-in failed");
@@ -55,7 +61,18 @@ export default function LoginPage() {
   const handleSuccess = (credentialResponse: { credential?: string }) => {
     const credential = credentialResponse.credential;
     if (!credential) return;
-    void signIn(() => googleLogin(credential));
+    void signIn(() => googleLogin(credential), credential);
+  };
+
+  const createAccount = () => {
+    if (!consentCredential || !agreed || signingIn) return;
+    const credential = consentCredential;
+    void signIn(() => googleLogin(credential, true)).then(() => setConsentCredential(null));
+  };
+
+  const cancelConsent = () => {
+    setConsentCredential(null);
+    setAgreed(false);
   };
 
   return (
@@ -83,7 +100,51 @@ export default function LoginPage() {
           </div>
         )}
 
-        {GOOGLE_CLIENT_ID && (
+        {consentCredential && (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-tertiary)] p-4">
+            <p className="mb-1 text-sm font-semibold text-[var(--text-primary)]">Create your account</p>
+            <p className="mb-4 text-xs leading-relaxed text-[var(--text-secondary)]">
+              This Google account isn&apos;t registered yet. To create an account, please read and accept how we handle
+              your data. If you don&apos;t accept, no account is created and nothing is saved.
+            </p>
+            <label className="mb-4 flex cursor-pointer items-start gap-2.5 text-sm text-[var(--text-primary)]">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+                disabled={signingIn}
+              />
+              <span>
+                I have read and agree to the{" "}
+                <a href="/privacy.html" target="_blank" rel="noopener" className="font-medium text-[var(--accent)] underline underline-offset-2">
+                  Privacy Policy
+                </a>
+                .
+              </span>
+            </label>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelConsent}
+                disabled={signingIn}
+                className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={createAccount}
+                disabled={!agreed || signingIn}
+                className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
+              >
+                Create account
+              </button>
+            </div>
+          </div>
+        )}
+
+        {GOOGLE_CLIENT_ID && !consentCredential && (
           <div className="flex justify-center">
             <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
               <GoogleLogin

@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import logging
+from datetime import datetime, timezone
 from functools import lru_cache
 
 import requests
@@ -17,6 +18,11 @@ from app.config import settings
 from app.models.user import User, UserRole
 
 logger = logging.getLogger("auth.audit")
+
+# Effective date of frontend/public/privacy.html; bump it when the policy changes.
+PRIVACY_POLICY_VERSION = "2026-10-29"
+# 428 detail the login page answers with the consent step.
+CONSENT_REQUIRED = "privacy_consent_required"
 
 
 class _GoogleSession(requests.Session):
@@ -35,7 +41,9 @@ class _AccountDeactivated(Exception):
     arbitrary text from Google's token-verification ValueError."""
 
 
-async def google_login(db: AsyncSession, credential: str, client_id: str) -> tuple[User, str]:
+async def google_login(
+    db: AsyncSession, credential: str, client_id: str, accept_privacy: bool = False,
+) -> tuple[User, str]:
     if not client_id:
         raise HTTPException(status_code=500, detail="Google Auth is not configured on the server")
 
@@ -63,11 +71,19 @@ async def google_login(db: AsyncSession, credential: str, client_id: str) -> tup
         user = result.scalar_one_or_none()
 
         if not user:
-            user = User(email=email, role=UserRole.UNVERIFIED)
+            if not accept_privacy:
+                # Nothing is stored until the person agrees; the login page asks and sends the same token back.
+                logger.info("google_registration_needs_consent email=%s", email)
+                raise HTTPException(status_code=428, detail=CONSENT_REQUIRED)
+            user = User(
+                email=email, role=UserRole.UNVERIFIED,
+                privacy_accepted_at=datetime.now(timezone.utc), privacy_policy_version=PRIVACY_POLICY_VERSION,
+            )
             db.add(user)
             await db.commit()
             await db.refresh(user)
-            logger.info("google_registration_success user_id=%s email=%s", user.id, email)
+            logger.info("google_registration_success user_id=%s email=%s privacy_version=%s",
+                        user.id, email, PRIVACY_POLICY_VERSION)
         else:
             if not user.is_active:
                 logger.warning("google_login_failed reason=deactivated user_id=%s email=%s", user.id, email)

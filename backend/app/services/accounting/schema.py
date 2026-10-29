@@ -12,6 +12,8 @@ def column_statements() -> list[str]:
         "ALTER TABLE aa_work_items ADD COLUMN IF NOT EXISTS assigned_auto BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE aa_firm_settings ADD COLUMN IF NOT EXISTS auto_assign BOOLEAN NOT NULL DEFAULT true",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar BYTEA",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_accepted_at TIMESTAMPTZ",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_policy_version VARCHAR(20)",
         "ALTER TABLE aa_documents ADD COLUMN IF NOT EXISTS seller_branch VARCHAR(5) NOT NULL DEFAULT ''",
         "ALTER TABLE aa_documents ADD COLUMN IF NOT EXISTS buyer_branch VARCHAR(5) NOT NULL DEFAULT ''",
         "ALTER TABLE aa_documents ADD COLUMN IF NOT EXISTS ewt_atc VARCHAR(10) NOT NULL DEFAULT ''",

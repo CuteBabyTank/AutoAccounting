@@ -28,7 +28,7 @@ def _clean_nickname(value: str | None) -> str | None:
 
 @router.post("/google", response_model=TokenResponse)
 async def auth_google(request: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
-    user, token = await google_login(db, request.credential, settings.google_client_id)
+    user, token = await google_login(db, request.credential, settings.google_client_id, request.accept_privacy)
     return TokenResponse(token=token, user=UserResponse(**await _response(db, user)))
 
 

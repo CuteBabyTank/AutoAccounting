@@ -9,7 +9,8 @@ interface AuthState {
   user: User | null;
   token: string | null;
   loading: boolean;
-  googleLogin: (credential: string) => Promise<User>;
+  /** acceptPrivacy: the person ticked the privacy policy box (needed only to create a new account). */
+  googleLogin: (credential: string, acceptPrivacy?: boolean) => Promise<User>;
   /** Development-only sign-in; no email signs in as the platform admin. */
   devLogin: (email?: string) => Promise<User>;
   logout: () => void;
@@ -42,8 +43,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const googleLogin = async (credential: string): Promise<User> => {
-    const res = await api.post("/auth/google", { credential });
+  const googleLogin = async (credential: string, acceptPrivacy = false): Promise<User> => {
+    const res = await api.post("/auth/google", { credential, accept_privacy: acceptPrivacy });
     sessionStorage.setItem(TOKEN_KEY, res.data.token);
     setToken(res.data.token);
     setUser(res.data.user);

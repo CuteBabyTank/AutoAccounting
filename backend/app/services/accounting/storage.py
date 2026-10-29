@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import logging
 import os
 import uuid
 from dataclasses import dataclass
@@ -12,13 +13,15 @@ from fastapi import UploadFile
 from PIL import Image, UnidentifiedImageError
 
 from app.config import settings
-from app.services.accounting.compress import PDF_POOL, compress_file
+from app.services.accounting.compress import PDF_POOL, Compressed, compress_file
 from app.services.accounting.page_trim import render_pdf_page_trimmed, trimmed_image
 from app.services.file_service import validate_file
 from app.services.gemini_service import get_pdf_page_count_safe, render_pdf_page_webp
 
 ALLOWED_EXTS = {".pdf": "pdf", ".png": "png", ".jpg": "jpg", ".jpeg": "jpg"}
 _CHUNK = 1024 * 1024
+logger = logging.getLogger(__name__)
+PDF_QUEUE_MAX = 8  # ~12 min worst case at the 90 s per-file timeout; seconds normally
 
 
 class UploadRejected(ValueError):
@@ -106,9 +109,30 @@ async def stream_upload(f: UploadFile, dest_dir: Path) -> StoredUpload:
         dest.unlink(missing_ok=True)
         raise
     # Keep a smaller copy (same pages, ~200 dpi). The hash stays the original's so re-drops are still duplicates.
-    # PDFs wait their turn on the single rewrite worker (see compress.PDF_POOL) rather than being skipped.
-    kept = await loop.run_in_executor(PDF_POOL if file_type == "pdf" else None, compress_file, str(dest), file_type)
+    if file_type != "pdf":
+        kept = await loop.run_in_executor(None, compress_file, str(dest), file_type)
+    else:
+        kept = await _compress_pdf(loop, str(dest))
     return StoredUpload(filename, kept.path, kept.size, digest.hexdigest(), kept.file_type, page_count)
+
+
+_pdf_waiting = 0  # PDFs queued or running on compress.PDF_POOL (event-loop side, so no lock needed)
+
+
+async def _compress_pdf(loop: asyncio.AbstractEventLoop, path: str) -> Compressed:
+    """PDFs wait their turn on the single rewrite worker, so normally every one is compressed. Past
+    PDF_QUEUE_MAX waiting (a burst of slow files) the original is kept rather than stalling everyone's uploads;
+    ``compress_backfill`` can shrink those later."""
+    global _pdf_waiting
+    if _pdf_waiting >= PDF_QUEUE_MAX:
+        size = os.path.getsize(path)
+        logger.warning("compress_skipped type=pdf error=queue_full waiting=%d", _pdf_waiting)
+        return Compressed(path, "pdf", size, size)
+    _pdf_waiting += 1
+    try:
+        return await loop.run_in_executor(PDF_POOL, compress_file, path, "pdf")
+    finally:
+        _pdf_waiting -= 1
 
 
 def is_stored_path_safe(stored_path: str, root: str | None = None) -> bool:

@@ -132,3 +132,35 @@ def test_a_200_dpi_pdf_saved_at_top_quality_is_still_re_saved_smaller():
     out, kind = compress_bytes(data, "pdf")
     assert kind == "pdf" and len(out) < len(data) * 0.7
 
+
+
+def test_pdf_keeps_the_original_when_the_compression_queue_is_full(tmp_path, monkeypatch):
+    import asyncio
+
+    from app.services.accounting import storage
+
+    pdf = tmp_path / "a.pdf"
+    pdf.write_bytes(_scanned_pdf(1))
+    monkeypatch.setattr(storage, "_pdf_waiting", storage.PDF_QUEUE_MAX)
+    monkeypatch.setattr(storage, "compress_file", lambda *a: (_ for _ in ()).throw(AssertionError("queued")))
+    async def run():
+        return await storage._compress_pdf(asyncio.get_running_loop(), str(pdf))
+
+    kept = asyncio.run(run())
+    assert (kept.path, kept.size, kept.original_size) == (str(pdf), pdf.stat().st_size, pdf.stat().st_size)
+
+
+def test_pdf_is_compressed_on_the_queue_and_the_counter_is_released(tmp_path, monkeypatch):
+    import asyncio
+
+    from app.services.accounting import storage
+
+    pdf = tmp_path / "a.pdf"
+    pdf.write_bytes(_scanned_pdf(1))
+
+    async def run():
+        return await storage._compress_pdf(asyncio.get_running_loop(), str(pdf))
+
+    kept = asyncio.run(run())
+    assert kept.size <= kept.original_size
+    assert storage._pdf_waiting == 0

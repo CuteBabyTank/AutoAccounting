@@ -12,7 +12,7 @@ from fastapi import UploadFile
 from PIL import Image, UnidentifiedImageError
 
 from app.config import settings
-from app.services.accounting.compress import compress_file
+from app.services.accounting.compress import PDF_POOL, compress_file
 from app.services.accounting.page_trim import render_pdf_page_trimmed, trimmed_image
 from app.services.file_service import validate_file
 from app.services.gemini_service import get_pdf_page_count_safe, render_pdf_page_webp
@@ -106,7 +106,8 @@ async def stream_upload(f: UploadFile, dest_dir: Path) -> StoredUpload:
         dest.unlink(missing_ok=True)
         raise
     # Keep a smaller copy (same pages, ~200 dpi). The hash stays the original's so re-drops are still duplicates.
-    kept = await loop.run_in_executor(None, compress_file, str(dest), file_type)
+    # PDFs wait their turn on the single rewrite worker (see compress.PDF_POOL) rather than being skipped.
+    kept = await loop.run_in_executor(PDF_POOL if file_type == "pdf" else None, compress_file, str(dest), file_type)
     return StoredUpload(filename, kept.path, kept.size, digest.hexdigest(), kept.file_type, page_count)
 
 

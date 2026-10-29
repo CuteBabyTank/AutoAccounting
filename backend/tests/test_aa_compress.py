@@ -131,3 +131,17 @@ def test_a_200_dpi_pdf_saved_at_top_quality_is_still_re_saved_smaller():
     data = doc.tobytes()
     out, kind = compress_bytes(data, "pdf")
     assert kind == "pdf" and len(out) < len(data) * 0.7
+
+
+def test_pdf_compression_is_skipped_when_the_worker_slot_stays_busy(tmp_path, monkeypatch):
+    from app.services.accounting import compress
+
+    monkeypatch.setattr(compress, "PDF_SLOT_WAIT_S", 0.01)
+    called = []
+    monkeypatch.setattr(compress.subprocess, "run", lambda *a, **k: called.append(a))
+    assert compress._PDF_SLOTS.acquire(timeout=1)
+    try:
+        assert compress._pdf_file_isolated(tmp_path / "in.pdf", tmp_path / "out.pdf") is False
+    finally:
+        compress._PDF_SLOTS.release()
+    assert called == []  # never waited for, never started

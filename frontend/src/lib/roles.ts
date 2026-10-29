@@ -17,7 +17,7 @@ export function roleHome(role?: UserRole | string): string {
 }
 
 /** The static marketing page (frontend/public/index.html, served by a rewrite). */
-export const HOMEPAGE = "/homepage";
+export const HOMEPAGE = "/";
 
 export const PUBLIC_ROUTES = ["/", "/login"];
 

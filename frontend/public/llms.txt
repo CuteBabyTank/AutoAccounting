@@ -1,0 +1,52 @@
+# AutoAccounting
+
+> AutoAccounting is the back office for Philippine accounting firms: drop client receipts, invoices, 2307s and payroll, and it sorts them per client, fills the BIR returns, and keeps the books of accounts.
+
+AutoAccounting is web software for accounting and bookkeeping firms in the Philippines that handle many client businesses. It turns a batch of mixed client paperwork into BIR returns and BIR loose-leaf books of accounts, with every figure traceable to its source document. It does not e-file: the firm reviews the returns and submits them through eFPS or eBIRForms.
+
+- Homepage: https://aa-frontend-415242727441.asia-southeast1.run.app/
+- Book a demo: matthewfrasersim@gmail.com
+- Sign in (Google account): https://aa-frontend-415242727441.asia-southeast1.run.app/login
+
+## How it works
+
+1. Drop the whole pile: receipts, sales invoices, 2307s, payroll registers and import papers, for any number of clients in one batch. Phone photos and scans are fine.
+2. Matched, read and checked: each document is matched to its client by TIN and name, sorted into sales, purchases, expenses, payroll or 2307s, and its VAT math (12%) is checked. Anything doubtful waits for review, with the reason.
+3. Generate the quarter: one click fills the quarter's BIR returns as PDFs and builds a versioned Excel workbook, with every change since the last version highlighted.
+
+## BIR returns
+
+- Monthly: 0619-E (expanded withholding remittance, months 1 and 2), 1601-C (withholding on compensation)
+- Quarterly: 2550-Q (VAT), 2551-Q (percentage tax), 1601-EQ (expanded withholding), 1701-Q (income tax, individuals), 1702-Q (income tax, corporations)
+- Annual: 1701 and 1701-A (individuals), 1702-RT (corporations), 1604-C alphalist with each employee's 2316
+- 2307 certificates of tax withheld, issued to clients' suppliers
+
+## Books of accounts
+
+Six BIR loose-leaf books for VAT-registered clients (general journal, general ledger, cash receipts, cash disbursements, sales, purchase), four for non-VAT clients. Printing a month closes it; later fixes post as correcting entries in the next open month. Year end includes a trial balance, financial statements, a cover and the sworn declaration.
+
+## FAQ
+
+### What is AutoAccounting?
+
+AutoAccounting is an AI back office for Philippine accounting and bookkeeping firms. Staff drop their clients' receipts, invoices, BIR 2307s and payroll registers; AutoAccounting matches each document to the right client by TIN and name, reads and sorts it, fills the BIR returns, and keeps the BIR loose-leaf books of accounts.
+
+### Which BIR returns does it prepare?
+
+Monthly 0619-E and 1601-C; quarterly 2550-Q, 2551-Q, 1601-EQ, 1701-Q and 1702-Q; annual 1701, 1701-A, 1702-RT and the 1604-C alphalist with each employee's 2316; and the 2307 certificates your clients issue to their suppliers. Each return comes out as a filled PDF plus a versioned Excel workbook.
+
+### Does AutoAccounting file returns with the BIR for us?
+
+No. AutoAccounting fills the returns and tracks their due dates; your firm reviews them and submits them through eFPS or eBIRForms as usual.
+
+### What documents can we upload?
+
+Sales and service invoices, official and collection receipts, BIR 2307s, payroll registers, bank statements and import papers. Phone photos and scans work, and one batch can mix documents from many clients.
+
+### Which books of accounts does it keep?
+
+BIR loose-leaf books: six for VAT-registered clients (general journal, general ledger, cash receipts, cash disbursements, sales and purchase journals) and four for non-VAT clients, with a trial balance, financial statements and month-end close. A printed month is closed, so its pages never change.
+
+### What happens when a document is unclear?
+
+It is not filed on a guess. Possible duplicates, documents not addressed to the client, VAT math that does not add up, missing dates or amounts and low-confidence reads wait in a review list with the reason, and every posted figure links back to its source document.

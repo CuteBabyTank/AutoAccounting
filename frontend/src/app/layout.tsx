@@ -32,6 +32,8 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "AutoAccounting",
   description: "Drop client documents; get sorted records, BIR returns and books of accounts.",
+  // Only the static homepage (public/index.html) should be in search results; the app is behind sign-in.
+  robots: { index: false, follow: false },
 };
 
 export default async function RootLayout({

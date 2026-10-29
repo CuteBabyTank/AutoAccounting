@@ -1,0 +1,15 @@
+# Only the homepage is public; the app is behind Google sign-in.
+# These rules cover every crawler, AI search ones included (GPTBot, OAI-SearchBot, ClaudeBot, PerplexityBot, Google-Extended…).
+User-agent: *
+Allow: /$
+Allow: /assets/
+Allow: /styles.css
+Allow: /app.js
+Allow: /llms.txt
+Disallow: /accounting
+Disallow: /team
+Disallow: /admin
+Disallow: /pending
+Disallow: /api/
+
+Sitemap: https://aa-frontend-415242727441.asia-southeast1.run.app/sitemap.xml

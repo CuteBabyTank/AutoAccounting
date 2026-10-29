@@ -14,13 +14,13 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["@phosphor-icons/react"],
   },
   // The marketing landing page is plain static HTML in public/ (index.html,
-  // styles.css, app.js, assets/), served at /homepage. The bare root sends
-  // visitors there; it's a temporary redirect so browsers don't cache it.
+  // styles.css, app.js, assets/), served at the root so search engines index
+  // it there. The old /homepage address redirects permanently.
   async redirects() {
-    return [{ source: "/", destination: "/homepage", permanent: false }];
+    return [{ source: "/homepage", destination: "/", permanent: true }];
   },
   async rewrites() {
-    return { beforeFiles: [{ source: "/homepage", destination: "/index.html" }], afterFiles: [], fallback: [] };
+    return { beforeFiles: [{ source: "/", destination: "/index.html" }], afterFiles: [], fallback: [] };
   },
   async headers() {
     // NOTE: Content-Security-Policy is intentionally NOT set here. It is

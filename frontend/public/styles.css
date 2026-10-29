@@ -492,3 +492,22 @@ main, .footer { position: relative; z-index: 1; }
   /* Smallest phones: the mark alone keeps "Log in" and "Book a demo" on one line. */
   .nav .logo span { display: none; }
 }
+
+/* ───────── FAQ ───────── */
+.faq { max-width: 820px; display: grid; gap: 12px; }
+.faq-item { border-radius: 14px; background: var(--card-bg); box-shadow: var(--card-shadow); }
+.faq-item summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 18px 22px; cursor: pointer; list-style: none;
+  font-size: 16.5px; font-weight: 700; letter-spacing: -.01em; color: var(--ink);
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after {
+  content: ""; flex: none; width: 9px; height: 9px; margin-top: -4px;
+  border-right: 2px solid var(--emerald); border-bottom: 2px solid var(--emerald);
+  transform: rotate(45deg); transition: transform .25s var(--ease);
+}
+.faq-item[open] summary::after { transform: rotate(225deg); margin-top: 4px; }
+.faq-item summary:focus-visible { outline: 2px solid var(--emerald); outline-offset: 2px; border-radius: 14px; }
+.faq-item p { padding: 0 22px 20px; font-size: 15.5px; color: var(--ink-2); line-height: 1.6; max-width: 62em; }
+@media (prefers-reduced-motion: reduce) { .faq-item summary::after { transition: none; } }

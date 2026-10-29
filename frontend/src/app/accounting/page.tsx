@@ -30,6 +30,7 @@ import GettingStarted from "@/components/guide/GettingStarted";
 import Hint from "@/components/guide/Hint";
 import { GuideButton } from "@/components/guide/GuideTour";
 import PageGuide from "@/components/guide/PageGuide";
+import { prepareDrop } from "@/lib/photo-shrink";
 import { DOCUMENTS_TOUR } from "@/components/guide/tours";
 import { DOCUMENTS_SPOTS } from "@/components/guide/tours/spots";
 import { accountingApi } from "@/lib/accounting-api";
@@ -105,6 +106,7 @@ export default function AccountingPage() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [companyForm, setCompanyForm] = useState<{ initial?: Partial<CompanyInput>; id?: string } | null>(null);
   const [notice, setNotice] = useState("");
+  const preparing = useRef(false); // photos being shrunk before upload
   const [error, setError] = useState("");
   const [append, setAppend] = useState<AffectedPeriod[] | null>(null);
   const [periodRefresh, setPeriodRefresh] = useState(0);
@@ -248,17 +250,30 @@ export default function AccountingPage() {
         setError("Finish the current upload before dropping more files.");
         return;
       }
-      const problem = dropProblem(files);
-      if (problem) {
-        setError(problem);
+      if (preparing.current) return;
+      if (files.length > MAX_FILES) {
+        setError(dropProblem(files) ?? "");
         return;
       }
       setError("");
       setNotice("");
+      preparing.current = true;
       try {
-        setUpload(await accountingApi.upload(files, target ?? undefined));
+        // Photos are shrunk on this device first (smaller, faster uploads); the server still checks everything.
+        const drop = await prepareDrop(files, (done, total) =>
+          setNotice(total > 1 ? `Shrinking photos ${done} of ${total}…` : "Shrinking photo…"),
+        );
+        setNotice("");
+        const problem = dropProblem(drop.files);
+        if (problem) {
+          setError(problem);
+          return;
+        }
+        setUpload(await accountingApi.upload(drop.files, target ?? undefined, drop.originalHashes));
       } catch (e) {
         setError(apiErrorMessage(e, "Upload failed"));
+      } finally {
+        preparing.current = false;
       }
     },
     [target, upload],

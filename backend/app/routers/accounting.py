@@ -303,6 +303,8 @@ async def _upload_out(db: AsyncSession, ent: uuid.UUID, upload_id: uuid.UUID) ->
 async def create_upload(
     files: list[UploadFile],
     company_id: uuid.UUID | None = Form(default=None),
+    # One per file, in order: the browser's hash of a photo it shrank ("" for files sent as they were).
+    original_sha256: list[str] = Form(default=[]),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -325,8 +327,9 @@ async def create_upload(
     dest = upload_dir(upload_id)
     stored = []
     try:
-        for f in files:
-            stored.append(await stream_upload(f, dest))
+        claims = original_sha256 if len(original_sha256) == len(files) else []
+        for i, f in enumerate(files):
+            stored.append(await stream_upload(f, dest, claims[i] if claims else None))
 
         # Dedupe is per company, so it can only happen up front when the company is known;
         # auto-detected drops are deduped atomically when extraction claims each file.

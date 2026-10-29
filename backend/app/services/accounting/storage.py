@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,7 +66,19 @@ def upload_dir(upload_id: uuid.UUID) -> Path:
     return Path(settings.accounting_root) / "accounting" / str(upload_id)
 
 
-async def stream_upload(f: UploadFile, dest_dir: Path) -> StoredUpload:
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def original_hash(claimed: str | None, file_type: str) -> str | None:
+    """The browser's hash of a photo it shrank before sending, so a re-drop of the same photo is still a duplicate.
+    Only JPEGs are shrunk in the browser; a PDF / PNG always uses the server's own hash. It only feeds duplicate
+    detection inside the uploader's own firm, so a false claim can't reach anyone else's files."""
+    if file_type != "jpg" or not claimed or not _SHA256.fullmatch(claimed):
+        return None
+    return claimed
+
+
+async def stream_upload(f: UploadFile, dest_dir: Path, claimed_sha256: str | None = None) -> StoredUpload:
     """Write one upload under ``dest_dir``; validate type, size, magic bytes and readability."""
     filename = (f.filename or "unknown")[:255]
     ext = os.path.splitext(filename)[1].lower()
@@ -108,12 +121,18 @@ async def stream_upload(f: UploadFile, dest_dir: Path) -> StoredUpload:
     except UploadRejected:
         dest.unlink(missing_ok=True)
         raise
+    claimed = original_hash(claimed_sha256, file_type)
     # Keep a smaller copy (same pages, ~200 dpi). The hash stays the original's so re-drops are still duplicates.
-    if file_type != "pdf":
+    if claimed:
+        # Already shrunk in the browser: a second JPEG pass only loses quality. (A false claim just keeps a bigger
+        # file of the uploader's own; it was still validated above.)
+        kept = Compressed(str(dest), file_type, total, total)
+    elif file_type != "pdf":
         kept = await loop.run_in_executor(None, compress_file, str(dest), file_type)
     else:
         kept = await _compress_pdf(loop, str(dest))
-    return StoredUpload(filename, kept.path, kept.size, digest.hexdigest(), kept.file_type, page_count)
+    sha256 = claimed or digest.hexdigest()
+    return StoredUpload(filename, kept.path, kept.size, sha256, kept.file_type, page_count)
 
 
 _pdf_waiting = 0  # PDFs queued or running on compress.PDF_POOL (event-loop side, so no lock needed)

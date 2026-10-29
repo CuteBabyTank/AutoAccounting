@@ -97,7 +97,10 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   (`services/accounting/compress.py`: photos ≤ 2400 px JPEG q80, PDF images > 240 dpi resampled to 200, fonts subset).
   The stored `sha256` is the **original** upload's (duplicate drops still match); `file_size`, `stored_path` and
   `file_type` are the kept copy's (a PNG may become a JPG). Signed / encrypted PDFs are kept byte-for-byte. The PDF
-  rewrite runs in a memory-capped subprocess. Files stored before 2026-10-19: `python -m
+  rewrite runs in a memory-capped subprocess, up to `compress.PDF_WORKERS` (3) at once on `PDF_POOL`; past
+  `storage.PDF_QUEUE_MAX` waiting, a PDF is kept as uploaded. JPEG photos are shrunk in the browser first
+  (`lib/photo-shrink.ts`, same 2400 px / q80) and sent with `original_sha256` per file; the server takes that hash for
+  JPEGs only (`storage.original_hash`) and skips its own pass for them. Files stored before 2026-10-19: `python -m
   app.services.accounting.compress_backfill [--dry-run]` (per firm under RLS, re-runnable).
   The page viewer's images (`GET /files/{id}/pages/{n}`) have blank margins trimmed (`page_trim.py`; PDF pages are
   re-rendered from the clip, sharper); bump `v` in `accountingApi.pageImage` when that rendering changes (browser cache).

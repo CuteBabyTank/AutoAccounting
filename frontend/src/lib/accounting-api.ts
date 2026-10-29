@@ -122,11 +122,11 @@ export const accountingApi = {
     api.post<BulkResolveResult>("/accounting/documents/bulk-resolve", body).then((r) => r.data),
   updateCompany: (id: string, data: CompanyInput) =>
     api.put<Company>(`/accounting/companies/${seg(id)}`, data).then((r) => r.data),
-  /** ``originalHashes``: per file, the SHA-256 of a photo shrunk in the browser ("" when sent as it was). */
-  upload: (files: File[], companyId?: string, originalHashes?: string[]) => {
+  /** ``shrunk``: per file, whether the browser already shrank that photo (lib/photo-shrink.ts). */
+  upload: (files: File[], companyId?: string, shrunk?: boolean[]) => {
     const fd = new FormData();
     files.forEach((f) => fd.append("files", f));
-    if (originalHashes?.length === files.length) originalHashes.forEach((h) => fd.append("original_sha256", h));
+    if (shrunk?.length === files.length) shrunk.forEach((s) => fd.append("shrunk", s ? "1" : ""));
     if (companyId) fd.append("company_id", companyId);
     return api
       .post<Upload>("/accounting/uploads", fd, { headers: { "Content-Type": "multipart/form-data" } })

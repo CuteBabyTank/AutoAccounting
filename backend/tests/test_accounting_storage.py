@@ -126,23 +126,25 @@ def test_stream_upload_rejects_huge_dimension_images_without_decoding(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-def test_original_hash_is_only_taken_for_well_formed_jpeg_claims():
-    from app.services.accounting.storage import original_hash
 
-    good = "a" * 64
-    assert original_hash(good, "jpg") == good
-    assert original_hash(good, "pdf") is None and original_hash(good, "png") is None
-    assert original_hash("A" * 64, "jpg") is None and original_hash("a" * 63, "jpg") is None
-    assert original_hash("", "jpg") is None and original_hash(None, "jpg") is None
-
-
-def test_stream_upload_keeps_the_browsers_original_hash_for_a_shrunk_photo(tmp_path):
+def _jpeg() -> bytes:
     from PIL import Image
 
     buf = io.BytesIO()
-    Image.new("RGB", (40, 30), (200, 10, 10)).save(buf, "JPEG")
-    claimed = "b" * 64
-    stored = asyncio.run(stream_upload(_upload("photo.jpg", buf.getvalue()), tmp_path, claimed))
-    assert stored.sha256 == claimed
-    pdf = asyncio.run(stream_upload(_upload("scan.pdf", _pdf_bytes(1)), tmp_path, claimed))
-    assert pdf.sha256 != claimed
+    Image.effect_noise((600, 400), 40).convert("RGB").save(buf, "JPEG", quality=98)
+    return buf.getvalue()
+
+
+def test_a_browser_shrunk_jpeg_skips_the_server_pass_but_keeps_the_servers_own_hash(tmp_path):
+    import hashlib
+
+    data = _jpeg()
+    stored = asyncio.run(stream_upload(_upload("photo.jpg", data), tmp_path, shrunk=True))
+    assert stored.sha256 == hashlib.sha256(data).hexdigest()  # never a value the browser sent
+    assert stored.size == len(data)  # not re-encoded
+
+
+def test_the_shrunk_flag_never_skips_compression_for_pdfs(tmp_path):
+    pdf = _pdf_bytes(1)
+    stored = asyncio.run(stream_upload(_upload("scan.pdf", pdf), tmp_path, shrunk=True))
+    assert stored.file_type == "pdf" and stored.page_count == 1

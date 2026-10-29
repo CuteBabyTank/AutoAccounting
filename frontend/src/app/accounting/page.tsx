@@ -269,7 +269,7 @@ export default function AccountingPage() {
           setError(problem);
           return;
         }
-        setUpload(await accountingApi.upload(drop.files, target ?? undefined, drop.originalHashes));
+        setUpload(await accountingApi.upload(drop.files, target ?? undefined, drop.shrunk));
       } catch (e) {
         setError(apiErrorMessage(e, "Upload failed"));
       } finally {

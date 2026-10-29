@@ -7,14 +7,9 @@ const MAX_SIDE = 2400;
 const QUALITY = 0.8;
 const MIN_SAVING = 0.05;
 
-export type PreparedDrop = { files: File[]; originalHashes: string[] };
+export type PreparedDrop = { files: File[]; shrunk: boolean[] };
 
 const isJpeg = (f: File) => f.type === "image/jpeg" || /\.jpe?g$/i.test(f.name);
-
-async function sha256Hex(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 async function shrink(file: File): Promise<File | null> {
   const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
@@ -40,23 +35,24 @@ async function shrink(file: File): Promise<File | null> {
   }
 }
 
-/** Smaller copies of the drop's JPEG photos, plus each shrunk photo's original SHA-256 ("" for files sent as they
- *  were) so the server still spots a photo dropped twice. Any failure just sends that file unchanged. */
+/** Smaller copies of the drop's JPEG photos, plus which ones were shrunk (the server then skips its own JPEG pass).
+ *  Duplicates are matched on the server's hash of what arrives; the same photo shrinks to the same bytes in the same
+ *  browser, and the books' duplicate-document check still catches the rest. Any failure sends that file unchanged. */
 export async function prepareDrop(files: File[], onProgress?: (done: number, total: number) => void): Promise<PreparedDrop> {
   const photos = files.filter(isJpeg).length;
-  const canShrink = photos > 0 && typeof createImageBitmap === "function" && !!globalThis.crypto?.subtle;
+  const canShrink = photos > 0 && typeof createImageBitmap === "function";
   const out: File[] = [];
-  const originalHashes: string[] = [];
+  const shrunk: boolean[] = [];
   let done = 0;
   for (const file of files) {
     let kept = file;
-    let hash = "";
+    let wasShrunk = false;
     if (canShrink && isJpeg(file)) {
       try {
         const small = await shrink(file);
         if (small) {
-          hash = await sha256Hex(file);
           kept = small;
+          wasShrunk = true;
         }
       } catch {
         // undecodable or out of memory: the server handles the original
@@ -64,7 +60,7 @@ export async function prepareDrop(files: File[], onProgress?: (done: number, tot
       onProgress?.(++done, photos);
     }
     out.push(kept);
-    originalHashes.push(hash);
+    shrunk.push(wasShrunk);
   }
-  return { files: out, originalHashes };
+  return { files: out, shrunk };
 }

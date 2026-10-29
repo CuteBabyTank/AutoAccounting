@@ -188,16 +188,17 @@ def compress_file(path: str, file_type: str) -> Compressed:
     src = Path(path)
     original_size = src.stat().st_size
     if file_type == "pdf":
+        tmp = src.with_name(src.name + ".tmp")  # beside the original, like images (no temp folder on the bucket)
         try:
-            with tempfile.TemporaryDirectory(dir=src.parent) as folder:
-                tmp = Path(folder) / "compressed.pdf"
-                if _pdf_file_isolated(src, tmp) and tmp.stat().st_size <= original_size * (1 - MIN_SAVING):
-                    size = tmp.stat().st_size
-                    os.replace(tmp, src)
-                    logger.info("compressed type=pdf from=%d to=%d", original_size, size)
-                    return Compressed(path, file_type, size, original_size)
+            if _pdf_file_isolated(src, tmp) and tmp.stat().st_size <= original_size * (1 - MIN_SAVING):
+                size = tmp.stat().st_size
+                os.replace(tmp, src)
+                logger.info("compressed type=pdf from=%d to=%d", original_size, size)
+                return Compressed(path, file_type, size, original_size)
         except Exception as e:
             logger.warning("compress_skipped type=pdf error=%s", type(e).__name__)
+        finally:
+            tmp.unlink(missing_ok=True)
         return Compressed(path, file_type, original_size, original_size)
     data = src.read_bytes()
     result = compress_bytes(data, file_type)

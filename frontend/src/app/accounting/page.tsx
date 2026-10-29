@@ -54,6 +54,22 @@ import type {
 
 const PICKER_KEY = "aa:lastPicker";
 const ACCEPT = { "application/pdf": [".pdf"], "image/png": [".png"], "image/jpeg": [".jpg", ".jpeg"] };
+// Mirrors the backend defaults (MAX_FILE_SIZE_MB, MAX_BATCH_SIZE, the multipart cap in main.py),
+// so an oversized drop is explained before it is sent instead of failing with a bare 413.
+const MAX_FILE_MB = 50;
+const MAX_FILES = 200;
+const MAX_DROP_MB = 256;
+
+function dropProblem(files: File[]): string | null {
+  const MB = 1024 * 1024;
+  if (files.length > MAX_FILES) return `Drop at most ${MAX_FILES} files at a time (this drop has ${files.length}).`;
+  const big = files.find((f) => f.size > MAX_FILE_MB * MB);
+  if (big) return `"${big.name}" is over the ${MAX_FILE_MB} MB limit per file.`;
+  const total = files.reduce((sum, f) => sum + f.size, 0);
+  if (total > MAX_DROP_MB * MB)
+    return `This drop is ${Math.ceil(total / MB)} MB; drop up to ${MAX_DROP_MB} MB at a time by splitting it into smaller drops.`;
+  return null;
+}
 
 /** Tree views a maintenance switch can turn off: [switch, name shown while it's off]. */
 const VIEW_FEATURES: Partial<Record<NonNullable<FolderRef["view"]>, [FeatureKey, string]>> = {
@@ -230,6 +246,11 @@ export default function AccountingPage() {
       if (!files.length) return;
       if (upload && (BUSY.includes(upload.status) || upload.status === "awaiting_confirmation")) {
         setError("Finish the current upload before dropping more files.");
+        return;
+      }
+      const problem = dropProblem(files);
+      if (problem) {
+        setError(problem);
         return;
       }
       setError("");

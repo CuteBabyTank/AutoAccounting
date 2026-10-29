@@ -93,6 +93,7 @@ export default function AccountingPage() {
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [tree, setTree] = useState<TreeCompany[]>([]);
+  const [treeLoaded, setTreeLoaded] = useState(false);
   const [search, setSearch] = useState("");
   const [picker, setPicker] = useState("auto");
   const [selected, setSelected] = useState<FolderRef | null>(null);
@@ -163,7 +164,7 @@ export default function AccountingPage() {
   };
 
   const loadCompanies = useCallback(async () => setCompanies(await accountingApi.listCompanies()), []);
-  const loadTree = useCallback(async () => setTree(await accountingApi.tree()), []);
+  const loadTree = useCallback(async () => { setTree(await accountingApi.tree()); setTreeLoaded(true); }, []);
   const loadFolder = useCallback(async (ref: FolderRef | null) => {
     // The Annual, Books and ATC databank nodes have no document folder of their own.
     setFolder(ref && ref.quarter !== 0 && !ref.view ? await accountingApi.folder(ref.companyId, ref.year, ref.quarter) : null);
@@ -240,7 +241,8 @@ export default function AccountingPage() {
     }
   };
 
-  const target = picker !== "auto" ? picker : selected?.companyId ?? null;
+  const preferredTarget = picker !== "auto" ? picker : selected?.companyId ?? null;
+  const target = companies.some((c) => c.id === preferredTarget) ? preferredTarget : null;
   const targetName = companies.find((c) => c.id === target)?.registered_name;
 
   const onDrop = useCallback(
@@ -421,10 +423,23 @@ export default function AccountingPage() {
               }}
               canManage={canManage}
               onAddCompany={() => setCompanyForm({})}
+              onArchiveCompany={async (id) => {
+                setError("");
+                try {
+                  await accountingApi.archiveCompany(id);
+                  if (selected?.companyId === id) { setSelected(null); setFolder(null); setOpenDoc(null); }
+                  if (picker === id) choosePicker("auto");
+                  await Promise.all([loadCompanies(), loadTree()]);
+                  setNotice("Company archived. Its tax records are retained; restore it on Companies.");
+                } catch (e) {
+                  setError(apiErrorMessage(e, "Couldn't archive the company"));
+                }
+              }}
             />
           </aside>
 
           <section data-tour="workspace" className="relative min-h-[420px] rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
+            {treeLoaded && selected && !tree.some((c) => c.id === selected.companyId) && <p className="mb-3 text-sm text-[var(--alert-warning-text)]">This company is outside the active client list. If it is archived, restore it on <a href="/accounting/companies" className="underline">Companies → Show archived companies</a> to open all its records.</p>}
             {folder && <DuplicateBanner folder={folder} onResolved={refreshAfterDocChange} />}
             {selected?.view !== "import" && (
               <div data-tour="upload" className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-dashed border-[var(--border)] px-4 py-3">

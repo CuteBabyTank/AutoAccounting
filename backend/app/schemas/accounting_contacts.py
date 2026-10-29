@@ -1,14 +1,40 @@
 """Request/response models for contacts (customers / suppliers), open items, aging and 2307 items."""
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+import re
+
+
+class ContactCreate(BaseModel):
+    registered_name: str = Field(min_length=1, max_length=255)
+    tin: str = Field(default="", max_length=25)
+    role: Literal["customer", "supplier", "both"]
+    address: str = Field(default="", max_length=500)
+    vat_status: Literal["vat", "non_vat", ""] = ""
+    payment_terms_days: int | None = Field(default=None, ge=0, le=3650)
+
+    @field_validator("registered_name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("A contact needs a name")
+        return value.strip()
+
+    @field_validator("tin")
+    @classmethod
+    def clean_tin(cls, value: str) -> str:
+        digits = re.sub(r"\D", "", value)
+        if value.strip() and (len(digits) != 9 or len(set(digits)) == 1):
+            raise ValueError("Enter a 9-digit TIN, or leave it blank")
+        return digits
 
 
 class ContactRowOut(BaseModel):
+    archived_at: datetime | None = None
     id: uuid.UUID
     key: str
     role: str
@@ -107,6 +133,7 @@ class CertificateOut(BaseModel):
 
 
 class ContactOut(BaseModel):
+    archived_at: datetime | None = None
     id: uuid.UUID
     key: str
     role: str

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -27,6 +27,17 @@ router = APIRouter()
 class TemplateIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=300)
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("A template needs a name")
+        return value.strip()
+
+
+class TemplateUpdateIn(TemplateIn):
+    source_company_id: uuid.UUID | None = None
 
 
 def _require_manager(user: User) -> None:
@@ -120,6 +131,35 @@ async def save_template(company_id: uuid.UUID, body: TemplateIn, user: User = De
                  label=row.name)
     await db.commit()
     return _summary(str(row.id), row.name, row.description, False, len(accounts))
+
+
+@router.put("/coa-templates/{template_id}")
+async def update_template(template_id: str, body: TemplateUpdateIn, user: User = Depends(get_current_user),
+                          db: AsyncSession = Depends(get_db)):
+    _require_manager(user)
+    ent = scope_for(user)
+    if template_id in BUILTIN_TEMPLATES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Built-in templates can't be edited; save a firm copy instead")
+    row = await _firm_template(db, ent, template_id)
+    before = audit.snapshot(row, ("name", "description", "accounts"))
+    row.name, row.description = body.name, body.description.strip()
+    if body.source_company_id is not None:
+        company = await company_or_404(db, ent, body.source_company_id)
+        await ensure_chart(db, company)
+        accounts = (await db.execute(select(AAAccount).where(
+            AAAccount.enterprise_id == ent, AAAccount.company_id == company.id))).scalars().all()
+        row.accounts = template_rows([_chart_account(a) for a in accounts])
+    row.updated_at = datetime.now(timezone.utc)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "The firm already has a template with this name") from None
+    audit.record(db, ent=ent, company_id=None, user=user, entity="coa_template", entity_id=row.id,
+                 action="update", before=before, after=audit.snapshot(row, ("name", "description", "accounts")),
+                 label=row.name)
+    await db.commit()
+    return _summary(str(row.id), row.name, row.description, False, len(row.accounts or []))
 
 
 @router.delete("/coa-templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)

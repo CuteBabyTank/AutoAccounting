@@ -64,10 +64,11 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
       .then(([c, s]) => {
         if (cancelled) return;
         const seen = new Map<string, ContactRow>();
-        [...c.contacts, ...s.contacts].forEach((r) => r.id !== contactId && seen.set(r.id, r));
+        [...c.contacts, ...s.contacts].forEach((r) => r.id !== contactId && !r.archived_at && seen.set(r.id, r));
         setOthers([...seen.values()].sort((a, b) => a.registered_name.localeCompare(b.registered_name)));
+        setMergeInto("");
       })
-      .catch(() => undefined);
+      .catch((e) => !cancelled && setError(apiErrorMessage(e, "Couldn't load merge targets")));
     return () => {
       cancelled = true;
     };
@@ -116,6 +117,7 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
           </Hint>
         </h2>
         {data.tin && <span className="text-xs text-[var(--text-secondary)]">TIN {data.tin}</span>}
+        {data.archived_at && <span className={`${CHIP} bg-[var(--badge-yellow-bg)] text-[var(--badge-yellow-text)]`}>Archived</span>}
         {data.merged_into_id && (
           <button className={`${CHIP} bg-[var(--badge-yellow-bg)] text-[var(--badge-yellow-text)]`} onClick={() => onOpenContact(data.merged_into_id!)}>
             Merged into another contact: open it
@@ -159,6 +161,11 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
       )}
       {error && <p className="mb-2 text-sm text-[var(--alert-error-text)]">{error}</p>}
       {saved && <p className="mb-2 text-sm text-[var(--alert-success-text)]">{saved}</p>}
+      {data.archived_at && !data.merged_into_id && (
+        <p className="mb-2 text-sm text-[var(--text-secondary)]">
+          Restore this contact from Show archived in the contact list before merging it.
+        </p>
+      )}
 
       <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {isCustomer && <Tile label="Receivable" value={formatPeso(data.receivable)} />}
@@ -449,7 +456,7 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
         {dirty && <button className={BTN} onClick={() => setForm({})}>Discard</button>}
       </div>
 
-      {canManage && !data.merged_into_id && others.length > 0 && (
+      {canManage && !data.merged_into_id && !data.archived_at && others.length > 0 && (
         <>
           <h3 className={H3}>
             Merge{" "}
@@ -471,13 +478,15 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
             <button
               className={BTN}
               disabled={!mergeInto || busy !== ""}
-              onClick={() =>
+              onClick={() => {
+                const target = others.find((o) => o.id === mergeInto);
+                if (!target || !window.confirm(`Merge ${data.registered_name} into ${target.registered_name}? Its documents and balances will count for the target. This merge cannot be undone here.`)) return;
                 run("merge", async () => {
                   const target = await accountingApi.mergeContact(contactId, mergeInto, reason, asOf);
                   onOpenContact(target.id);
                   return target;
-                })
-              }
+                });
+              }}
             >
               Merge
             </button>

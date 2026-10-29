@@ -77,7 +77,8 @@ async def sync_assets(db: AsyncSession, company: AACompany) -> list[tuple[AAAsse
 async def opening_assets(db: AsyncSession, company: AACompany) -> list[AAAsset]:
     """Assets carried in at the books' start (no document)."""
     return list((await db.execute(select(AAAsset).where(
-        AAAsset.company_id == company.id, AAAsset.document_id.is_(None),
+        AAAsset.company_id == company.id, AAAsset.enterprise_id == company.enterprise_id,
+        AAAsset.document_id.is_(None), AAAsset.deleted_at.is_(None),
     ).order_by(AAAsset.in_service, AAAsset.description))).scalars().all())
 
 

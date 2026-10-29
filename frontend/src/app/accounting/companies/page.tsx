@@ -29,11 +29,13 @@ export default function AccountingCompaniesPage() {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Company | "new" | null>(null);
   const [error, setError] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
+  const [busy, setBusy] = useState(false);
   const guide = useGuide("companies");
 
   const load = useCallback(async () => {
     try {
-      setCompanies(await accountingApi.listCompanies());
+      setCompanies(await accountingApi.listCompanies("", true));
     } catch (e) {
       setError(apiErrorMessage(e, "Couldn't load the company databank"));
     } finally {
@@ -47,15 +49,31 @@ export default function AccountingCompaniesPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return companies;
+    const visible = companies.filter((c) => showArchived || !c.archived_at);
+    if (!q) return visible;
     const digits = q.replace(/\D/g, "");
-    return companies.filter(
+    return visible.filter(
       (c) =>
         c.registered_name.toLowerCase().includes(q) ||
         c.aliases.some((a) => a.toLowerCase().includes(q)) ||
         (digits.length > 0 && c.tin.includes(digits)),
     );
-  }, [companies, search]);
+  }, [companies, search, showArchived]);
+
+  async function changeArchive(c: Company) {
+    if (!c.archived_at && !window.confirm(`Archive "${c.registered_name}"? Documents, books and tax records are retained. Restore it from Show archived companies.`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      if (c.archived_at) await accountingApi.restoreCompany(c.id);
+      else await accountingApi.archiveCompany(c.id);
+      await load();
+    } catch (e) {
+      setError(apiErrorMessage(e, "Couldn't change the company's archive status"));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function togglePin(c: Company) {
     setError("");
@@ -100,6 +118,10 @@ export default function AccountingCompaniesPage() {
         </div>
 
         <PageGuide open={guide.open} onClose={guide.dismiss} label="Companies" spots={COMPANIES_SPOTS} slides={COMPANIES_TOUR} />
+        <label className="mb-3 flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+          Show archived companies
+        </label>
 
         {error && (
           <div className="mb-4 rounded-lg border border-[var(--alert-error-border)] bg-[var(--alert-error-bg)] px-4 py-2 text-sm text-[var(--alert-error-text)]">
@@ -129,7 +151,7 @@ export default function AccountingCompaniesPage() {
               {filtered.map((c) => (
                 <tr key={c.id} className="border-t border-[var(--border)] text-[var(--text-primary)]">
                   <td className="px-4 py-3">
-                    <div className="font-medium">{c.registered_name}</div>
+                    <div className="font-medium">{c.registered_name}{c.archived_at && <span className="ml-2 text-xs text-[var(--text-secondary)]">Archived</span>}</div>
                     {c.aliases.length > 0 && (
                       <div className="text-xs text-[var(--text-secondary)]">{c.aliases.join(", ")}</div>
                     )}
@@ -143,7 +165,7 @@ export default function AccountingCompaniesPage() {
                   </td>
                   <td className="px-4 py-3">{MONTHS[c.fiscal_year_end_month - 1]}</td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
-                    {canManage && (
+                    {canManage && !c.archived_at && (
                       <>
                         <button
                           onClick={() => togglePin(c)}
@@ -161,6 +183,7 @@ export default function AccountingCompaniesPage() {
                         </button>
                       </>
                     )}
+                    {canManage && <button disabled={busy} onClick={() => changeArchive(c)} className="ml-2 rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-medium hover:bg-[var(--bg-hover)] disabled:opacity-60">{c.archived_at ? "Restore" : "Archive"}</button>}
                   </td>
                 </tr>
               ))}

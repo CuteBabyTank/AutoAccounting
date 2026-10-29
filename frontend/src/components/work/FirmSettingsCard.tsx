@@ -11,6 +11,7 @@ import { INPUT } from "@/components/work/ui";
 export default function FirmSettingsCard() {
   const [settings, setSettings] = useState<FirmSettings | null>(null);
   const [days, setDays] = useState("7");
+  const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -19,17 +20,19 @@ export default function FirmSettingsCard() {
       .then((s) => {
         setSettings(s);
         setDays(String(s.deadline_days));
+        setName(s.organization_name);
       })
       .catch((e) => setError(apiErrorMessage(e, "Couldn't load the firm settings")));
   }, []);
 
-  async function save(next: Partial<Pick<FirmSettings, "approve_before_close" | "deadline_days" | "auto_assign">>) {
+  async function save(next: Partial<Pick<FirmSettings, "organization_name" | "approve_before_close" | "deadline_days" | "auto_assign">>) {
     setBusy(true);
     setError("");
     try {
       const s = await workApi.saveSettings(next);
       setSettings(s);
       setDays(String(s.deadline_days));
+      setName(s.organization_name);
       firmSettings(true).catch(() => undefined);
     } catch (e) {
       setError(apiErrorMessage(e, "Couldn't save the firm settings"));
@@ -43,6 +46,10 @@ export default function FirmSettingsCard() {
   return (
     <div data-tour="work-settings" className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
       <h2 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">Work settings</h2>
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-[var(--text-primary)]">
+        <label htmlFor="firm-name">Firm name</label><input id="firm-name" className={INPUT} maxLength={255} disabled={locked} value={name} onChange={(e) => setName(e.target.value)} />
+        {settings.can_edit && <button disabled={busy || name.trim() === settings.organization_name} className="text-[var(--accent)] disabled:opacity-50" onClick={() => save({ organization_name: name.trim() })}>Save firm name</button>}
+      </div>
       <label className="mb-3 flex items-start gap-2 text-sm text-[var(--text-primary)]">
         <input type="checkbox" className="mt-0.5" disabled={!settings.can_auto_assign || busy} checked={settings.auto_assign}
           onChange={(e) => save({ auto_assign: e.target.checked })} />

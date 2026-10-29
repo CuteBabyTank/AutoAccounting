@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
@@ -13,12 +14,14 @@ from app.models.accounting import (
     AAAccount, AABankLine, AABankReconciliation, AABankRule, AABankStatement, AACompany, AADocument,
 )
 from app.models.user import User
-from app.routers.accounting_scope import company_or_404, scope_for
+from app.routers.accounting_scope import MANAGER_ROLES, company_or_404, scope_for
 from app.schemas.accounting_bank import (
-    BankAccountOut, BankLineOut, BankMonthOut, BankOverviewOut, BankReconciliationOut, BankRuleOut, BankStatementOut,
+    BankAccountOut, BankLineOut, BankMonthOut, BankOverviewOut, BankReconciliationOut, BankRuleIn, BankRuleOut, BankStatementOut,
     ConfirmLineIn, LineReasonIn, ReconcileIn, ReconcileOut, StatementPatch,
 )
-from app.services.accounting import audit
+from app.services.accounting import audit, deletion
+from app.services.accounting.assignment import lock_firm
+from app.services.accounting.bank_match import tokens
 from app.services.accounting.books import bank
 from app.services.accounting.books.closing import stored_file
 from app.services.accounting.books.chart import locked_message
@@ -170,6 +173,7 @@ def posting_problem(chart, code: str, bank_code: str) -> str:
 async def confirm_line(line_id: uuid.UUID, body: ConfirmLineIn | None = None, user: User = Depends(get_current_user),
                        db: AsyncSession = Depends(get_db)):
     ent = scope_for(user)
+    await lock_firm(db, ent)
     line = await _line_or_404(db, ent, line_id)
     company = await company_or_404(db, ent, line.company_id)
     if not line.account_code:
@@ -238,6 +242,7 @@ async def reject_line(line_id: uuid.UUID, body: LineReasonIn | None = None, user
                       db: AsyncSession = Depends(get_db)):
     """Say no to the current match (it won't be proposed again) and match the line afresh."""
     ent = scope_for(user)
+    await lock_firm(db, ent)
     line = await _line_or_404(db, ent, line_id)
     company = await company_or_404(db, ent, line.company_id)
     before = audit.snapshot(line, _LINE_FIELDS)
@@ -260,6 +265,7 @@ async def exclude_line(line_id: uuid.UUID, body: LineReasonIn | None = None, use
                        db: AsyncSession = Depends(get_db)):
     """Leave a line out of matching and the books (a misread or duplicated line)."""
     ent = scope_for(user)
+    await lock_firm(db, ent)
     line = await _line_or_404(db, ent, line_id)
     company = await company_or_404(db, ent, line.company_id)
     before = audit.snapshot(line, _LINE_FIELDS)
@@ -277,8 +283,11 @@ async def exclude_line(line_id: uuid.UUID, body: LineReasonIn | None = None, use
 @router.post("/companies/{company_id}/bank/rematch", response_model=BankOverviewOut)
 async def rematch_company(company_id: uuid.UUID, user: User = Depends(get_current_user),
                           db: AsyncSession = Depends(get_db)):
-    _, company = await _company(db, user, company_id)
-    await bank.rematch(db, company)
+    ent, company = await _company(db, user, company_id)
+    await lock_firm(db, ent)
+    matched = await bank.rematch(db, company)
+    audit.record(db, ent=ent, company_id=company.id, user=user, entity="bank_line", entity_id=None,
+                 action="rematch", label=company.registered_name, after={"matched_lines": matched}, always=True)
     touch_books(company)
     await db.commit()
     return await bank_overview(company_id, user, db)
@@ -288,6 +297,7 @@ async def rematch_company(company_id: uuid.UUID, user: User = Depends(get_curren
 async def patch_statement(statement_id: uuid.UUID, body: StatementPatch, user: User = Depends(get_current_user),
                           db: AsyncSession = Depends(get_db)):
     ent = scope_for(user)
+    await lock_firm(db, ent)
     statement = (await db.execute(select(AABankStatement).where(
         AABankStatement.id == statement_id, AABankStatement.enterprise_id == ent))).scalar_one_or_none()
     if statement is None:
@@ -317,6 +327,7 @@ async def reconcile_account(company_id: uuid.UUID, body: ReconcileIn, user: User
                             db: AsyncSession = Depends(get_db)):
     """Reconcile one account for one month: saved (with the report PDF) only when it ties."""
     ent, company = await _company(db, user, company_id)
+    await lock_firm(db, ent)
     account = next((a for a in await bank.bank_accounts(db, company.id) if a.code == body.account_code), None)
     if account is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Bank account not found")
@@ -364,17 +375,114 @@ async def list_rules(company_id: uuid.UUID, user: User = Depends(get_current_use
                              .order_by(AABankRule.hits.desc(), AABankRule.pattern))).scalars().all()
 
 
+_RULE_FIELDS = ("pattern", "direction", "kind", "account_code", "payee_name", "payee_tin")
+
+
+def _rule_manager(user: User) -> None:
+    if user.role not in MANAGER_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and managers can manage bank rules")
+
+
+async def _validate_rule(db: AsyncSession, company: AACompany, body: BankRuleIn) -> None:
+    if body.kind == "posting":
+        chart = await ensure_chart(db, company)
+        account = chart.get(body.account_code)
+        if account is None or not account.active or account.locked:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pick an active, unlocked account from this company's chart")
+
+
+async def _rule_change_lines(db: AsyncSession, company: AACompany, before: dict | None,
+                             after: dict | None) -> list[AABankLine]:
+    if before == after:
+        return []
+    await lock_firm(db, company.enterprise_id)
+    lines = (await db.execute(select(AABankLine).where(
+        AABankLine.enterprise_id == company.enterprise_id, AABankLine.company_id == company.id,
+        AABankLine.match_status.notin_(("confirmed", "excluded")), bank.live_line(),
+    ))).scalars().all()
+    affected = [l for l in lines if any(
+        r and set(r["pattern"].split()) <= tokens(l.narration)
+        and r["direction"] in ("any", "in" if l.amount > 0 else "out") for r in (before, after))]
+    if affected:
+        await deletion.protect_history(db, company, [l.line_date for l in affected])
+        await deletion.protect_bank_links(db, company, affected)
+    return affected
+
+
+async def _rules_changed(db: AsyncSession, company: AACompany, affected: list[AABankLine]) -> None:
+    if not affected:
+        return
+    await db.flush()
+    for line in affected:
+        await bank.void_reconciliations(db, company.id, line.account_code, line.line_date)
+    await bank.rematch(db, company, line_ids={l.id for l in affected})
+    touch_books(company)
+
+
+@router.post("/companies/{company_id}/bank/rules", response_model=BankRuleOut, status_code=status.HTTP_201_CREATED)
+async def create_rule(company_id: uuid.UUID, body: BankRuleIn, user: User = Depends(get_current_user),
+                      db: AsyncSession = Depends(get_db)):
+    _rule_manager(user)
+    ent, company = await _company(db, user, company_id)
+    await _validate_rule(db, company, body)
+    affected = await _rule_change_lines(db, company, None, body.model_dump())
+    row = AABankRule(id=uuid.uuid4(), enterprise_id=ent, company_id=company.id, hits=0, **body.model_dump())
+    db.add(row)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "A rule with this narration, direction and kind already exists") from None
+    audit.record(db, ent=ent, company_id=company.id, user=user, entity="bank_rule", entity_id=row.id,
+                 action="create", after=audit.snapshot(row, _RULE_FIELDS), label=row.pattern)
+    await _rules_changed(db, company, affected)
+    await db.commit()
+    return row
+
+
+@router.put("/bank-rules/{rule_id}", response_model=BankRuleOut)
+async def update_rule(rule_id: uuid.UUID, body: BankRuleIn, user: User = Depends(get_current_user),
+                      db: AsyncSession = Depends(get_db)):
+    _rule_manager(user)
+    ent = scope_for(user)
+    await lock_firm(db, ent)
+    row = (await db.execute(select(AABankRule).where(
+        AABankRule.id == rule_id, AABankRule.enterprise_id == ent))).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Rule not found")
+    company = await company_or_404(db, ent, row.company_id)
+    await _validate_rule(db, company, body)
+    before = audit.snapshot(row, _RULE_FIELDS)
+    affected = await _rule_change_lines(db, company, before, body.model_dump())
+    for name, value in body.model_dump().items():
+        setattr(row, name, value)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "A rule with this narration, direction and kind already exists") from None
+    audit.record(db, ent=ent, company_id=company.id, user=user, entity="bank_rule", entity_id=row.id,
+                 action="update", before=before, after=audit.snapshot(row, _RULE_FIELDS), label=row.pattern)
+    await _rules_changed(db, company, affected)
+    await db.commit()
+    return row
+
+
 @router.delete("/bank-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_rule(rule_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    _rule_manager(user)
     ent = scope_for(user)
+    await lock_firm(db, ent)
     row = (await db.execute(select(AABankRule).where(AABankRule.id == rule_id, AABankRule.enterprise_id == ent))
            ).scalar_one_or_none()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Rule not found")
+    company = await company_or_404(db, ent, row.company_id)
+    affected = await _rule_change_lines(db, company, audit.snapshot(row, _RULE_FIELDS), None)
     audit.record(db, label=row.pattern, ent=ent, company_id=row.company_id, user=user, entity="bank_rule",
                  entity_id=row.id, action="delete",
-                 before={"pattern": row.pattern, "kind": row.kind, "account_code": row.account_code,
-                         "payee_name": row.payee_name}, after=None)
+                 before=audit.snapshot(row, _RULE_FIELDS), after=None)
     await db.delete(row)
+    await _rules_changed(db, company, affected)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -65,6 +65,7 @@ ROUTES: tuple[tuple[frozenset[str] | None, re.Pattern[str], str], ...] = tuple(
         (None, rf"^{_A}/documents/{_ID}/cwt-2307$", "subledgers"),
         (None, rf"^{_A}/(tree|folders|documents|duplicates|files)(/|$)", "documents"),
         (_WRITE, rf"^{_A}/companies(/{_ID})?$", "companies"),
+        (_WRITE, rf"^{_A}/companies/{_ID}/restore$", "companies"),
         (_WRITE, rf"^{_A}/(companies/{_ID}/coa-template|coa-templates)(/|$)", "companies"),
         (None, rf"^{_A}/work/(auto-assign|history|companies/[^/]+/handler)$", "work"),
         (None, rf"^{_A}/(work|tasks|checklist-templates)(/|$)", "work"),

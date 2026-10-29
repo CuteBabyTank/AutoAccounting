@@ -10,11 +10,13 @@ from app.dependencies import EnterpriseContext, get_db, get_enterprise_context, 
 from app.models.user import User, UserRole
 from app.schemas.auth import AddMemberRequest, FirmUsageResponse, MemberResponse, UpdateMemberRequest
 from app.services.usage_service import get_effective_rate_config, get_usage_stats
+from app.services.accounting import audit
 
 router = APIRouter()
 
 # Roles that belong to a firm as members (the firm owner manages them).
 _MEMBER_ROLES = (UserRole.EMPLOYEE, UserRole.MANAGER)
+_AUDIT_FIELDS = ("email", "role", "enterprise_id", "is_active")
 
 
 def _member_response(member: User) -> MemberResponse:
@@ -90,6 +92,9 @@ async def add_member(
     target.role = UserRole.EMPLOYEE
     target.enterprise_id = ctx.enterprise.id
     target.is_active = True
+    audit.record(db, ent=ctx.enterprise.id, company_id=None, user=ctx.caller, entity="team_member",
+                 entity_id=target.id, action="create", after=audit.snapshot(target, _AUDIT_FIELDS),
+                 label=target.email)
     await db.commit()
     await db.refresh(target)
     return _member_response(target)
@@ -107,7 +112,11 @@ async def update_member(
     if ctx.caller.role == UserRole.MANAGER and member.role == UserRole.MANAGER:
         raise HTTPException(status_code=403, detail="Managers cannot modify other managers")
     if req.is_active is not None:
+        before = audit.snapshot(member, _AUDIT_FIELDS)
         member.is_active = req.is_active
+        audit.record(db, ent=ctx.enterprise.id, company_id=None, user=ctx.caller, entity="team_member",
+                     entity_id=member.id, action="update", before=before, after=audit.snapshot(member, _AUDIT_FIELDS),
+                     label=member.email)
     await db.commit()
     await db.refresh(member)
     return _member_response(member)
@@ -124,8 +133,12 @@ async def remove_member(
     member = await _member_or_404(db, ctx.enterprise.id, member_id)
     if ctx.caller.role == UserRole.MANAGER and member.role == UserRole.MANAGER:
         raise HTTPException(status_code=403, detail="Managers cannot remove other managers")
+    before = audit.snapshot(member, _AUDIT_FIELDS)
     member.enterprise_id = None
     member.role = UserRole.UNVERIFIED
+    audit.record(db, ent=ctx.enterprise.id, company_id=None, user=ctx.caller, entity="team_member",
+                 entity_id=member.id, action="delete", before=before, after=audit.snapshot(member, _AUDIT_FIELDS),
+                 label=member.email)
     await db.commit()
 
 
@@ -137,7 +150,10 @@ async def promote_to_manager(
 ):
     """Firm owner only: employee → manager."""
     member = await _member_or_404(db, owner.id, member_id, roles=(UserRole.EMPLOYEE,))
+    before = audit.snapshot(member, _AUDIT_FIELDS)
     member.role = UserRole.MANAGER
+    audit.record(db, ent=owner.id, company_id=None, user=owner, entity="team_member", entity_id=member.id,
+                 action="update", before=before, after=audit.snapshot(member, _AUDIT_FIELDS), label=member.email)
     await db.commit()
     await db.refresh(member)
     return _member_response(member)
@@ -151,7 +167,10 @@ async def demote_to_employee(
 ):
     """Firm owner only: manager → employee."""
     member = await _member_or_404(db, owner.id, member_id, roles=(UserRole.MANAGER,))
+    before = audit.snapshot(member, _AUDIT_FIELDS)
     member.role = UserRole.EMPLOYEE
+    audit.record(db, ent=owner.id, company_id=None, user=owner, entity="team_member", entity_id=member.id,
+                 action="update", before=before, after=audit.snapshot(member, _AUDIT_FIELDS), label=member.email)
     await db.commit()
     await db.refresh(member)
     return _member_response(member)

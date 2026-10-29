@@ -5,7 +5,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+import re
 
 
 class BankStatementOut(BaseModel):
@@ -131,4 +132,50 @@ class BankRuleOut(BaseModel):
     kind: str
     account_code: str
     payee_name: str
+    payee_tin: str = ""
     hits: int
+
+
+class BankRuleIn(BaseModel):
+    pattern: str = Field(min_length=2, max_length=80)
+    direction: Literal["in", "out", "any"] = "any"
+    kind: Literal["payee", "posting"]
+    account_code: str = Field(default="", max_length=10)
+    payee_name: str = Field(default="", max_length=255)
+    payee_tin: str = Field(default="", max_length=25)
+
+    @field_validator("pattern", "account_code", "payee_name")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("pattern")
+    @classmethod
+    def normalize_pattern(cls, value: str) -> str:
+        # The matcher compares space-separated tokens to lower-case alphanumeric tokens(narration).
+        pattern = " ".join(dict.fromkeys(re.findall(r"[a-z0-9]+", value.lower())))
+        if len(pattern) > 80:
+            raise ValueError("The narration pattern is too long")
+        return pattern
+
+    @field_validator("payee_tin")
+    @classmethod
+    def tin_digits(cls, value: str) -> str:
+        digits = re.sub(r"\D", "", value)
+        if value.strip() and len(digits) != 9:
+            raise ValueError("Enter a 9-digit payee TIN, or leave it blank")
+        return digits
+
+    @model_validator(mode="after")
+    def target(self):
+        if len(self.pattern) < 2 or not re.search(r"\w", self.pattern):
+            raise ValueError("Enter at least two characters of the bank narration")
+        if self.kind == "posting":
+            if not self.account_code:
+                raise ValueError("Choose the account to post to")
+            self.payee_name = self.payee_tin = ""
+        else:
+            if not self.payee_name and not self.payee_tin:
+                raise ValueError("Enter a payee name or TIN")
+            self.account_code = ""
+        return self

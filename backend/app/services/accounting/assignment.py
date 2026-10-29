@@ -30,7 +30,7 @@ def open_tasks_query(ent: uuid.UUID, start: date, end: date):
 
 
 async def assignment_facts(db: AsyncSession, ent: uuid.UUID, start: date, end: date, today: date):
-    companies = list((await db.execute(select(AACompany).where(AACompany.enterprise_id == ent)
+    companies = list((await db.execute(select(AACompany).where(AACompany.enterprise_id == ent, AACompany.archived_at.is_(None))
                                       .order_by(AACompany.id))).scalars())
     people = await firm_people(db, ent, lock=True)
     tasks = list((await db.execute(open_tasks_query(ent, start, end).order_by(AATask.created_at, AATask.id))).scalars())

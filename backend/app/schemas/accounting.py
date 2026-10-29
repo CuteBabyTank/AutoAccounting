@@ -115,6 +115,7 @@ class CompanyOut(CompanyIn):
 
     id: uuid.UUID
     created_at: datetime
+    archived_at: datetime | None = None
 
 
 class CompanyBrief(BaseModel):
@@ -675,6 +676,7 @@ class AssetPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     description: str | None = Field(default=None, min_length=1, max_length=255)
+    cost: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
     in_service: date | None = None
     useful_life_months: int | None = Field(default=None, ge=1, le=600)
     end_date: date | None = None

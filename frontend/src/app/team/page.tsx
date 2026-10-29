@@ -6,6 +6,8 @@ import { useAuth } from "@/lib/auth";
 import Hint from "@/components/guide/Hint";
 import ChecklistTemplates from "@/components/work/ChecklistTemplates";
 import FirmSettingsCard from "@/components/work/FirmSettingsCard";
+import AuditLogPanel from "@/components/accounting/AuditLogPanel";
+import { useFeatures } from "@/lib/features";
 import { GuideButton } from "@/components/guide/GuideTour";
 import PageGuide from "@/components/guide/PageGuide";
 import { TEAM_TOUR } from "@/components/guide/tours";
@@ -26,6 +28,8 @@ export default function TeamPage() {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showAudit, setShowAudit] = useState(false);
+  const { on } = useFeatures();
   const guide = useGuide("team");
 
   const load = useCallback(async () => {
@@ -84,6 +88,10 @@ export default function TeamPage() {
         <PageGuide open={guide.open} onClose={guide.dismiss} label="Team" spots={TEAM_SPOTS} slides={TEAM_TOUR} />
         <FirmSettingsCard />
         <ChecklistTemplates />
+        {on("audit") && <div className="mb-6">
+          <button className="mb-3 text-sm text-[var(--accent)]" onClick={() => setShowAudit((show) => !show)}>{showAudit ? "Hide firm audit log" : "Firm audit log"}</button>
+          {showAudit && <AuditLogPanel companyName="All firm activity" />}
+        </div>}
 
         {usage && (
           <div data-tour="usage" className="mb-6 grid gap-3 sm:grid-cols-2">
@@ -166,11 +174,11 @@ export default function TeamPage() {
                           </button>
                         )}
                         {isOwner && m.role === "manager" && (
-                          <button disabled={busy} onClick={() => run(() => teamApi.demote(m.id), "Couldn't demote")} className="text-[var(--accent)] hover:underline">
+                          <button disabled={busy} onClick={() => { if (window.confirm(`Make ${m.email} an employee? Their manager permissions will be removed.`)) run(() => teamApi.demote(m.id), "Couldn't demote"); }} className="text-[var(--accent)] hover:underline">
                             Make employee
                           </button>
                         )}
-                        <button disabled={busy} onClick={() => run(() => teamApi.setActive(m.id, !m.is_active), "Couldn't update")} className="text-[var(--accent)] hover:underline">
+                        <button disabled={busy} onClick={() => { if (!m.is_active || window.confirm(`Deactivate ${m.email}? Their account and records stay, but they cannot sign in.`)) run(() => teamApi.setActive(m.id, !m.is_active), "Couldn't update"); }} className="text-[var(--accent)] hover:underline">
                           {m.is_active ? "Deactivate" : "Reactivate"}
                         </button>
                         <button

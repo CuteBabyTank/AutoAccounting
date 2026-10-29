@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import BankRules from "@/components/accounting/BankRules";
 import AmountInput from "@/components/AmountInput";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import { useFilePreview } from "@/components/accounting/PdfPreview";
-import type { Account, BankAccountInfo, BankLine, BankMonth, BankRule, ReconcileResult } from "@/types/accounting";
+import type { Account, BankAccountInfo, BankLine, BankMonth, ReconcileResult } from "@/types/accounting";
 
 interface Props {
   companyId: string;
@@ -45,7 +46,7 @@ export default function BankPanel({ companyId, account, month, canManage, onChan
   const [data, setData] = useState<BankMonth | null>(null);
   const [accounts, setAccounts] = useState<BankAccountInfo[]>([]);
   const [chart, setChart] = useState<Account[]>([]);
-  const [rules, setRules] = useState<BankRule[] | null>(null);
+  const [showRules, setShowRules] = useState(false);
   const file = useFilePreview();
   const [openLine, setOpenLine] = useState("");
   const [postTo, setPostTo] = useState("");
@@ -204,8 +205,8 @@ export default function BankPanel({ companyId, account, month, canManage, onChan
             }}>Reconciliation report</button>
           )}
           {file.node}
-          <button className={`${BTN} ml-auto`} onClick={() => (rules ? setRules(null) : accountingApi.bankRules(companyId).then(setRules).catch(() => setRules([])))}>
-            {rules ? "Hide bank rules" : "Bank rules"}
+          <button className={`${BTN} ml-auto`} onClick={() => setShowRules((show) => !show)}>
+            {showRules ? "Hide bank rules" : "Bank rules"}
           </button>
         </div>
       )}
@@ -226,25 +227,7 @@ export default function BankPanel({ companyId, account, month, canManage, onChan
         </div>
       )}
 
-      {rules && (
-        <div className="mt-3 rounded-lg border border-[var(--border)] p-3 text-xs">
-          <p className="mb-1 font-medium text-[var(--text-primary)]">Bank rules (learned from confirmed matches)</p>
-          {rules.length === 0 && <p className="text-[var(--text-secondary)]">None yet. Confirming a match teaches one when the narration doesn&apos;t name the payee.</p>}
-          <ul className="space-y-1">
-            {rules.map((r) => (
-              <li key={r.id} className="flex items-center gap-2 text-[var(--text-primary)]">
-                <span>&ldquo;{r.pattern}&rdquo; ({r.direction === "in" ? "money in" : r.direction === "out" ? "money out" : "any"}) → {r.kind === "payee" ? r.payee_name : `post to ${r.account_code}`}</span>
-                <span className="text-[var(--text-secondary)]">used {r.hits}×</span>
-                {canManage && (
-                  <button className="text-[var(--accent)]" onClick={() => accountingApi.deleteBankRule(r.id).then(() => setRules(rules.filter((x) => x.id !== r.id))).catch((e) => setError(apiErrorMessage(e, "Couldn't delete the rule")))}>
-                    Delete
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {showRules && <BankRules companyId={companyId} accounts={chart} canManage={canManage} onChanged={async () => { await load(); setResult(null); onChanged(); }} />}
 
       <div className="mt-4 overflow-x-auto">
         <table className="w-full min-w-[720px] text-sm">

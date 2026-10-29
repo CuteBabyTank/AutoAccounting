@@ -36,7 +36,7 @@ export const workApi = {
     api.get<WorkHistory>("/accounting/work/history", { params: filters }).then((r) => r.data),
   people: () => api.get<Person[]>("/accounting/work/people").then((r) => r.data),
   settings: () => api.get<FirmSettings>("/accounting/work/settings").then((r) => r.data),
-  saveSettings: (body: Partial<Pick<FirmSettings, "approve_before_close" | "deadline_days" | "auto_assign">>) =>
+  saveSettings: (body: Partial<Pick<FirmSettings, "organization_name" | "approve_before_close" | "deadline_days" | "auto_assign">>) =>
     api.put<FirmSettings>("/accounting/work/settings", body).then((r) => r.data),
   health: (companyId: string) =>
     api.get<CompanyHealth>(`/accounting/companies/${seg(companyId)}/health`).then((r) => r.data),

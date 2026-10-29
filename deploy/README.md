@@ -134,5 +134,8 @@ and redeploy. An empty base URL turns it off ("not configured"); the `assistant`
   kept 6 years).
 - **Taking the API offline:** `gcloud run services update aa-backend --ingress internal` (`--ingress all` to reopen).
 - **Rollback:** `gcloud run services update-traffic aa-backend --to-revisions <REVISION>=100` (same for aa-frontend).
-- **Auto-deploy on push** (optional): Cloud Build → Triggers → connect the GitHub repo, config `cloudbuild.yaml`,
-  service account `aa-build`, and copy the substitutions from `deploy/deploy.sh`.
+- **Auto-deploy on push:** a push to the `prod` branch runs the Cloud Build trigger `aa-prod-deploy` (global,
+  GitHub app, branch `^prod$`, config `cloudbuild.yaml`, service account `aa-build`). It builds from the commit, not
+  the working tree. Its substitutions are copies of `deploy/config.sh`; when that file changes, update the trigger
+  (`gcloud builds triggers describe aa-prod-deploy` / `update github`). `deploy/deploy.sh` still works for one-off
+  deploys of the local tree.

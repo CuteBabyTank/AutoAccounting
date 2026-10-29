@@ -194,7 +194,7 @@ async def run_detection(upload_id: uuid.UUID, user_id: str) -> None:
         if upload is None:
             return
         companies = (await db.execute(
-            select(AACompany).where(AACompany.enterprise_id == upload.enterprise_id)
+            select(AACompany).where(AACompany.enterprise_id == upload.enterprise_id, AACompany.archived_at.is_(None))
         )).scalars().all()
         candidates = company_candidates(companies)
         files = (await db.execute(
@@ -250,7 +250,7 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
         company_ids = list({company_id for _, company_id, *_ in jobs})
 
         companies = (await db.execute(
-            select(AACompany).where(AACompany.id.in_(company_ids))
+            select(AACompany).where(AACompany.id.in_(company_ids), AACompany.enterprise_id == enterprise_scope, AACompany.archived_at.is_(None))
         )).scalars().all() if company_ids else []
         profiles = {c.id: company_profile(c) for c in companies}
         prompts = {c.id: extract_prompt(c.registered_name, c.tin, c.business_type) for c in companies}

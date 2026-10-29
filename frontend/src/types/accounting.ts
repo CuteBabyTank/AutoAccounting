@@ -37,6 +37,7 @@ export interface CompanyInput {
 export interface Company extends CompanyInput {
   id: string;
   created_at: string;
+  archived_at: string | null;
 }
 
 /** The caller's latest finished upload and where its documents are now (for "wrong company? move them"). */
@@ -495,7 +496,7 @@ export interface Asset {
   net_book_value: string;
 }
 
-export type AssetPatch = Partial<Pick<Asset, "description" | "in_service" | "useful_life_months" | "end_date">>;
+export type AssetPatch = Partial<Pick<Asset, "description" | "cost" | "in_service" | "useful_life_months" | "end_date">>;
 
 export interface OpeningAssetInput {
   description: string;
@@ -791,13 +792,17 @@ export interface BankRule {
   kind: "payee" | "posting";
   account_code: string;
   payee_name: string;
+  payee_tin: string;
   hits: number;
 }
+
+export type BankRuleInput = Omit<BankRule, "id" | "hits">;
 
 // Customers / suppliers: contacts master, open items, aging, 2307s
 export type AgingBucket = "current" | "1-30" | "31-60" | "61-90" | "90+";
 
 export interface ContactRow {
+  archived_at: string | null;
   id: string;
   key: string;
   role: "customer" | "supplier" | "both";
@@ -892,6 +897,7 @@ export interface Outgoing2307 {
 }
 
 export interface ContactDetail {
+  archived_at: string | null;
   id: string;
   key: string;
   role: "customer" | "supplier" | "both";
@@ -929,6 +935,15 @@ export interface ContactPatch {
   default_account?: string;
   default_atc?: string;
   reason?: string;
+}
+
+export interface ContactCreate {
+  registered_name: string;
+  tin: string;
+  role: "customer" | "supplier" | "both";
+  address: string;
+  vat_status: "vat" | "non_vat" | "";
+  payment_terms_days: number | null;
 }
 
 export interface AgingRow {

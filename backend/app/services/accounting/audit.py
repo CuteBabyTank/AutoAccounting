@@ -18,7 +18,7 @@ ENTITIES = frozenset({
     "company", "document", "account", "journal_entry", "books_month", "period", "output", "asset", "employee",
     "atc", "upload", "bank_statement", "bank_line", "bank_rule", "bank_reconciliation", "contact",
     "work_item", "task", "firm_settings", "coa_template", "opening_item", "recurring_entry", "checklist_template",
-    "import_batch",
+    "import_batch", "team_member", "platform_account", "platform_settings",
 })
 REASON_MAX = 500
 _CENTS = Decimal("0.01")

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bank, Buildings, CaretDown, CaretRight, Plus } from "@phosphor-icons/react";
+import { Archive, Bank, Buildings, CaretDown, CaretRight, Plus } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
 import { useFeatures } from "@/lib/features";
 import type { FolderRef, TreeAnnual, TreeBankAccount, TreeCompany } from "@/types/accounting";
@@ -12,6 +12,7 @@ interface Props {
   onSelect: (ref: FolderRef) => void;
   canManage: boolean;
   onAddCompany: () => void;
+  onArchiveCompany: (id: string) => Promise<void>;
 }
 
 const ROW = "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)]";
@@ -21,7 +22,8 @@ function currentFiscalYear(fiscalYearEndMonth: number, today = new Date()): numb
   return today.getMonth() + 1 <= fiscalYearEndMonth ? today.getFullYear() : today.getFullYear() + 1;
 }
 
-export default function FolderTree({ tree, selected, onSelect, canManage, onAddCompany }: Props) {
+export default function FolderTree({ tree, selected, onSelect, canManage, onAddCompany, onArchiveCompany }: Props) {
+  const [archiving, setArchiving] = useState<string | null>(null);
   // Bank account rows that are expanded.
   const [open, setOpen] = useState<Set<string>>(new Set());
   // One company open at a time, and in it one year: opening another folds the previous one.
@@ -140,6 +142,7 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
 
   const company = (c: TreeCompany) => (
     <li key={c.id}>
+      <div className="flex items-center">
       <button
         onClick={() => {
           // Opening a company shows its overview (unless something in it is already open) and folds the one that
@@ -152,12 +155,20 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
           setOpenCompany(c.id);
         }}
         aria-expanded={openCompany === c.id}
-        className={`${ROW} text-[var(--text-primary)]`}
+        className={`${ROW} min-w-0 flex-1 text-[var(--text-primary)]`}
       >
         {openCompany === c.id ? <CaretDown size={12} /> : <CaretRight size={12} />}
         <Buildings size={15} className="shrink-0 text-[var(--text-secondary)]" />
         <span className="truncate font-medium">{c.registered_name}</span>
       </button>
+      {canManage && on("companies") && <button type="button" aria-label={`Archive ${c.registered_name}`} title="Archive company" disabled={archiving !== null}
+        className="rounded p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
+        onClick={async () => {
+          if (!window.confirm(`Archive "${c.registered_name}"? Documents, books and tax records are retained. Restore it on Companies → Show archived companies.`)) return;
+          setArchiving(c.id);
+          try { await onArchiveCompany(c.id); } finally { setArchiving(null); }
+        }}><Archive size={14} /></button>}
+      </div>
       {openCompany === c.id && (
         <ul className="ml-4 border-l border-[var(--border)] pl-2">
           <li>{leaf({ companyId: c.id, year: null, quarter: null, view: "overview" }, "Overview", null, 0)}</li>
@@ -264,7 +275,7 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
           </Hint>
         </p>
       )}
-      {canManage && (
+      {canManage && on("companies") && (
         <button onClick={onAddCompany} className="mt-3 flex items-center gap-1.5 px-2 text-sm font-semibold text-[var(--accent)]">
           <Plus size={14} /> Add company
         </button>

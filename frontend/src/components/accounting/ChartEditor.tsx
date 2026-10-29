@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Lock } from "@phosphor-icons/react";
+import CoaTemplateEditor from "@/components/accounting/CoaTemplateEditor";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import type { Account, CoaTemplate } from "@/types/accounting";
@@ -16,10 +17,11 @@ export default function ChartEditor({ companyId, canManage }: { companyId: strin
   const [templates, setTemplates] = useState<CoaTemplate[]>([]);
   const [templateName, setTemplateName] = useState("");
   const [notice, setNotice] = useState("");
+  const [editingTemplate, setEditingTemplate] = useState<CoaTemplate | null>(null);
 
   useEffect(() => {
     accountingApi.accounts(companyId).then(setAccounts).catch((e) => setError(apiErrorMessage(e, "Couldn't load the chart")));
-    if (canManage) accountingApi.coaTemplates().then((t) => setTemplates(t.filter((x) => !x.builtin))).catch(() => undefined);
+    if (canManage) accountingApi.coaTemplates().then(setTemplates).catch((e) => setError(apiErrorMessage(e, "Couldn't load chart templates")));
   }, [companyId, canManage]);
 
   const inactiveCount = accounts.filter((a) => !a.active).length;
@@ -102,7 +104,10 @@ export default function ChartEditor({ companyId, canManage }: { companyId: strin
                 {a.system_key ? (
                   <span className="inline-flex items-center gap-1 text-[var(--text-secondary)]"><Lock size={12} /> used by posting</span>
                 ) : canManage ? (
-                  <button className="text-[var(--accent)]" onClick={() => run(async () => replace(await accountingApi.updateAccount(a.id, { active: !a.active })))}>
+                  <button className="text-[var(--accent)]" onClick={() => {
+                    if (a.active && !window.confirm(`Deactivate ${a.code} ${a.name}? Existing reports are retained; new postings must use another account.`)) return;
+                    run(async () => replace(await accountingApi.updateAccount(a.id, { active: !a.active })));
+                  }}>
                     {a.active ? "Deactivate" : "Activate"}
                   </button>
                 ) : null}
@@ -169,22 +174,29 @@ export default function ChartEditor({ companyId, canManage }: { companyId: strin
               Save template
             </button>
           </div>
+          {editingTemplate && <CoaTemplateEditor key={editingTemplate.id} template={editingTemplate} companyId={companyId} onClose={() => setEditingTemplate(null)} onSaved={(updated) => {
+            setTemplates((all) => all.map((t) => t.id === updated.id ? updated : t).sort((a, b) => a.name.localeCompare(b.name)));
+            setEditingTemplate(null); setNotice(`Updated "${updated.name}".`);
+          }} />}
           {templates.length > 0 && (
             <ul className="mt-2 space-y-1 text-xs text-[var(--text-secondary)]">
               {templates.map((t) => (
                 <li key={t.id} className="flex items-center gap-2">
-                  <span className="text-[var(--text-primary)]">{t.name}</span> · {t.accounts_count} accounts
-                  <button
+                  <span className="text-[var(--text-primary)]">{t.name}{t.builtin && " (built-in)"}</span> · {t.accounts_count} accounts
+                  <button className="text-[var(--accent)]" onClick={() => setEditingTemplate(t)}>{t.builtin ? "View" : "View / edit"}</button>
+                  {!t.builtin && <button
                     className="text-[var(--alert-error-text)]"
-                    onClick={() =>
+                    onClick={() => {
+                      if (!window.confirm(`Delete the chart template "${t.name}"? Existing companies keep their chart.`)) return;
                       run(async () => {
                         await accountingApi.deleteCoaTemplate(t.id);
                         setTemplates((all) => all.filter((x) => x.id !== t.id));
-                      })
-                    }
+                        if (editingTemplate?.id === t.id) setEditingTemplate(null);
+                      });
+                    }}
                   >
                     Delete
-                  </button>
+                  </button>}
                 </li>
               ))}
             </ul>

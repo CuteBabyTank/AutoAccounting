@@ -28,6 +28,9 @@ export const ENTITY_LABELS: Record<string, string> = {
   recurring_entry: "Recurring entry",
   checklist_template: "Checklist template",
   import_batch: "Import",
+  team_member: "Team member",
+  platform_account: "Platform account",
+  platform_settings: "Platform settings",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -36,6 +39,11 @@ const ACTION_LABELS: Record<string, string> = {
   reclassify: "Reclassified",
   update: "Edited",
   delete: "Deleted",
+  archive: "Archived",
+  restore: "Restored",
+  skip: "Files skipped",
+  retry: "Processing retried",
+  rematch: "Bank lines matched again",
   mark_reviewed: "Marked reviewed",
   unmark_reviewed: "Marked not reviewed",
   exclude: "Excluded from computation",

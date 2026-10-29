@@ -72,7 +72,7 @@ async def load_cards(db: AsyncSession, ent: uuid.UUID, start: date, end: date, t
         .where(AAPeriod.enterprise_id == ent, AAPeriod.year.between(lo, hi)).distinct())).all()}
     employees = {(str(cid), y): n for cid, y, n in (await db.execute(
         select(AAEmployee.company_id, AAEmployee.year, func.count(AAEmployee.id)).where(
-            AAEmployee.enterprise_id == ent, AAEmployee.year.between(lo, hi))
+            AAEmployee.enterprise_id == ent, AAEmployee.year.between(lo, hi), AAEmployee.deleted_at.is_(None))
         .group_by(AAEmployee.company_id, AAEmployee.year))).all()}
     items = {(str(i.company_id), i.year, i.quarter, i.form): i for i in (await db.execute(
         select(AAWorkItem).where(AAWorkItem.enterprise_id == ent, AAWorkItem.year.between(lo, hi)))).scalars().all()}

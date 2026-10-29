@@ -20,6 +20,7 @@ class PersonOut(BaseModel):
 
 
 class FirmSettingsOut(BaseModel):
+    organization_name: str = ""
     auto_assign: bool
     can_auto_assign: bool
     approve_before_close: bool
@@ -29,6 +30,7 @@ class FirmSettingsOut(BaseModel):
 
 
 class FirmSettingsIn(BaseModel):
+    organization_name: str | None = Field(default=None, max_length=255)
     approve_before_close: bool | None = None
     deadline_days: int | None = Field(default=None, ge=1, le=60)
     auto_assign: bool | None = None

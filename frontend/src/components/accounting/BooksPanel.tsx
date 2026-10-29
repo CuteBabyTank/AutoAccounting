@@ -95,6 +95,7 @@ export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndM
   }
 
   async function remove(id: string) {
+    if (!window.confirm("Delete this journal entry? It will be removed from the live books and retained in the audit history. Deleting a write-off reopens its invoices.")) return;
     setBusy(true);
     setError("");
     try {
@@ -148,6 +149,7 @@ export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndM
             {opening.lines.length} accounts as of {opening.entry_date} · total {formatPeso(opening.lines.reduce((s, l) => s + Number(l.debit), 0))}
           </p>
         )}
+        {opening && !editing && <button className="mt-2 text-xs text-[var(--alert-error-text)]" disabled={busy} onClick={() => remove(opening.id)}>Delete opening balances</button>}
         {opening && booksFy === year && (
           <OpeningAssets companyId={companyId} year={year} openingPpe={openingPpe} onChanged={onChanged} />
         )}
@@ -195,6 +197,7 @@ export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndM
             </li>
           ))}
         </ul>
+        {entries.every((e) => e.kind !== "manual") && !editing && <p className="mt-2 text-sm text-[var(--text-secondary)]">No manual journal entries yet.</p>}
       </section>
     </div>
   );

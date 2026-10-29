@@ -8,7 +8,7 @@ import { apiErrorMessage } from "@/lib/accounting-format";
 import type { AuditEvent, AuditFilters } from "@/types/accounting";
 
 interface Props {
-  companyId: string;
+  companyId?: string;
   companyName: string;
 }
 
@@ -17,10 +17,10 @@ const INPUT = "rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p
 const LABEL = "block text-[11px] font-medium text-[var(--text-secondary)] mb-1";
 const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-60";
 
-function buildFilters(companyId: string, userId: string, start: string, end: string, entity: string,
+function buildFilters(companyId: string | undefined, userId: string, start: string, end: string, entity: string,
   offset: number): AuditFilters {
   return {
-    company_id: companyId,
+    ...(companyId && { company_id: companyId }),
     ...(userId && { user_id: userId }),
     ...(start && { start }),
     ...(end && { end }),
@@ -81,7 +81,7 @@ export default function AuditLogPanel({ companyId, companyName }: Props) {
       <h2 className="mb-1 text-base font-semibold text-[var(--text-primary)]">
         Audit log · {companyName}{" "}
         <Hint align="right">
-          Every change someone in your firm made to this client: document edits, flags accepted anyway (with the reason
+          Changes to retained records and settings: document edits, flags accepted anyway (with the reason
           given), chart and journal entries, months closed or reopened, returns marked filed, and more. Each entry shows
           who, when, and the values before and after. Nobody can edit or delete it.
         </Hint>

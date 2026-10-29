@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
+import AuditLogPanel from "@/components/accounting/AuditLogPanel";
 import FirmPicker from "@/components/admin/FirmPicker";
 import FeatureSwitches from "@/components/admin/FeatureSwitches";
 import Hint from "@/components/guide/Hint";
@@ -16,7 +17,7 @@ import { markFeaturesStale } from "@/lib/features";
 import type { Account, AdminFeatures, BudgetOperation, UserRole } from "@/types";
 
 type AssignableRole = Exclude<UserRole, "admin">;
-type Tab = "accounts" | "features" | "billing";
+type Tab = "accounts" | "features" | "billing" | "audit";
 const TAB_KEY = "aa-admin-tab";
 
 export default function AdminPage() {
@@ -37,7 +38,7 @@ export default function AdminPage() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(TAB_KEY);
-      if (saved === "features" || saved === "billing") setTabState(saved);
+      if (saved === "features" || saved === "billing" || saved === "audit") setTabState(saved);
     } catch {
       // no storage: start on Accounts
     }
@@ -96,6 +97,7 @@ export default function AdminPage() {
   }
 
   function changeRole(a: Account, role: AssignableRole) {
+    if (!window.confirm(`Change ${a.email}'s role to ${role}? This changes their access to firm records.`)) return;
     if (role === "employee" || role === "manager") {
       if (firms.length === 0) {
         setError("Create a firm first, then assign members to it.");
@@ -151,6 +153,7 @@ export default function AdminPage() {
     { id: "accounts", label: "Accounts", badge: String(accounts.length) },
     { id: "features", label: "Features", badge: offCount ? `${offCount} off` : undefined, alert: offCount > 0 },
     { id: "billing", label: "Billing", badge: savedRate == null ? "off" : `₱${formatPeso(savedRate)}/page` },
+    { id: "audit", label: "Audit log" },
   ];
 
   const sectionLabel = (text: string) => (
@@ -199,6 +202,7 @@ export default function AdminPage() {
           </div>
         )}
 
+        {tab === "audit" && <AuditLogPanel companyName="Platform administration" />}
         {tab === "features" && (
           <FeatureSwitches
             data={features}
@@ -310,7 +314,7 @@ export default function AdminPage() {
                         </div>
                       </td>
                       <td className="px-3 py-2">
-                        {a.role === "admin" ? (
+                        {a.role === "admin" || a.role === "enterprise" ? (
                           <span className="text-[var(--lp-muted)]">{roleLabel(a.role)}</span>
                         ) : (
                           <select
@@ -360,7 +364,7 @@ export default function AdminPage() {
                             </>
                           )}
                           {!isSelf && a.role !== "admin" && (
-                            <button disabled={busy} onClick={() => run(() => adminApi.toggleActive(a.id), "Couldn't update")} className="aa-ghost">
+                            <button disabled={busy} onClick={() => { if (!a.is_active || window.confirm(`Deactivate ${a.email}? ${isFirm ? "Members of this firm will also be deactivated. " : ""}Accounts and retained records stay.`)) run(() => adminApi.toggleActive(a.id), "Couldn't update"); }} className="aa-ghost">
                               {a.is_active ? "Deactivate" : "Reactivate"}
                             </button>
                           )}

@@ -45,7 +45,8 @@ def test_column_migrations_are_additive_and_idempotent():
     assert {s.split()[2] for s in statements if "ADD COLUMN IF NOT EXISTS" in s} == {"aa_documents", "aa_supplier_rules", "aa_companies", "aa_periods",
                                                                                     "aa_audit_events", "aa_accounts", "aa_journal_entries",
                                                                                     "aa_bank_lines", "aa_opening_items", "users",
-                                                                                    "aa_firm_settings", "aa_tasks", "aa_work_items"}
+                                                                                    "aa_firm_settings", "aa_tasks", "aa_work_items",
+                                                                                    "aa_assets", "aa_employees", "aa_contacts"}
     joined = "\n".join(statements)
     for column in ("operations_start_year", "facts_updated_at", "filed_output_id", "import_batch_id", "handler_id",
                    "auto_assign", "assigned_auto", "completed_by"):

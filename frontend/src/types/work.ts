@@ -10,6 +10,7 @@ export interface Person {
 }
 
 export interface FirmSettings {
+  organization_name: string;
   approve_before_close: boolean;
   deadline_days: number;
   can_edit: boolean;

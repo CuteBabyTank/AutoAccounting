@@ -5,19 +5,23 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
-from app.models.accounting import AAAccount, AACompany, AADocument, AAJournalEntry, AASupplierRule
+from app.models.accounting import (
+    AAAccount, AABankLine, AABankRule, AABankStatement, AACompany, AADocument, AAJournalEntry,
+    AAOpeningItem, AARecurringEntry, AASupplierRule,
+)
 from app.models.user import User
 from app.routers.accounting_scope import MANAGER_ROLES, company_or_404, scope_for
 from app.schemas.accounting_books import (
     AccountIn, AccountOut, AccountPatch, BookMonthOut, BooksYearOut, CloseMonthIn, DocRefOut, JournalEntryIn,
     JournalEntryOut, PaymentLinksOut, ReopenMonthIn,
 )
-from app.services.accounting import audit
+from app.services.accounting import audit, deletion
+from app.services.accounting.assignment import lock_firm
 from app.services.accounting.books import bank
 from app.services.accounting.books.closing import (
     CloseError, bank_block_message, bind_deadline, bind_year, close_month, reopen_month, stored_file, year_status,
@@ -119,6 +123,26 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, user: User = 
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account is used by journal entries, documents or a "
                                                              "supplier's default account; move them with Reclassify "
                                                              "(or change the supplier default) first")
+        dependencies = [
+            select(AAAccount.id).where(AAAccount.enterprise_id == ent, AAAccount.company_id == company.id,
+                                      AAAccount.parent_code == row.code, AAAccount.active.is_(True)),
+            select(AARecurringEntry.id).where(AARecurringEntry.enterprise_id == ent,
+                AARecurringEntry.company_id == company.id, AARecurringEntry.active.is_(True),
+                AARecurringEntry.lines.contains([{"account_code": row.code}])),
+            select(AABankStatement.id).where(AABankStatement.enterprise_id == ent,
+                AABankStatement.company_id == company.id, AABankStatement.account_code == row.code),
+            select(AABankRule.id).where(AABankRule.enterprise_id == ent, AABankRule.company_id == company.id,
+                                       AABankRule.account_code == row.code),
+            select(AABankLine.id).where(AABankLine.enterprise_id == ent, AABankLine.company_id == company.id,
+                or_(AABankLine.account_code == row.code, AABankLine.posting["account"].astext == row.code)),
+            select(AAOpeningItem.id).where(AAOpeningItem.enterprise_id == ent,
+                AAOpeningItem.company_id == company.id, AAOpeningItem.deleted_at.is_(None),
+                AAOpeningItem.paid_account == row.code),
+        ]
+        for stmt in dependencies:
+            if (await db.execute(stmt.limit(1))).first():
+                raise HTTPException(status.HTTP_409_CONFLICT, "This account is used by an active child account, "
+                    "recurring entry, bank record or opening-item payment. Move those references first.")
     if body.active is not None:
         row.active = body.active
     if body.locked is not None:
@@ -237,6 +261,7 @@ async def _entry_or_404(db: AsyncSession, ent: uuid.UUID, entry_id: uuid.UUID) -
 async def update_journal_entry(entry_id: uuid.UUID, body: JournalEntryIn, user: User = Depends(get_current_user),
                                db: AsyncSession = Depends(get_db)):
     ent = scope_for(user)
+    await lock_firm(db, ent)
     row = await _entry_or_404(db, ent, entry_id)
     company = await company_or_404(db, ent, row.company_id)
     if row.writeoff_items:
@@ -260,15 +285,18 @@ async def update_journal_entry(entry_id: uuid.UUID, body: JournalEntryIn, user: 
 async def delete_journal_entry(entry_id: uuid.UUID, user: User = Depends(get_current_user),
                                db: AsyncSession = Depends(get_db)):
     ent = scope_for(user)
+    await lock_firm(db, ent)
     row = await _entry_or_404(db, ent, entry_id)
     company = await company_or_404(db, ent, row.company_id)
     if row.writeoff_items and user.role not in MANAGER_ROLES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and managers can undo a write-off")
+    affected_lines = await deletion.protect_entry(db, company, row)
     row.deleted_at = datetime.now(timezone.utc)
     audit.record(db, label=entry_label(row),
                  ent=ent, company_id=company.id, user=user, entity="journal_entry", entity_id=row.id,
                  action="delete", before=audit.snapshot(row, ENTRY_FIELDS), after=None)
     touch_books(company)
+    await bank.rematch(db, company, line_ids={l.id for l in affected_lines})
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -332,6 +360,7 @@ async def close_books_month(body: CloseMonthIn, company_id: uuid.UUID, user: Use
                             db: AsyncSession = Depends(get_db)):
     _require_manager(user)
     ent = scope_for(user)
+    await lock_firm(db, ent)
     company = await company_or_404(db, ent, company_id)
     month_start, month_end = bank.month_bounds(body.month_start)
     unreconciled = await bank.unreconciled_accounts(db, company.id, month_start, month_end)
@@ -357,6 +386,7 @@ async def reopen_books_month(company_id: uuid.UUID, body: ReopenMonthIn | None =
                              user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     _require_manager(user)
     ent = scope_for(user)
+    await lock_firm(db, ent)
     company = await company_or_404(db, ent, company_id)
     try:
         row = await reopen_month(db, company)
@@ -376,6 +406,7 @@ async def bind_books_year(company_id: uuid.UUID, fiscal_year: int, user: User = 
                           db: AsyncSession = Depends(get_db)):
     _require_manager(user)
     ent = scope_for(user)
+    await lock_firm(db, ent)
     company = await company_or_404(db, ent, company_id)
     try:
         row = await bind_year(db, company, user.id, ent, fiscal_year)

@@ -22,6 +22,9 @@ interface Props {
 export default function OpeningAssets({ companyId, year, openingPpe, onChanged }: Props) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [inService, setInService] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [description, setDescription] = useState("");
   const [cost, setCost] = useState("");
   const [years, setYears] = useState("5");
@@ -45,6 +48,7 @@ export default function OpeningAssets({ companyId, year, openingPpe, onChanged }
   const valid = description.trim() !== "" && Number(cost.replace(/,/g, "")) > 0 && life >= 1 && life <= 600;
 
   function startAdding() {
+    setEditingId(null); setInService(""); setEndDate("");
     setAdding(true);
     setDescription("");
     setCost(unregistered > 0 ? unregistered.toFixed(2) : "");
@@ -55,20 +59,25 @@ export default function OpeningAssets({ companyId, year, openingPpe, onChanged }
     setBusy(true);
     setError("");
     try {
-      const row = await accountingApi.addOpeningAsset(
+      const row = editingId ? await accountingApi.updateAsset(editingId, {
+        description: description.trim(), cost: cost.replace(/,/g, ""), useful_life_months: life,
+        in_service: inService, end_date: endDate || null,
+      }, year) : await accountingApi.addOpeningAsset(
         companyId, { description: description.trim(), cost: cost.replace(/,/g, ""), useful_life_months: life }, year,
       );
-      setAssets((a) => [...a, row]);
+      setAssets((a) => editingId ? a.map((x) => x.id === editingId ? row : x) : [...a, row]);
       setAdding(false);
+      setEditingId(null);
       onChanged();
     } catch (e) {
-      setError(apiErrorMessage(e, "Couldn't add the asset"));
+      setError(apiErrorMessage(e, editingId ? "Couldn't save the asset" : "Couldn't add the asset"));
     } finally {
       setBusy(false);
     }
   }
 
   async function remove(id: string) {
+    if (!window.confirm("Remove this opening asset from the live register? Its retained record stays; removal is refused for filed returns or closed books.")) return;
     setBusy(true);
     setError("");
     try {
@@ -104,6 +113,10 @@ export default function OpeningAssets({ companyId, year, openingPpe, onChanged }
               <span className="flex-1 text-[var(--text-primary)]">{a.description}</span>
               <span className="tabular-nums text-[var(--text-secondary)]">{formatPeso(a.cost)} over {(a.useful_life_months / 12).toFixed(a.useful_life_months % 12 ? 1 : 0)} yrs</span>
               <span className="tabular-nums text-xs text-[var(--text-secondary)]">FY {year}: {formatPeso(a.this_year)}</span>
+              <button className="text-[var(--accent)]" disabled={busy} onClick={() => {
+                setEditingId(a.id); setAdding(true); setDescription(a.description); setCost(a.cost);
+                setYears(String(a.useful_life_months / 12)); setInService(a.in_service); setEndDate(a.end_date ?? "");
+              }}>Edit</button>
               <button className="text-[var(--alert-error-text)]" disabled={busy} onClick={() => remove(a.id)}>Remove</button>
             </li>
           ))}
@@ -124,8 +137,12 @@ export default function OpeningAssets({ companyId, year, openingPpe, onChanged }
             <input inputMode="decimal" className={INPUT} value={years} onChange={(e) => setYears(e.target.value)} />
           </div>
           <div className="flex gap-2 sm:col-span-3 sm:justify-end">
+            {editingId && <div className="mr-auto flex flex-wrap gap-3">
+              <label className={LABEL}>In service<input type="date" className={INPUT} value={inService} onChange={(e) => setInService(e.target.value)} /></label>
+              <label className={LABEL}>End date (optional)<input type="date" className={INPUT} value={endDate} onChange={(e) => setEndDate(e.target.value)} /></label>
+            </div>}
             <button className={BTN} onClick={() => setAdding(false)}>Cancel</button>
-            <button className={BTN} disabled={busy || !valid} onClick={add}>Add to register</button>
+            <button className={BTN} disabled={busy || !valid || Boolean(editingId && !inService)} onClick={add}>{editingId ? "Save asset" : "Add to register"}</button>
           </div>
         </div>
       )}

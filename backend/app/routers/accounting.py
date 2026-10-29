@@ -43,7 +43,8 @@ from app.schemas.accounting import (
     FolderOut, NotDuplicateIn,
     TreeCompanyOut, UploadFileOut, UploadGroupOut, UploadOut,
 )
-from app.services.accounting import audit, move_company, pipeline
+from app.services.accounting import audit, deletion, move_company, pipeline
+from app.services.accounting.assignment import lock_firm
 from app.services.accounting.books.links import relink_receipts
 from app.services.accounting.books.chart import locked_message
 from app.services.accounting.books.loader import ensure_chart, touch_books
@@ -95,11 +96,14 @@ async def _assert_budget(db: AsyncSession, user: User) -> None:
 @router.get("/companies", response_model=list[CompanyOut])
 async def list_companies(
     q: str = Query(default="", max_length=100),
+    include_archived: bool = False,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     ent = _scope(user)
     stmt = select(AACompany).where(AACompany.enterprise_id == ent)
+    if not include_archived:
+        stmt = stmt.where(AACompany.archived_at.is_(None))
     term = q.strip()
     if term:
         conds = [AACompany.registered_name.ilike(f"%{term}%")]
@@ -164,6 +168,7 @@ async def update_company(
 ):
     ent = _scope(user)
     _require_manager(user)
+    await lock_firm(db, ent)
     company = await _company_or_404(db, ent, company_id)
     fiscal_year_changed = body.fiscal_year_end_month != company.fiscal_year_end_month
     changed = {name: value for name, value in body.model_dump().items() if getattr(company, name) != value}
@@ -197,6 +202,52 @@ async def update_company(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "A company with this TIN and branch code is already in your databank"
         )
+    return company
+
+
+@router.delete("/companies/{company_id}", response_model=CompanyOut)
+async def archive_company(company_id: uuid.UUID, user: User = Depends(get_current_user),
+                          db: AsyncSession = Depends(get_db)):
+    """Archive, never purge. Filed outputs, books, files, audit history and the TIN stay intact."""
+    ent = _scope(user)
+    _require_manager(user)
+    await lock_firm(db, ent)
+    company = (await db.execute(select(AACompany).where(
+        AACompany.id == company_id, AACompany.enterprise_id == ent).with_for_update())).scalar_one_or_none()
+    if company is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Company not found")
+    if company.archived_at is None:
+        pending = (await db.execute(select(AAUpload.id).where(
+            AAUpload.enterprise_id == ent, AAUpload.status.in_(("detecting", "confirming", "extracting",
+                                                               "awaiting_confirmation")),
+            or_(AAUpload.preselected_company_id == company.id, AAUpload.id.in_(
+                select(AAFile.upload_id).where(AAFile.enterprise_id == ent, AAFile.company_id == company.id))),
+        ).limit(1))).first()
+        if pending:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Finish or skip this company's pending upload before archiving")
+        company.archived_at = datetime.now(timezone.utc)
+        audit.record(db, ent=ent, company_id=company.id, user=user, entity="company", entity_id=company.id,
+                     action="archive", before={"archived_at": None}, after={"archived_at": company.archived_at},
+                     label=company.registered_name)
+    await db.commit()
+    return company
+
+
+@router.post("/companies/{company_id}/restore", response_model=CompanyOut)
+async def restore_company(company_id: uuid.UUID, user: User = Depends(get_current_user),
+                          db: AsyncSession = Depends(get_db)):
+    ent = _scope(user)
+    _require_manager(user)
+    await lock_firm(db, ent)
+    company = (await db.execute(select(AACompany).where(
+        AACompany.id == company_id, AACompany.enterprise_id == ent).with_for_update())).scalar_one_or_none()
+    if company is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Company not found")
+    before = {"archived_at": company.archived_at}
+    company.archived_at = None
+    audit.record(db, ent=ent, company_id=company.id, user=user, entity="company", entity_id=company.id,
+                 action="restore", before=before, after={"archived_at": None}, label=company.registered_name)
+    await db.commit()
     return company
 
 
@@ -246,7 +297,7 @@ async def _upload_out(db: AsyncSession, ent: uuid.UUID, upload_id: uuid.UUID) ->
         companies = {
             str(c.id): c
             for c in (await db.execute(
-                select(AACompany).where(AACompany.id.in_(list(ids)), AACompany.enterprise_id == ent)
+                select(AACompany).where(AACompany.id.in_(list(ids)), AACompany.enterprise_id == ent, AACompany.archived_at.is_(None))
             )).scalars().all()
         } if ids else {}
         names = {str(f.id): f.original_filename for f in files}
@@ -322,6 +373,8 @@ async def create_upload(
     if len(files) > settings.max_batch_size:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Upload exceeds the maximum of {settings.max_batch_size} files")
     company = await _company_or_404(db, ent, company_id) if company_id else None
+    if company is not None and company.archived_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Restore the company before uploading files")
 
     upload_id = uuid.uuid4()
     dest = upload_dir(upload_id)
@@ -330,6 +383,16 @@ async def create_upload(
         flags = [v == "1" for v in shrunk] if len(shrunk) == len(files) else [False] * len(files)
         for f, was_shrunk in zip(files, flags):
             stored.append(await stream_upload(f, dest, was_shrunk))
+
+        if company is not None:
+            # Compression happens before the lock; then re-check archive status so an overlapping retirement
+            # cannot admit a new drop after the archive's pending-upload guard has passed.
+            await lock_firm(db, ent)
+            company = (await db.execute(select(AACompany).where(
+                AACompany.id == company.id, AACompany.enterprise_id == ent,
+            ).with_for_update().execution_options(populate_existing=True))).scalar_one()
+            if company.archived_at is not None:
+                raise HTTPException(status.HTTP_409_CONFLICT, "Restore the company before uploading files")
 
         # Dedupe is per company, so it can only happen up front when the company is known;
         # auto-detected drops are deduped atomically when extraction claims each file.
@@ -374,6 +437,9 @@ async def create_upload(
         upload.total_files = fresh
         if fresh == 0:
             upload.status = "done"
+        audit.record(db, ent=ent, company_id=company.id if company else None, user=user, entity="upload",
+                     entity_id=upload_id, action="create", label="Upload",
+                     after={"status": upload.status, "files": [s.filename for s in stored], "new_files": fresh})
         await db.commit()
     except UploadRejected as e:
         shutil.rmtree(dest, ignore_errors=True)
@@ -484,6 +550,7 @@ async def move_upload_to_company(
     document move). Documents that can't move yet are listed with the reason; the rest move. A file whose documents
     all moved is filed under the new company too, so dropping it there again is caught as a duplicate."""
     ent = _scope(user)
+    await lock_firm(db, ent)
     upload = (await db.execute(select(AAUpload).where(
         AAUpload.id == upload_id, AAUpload.enterprise_id == ent))).scalar_one_or_none()
     if upload is None:
@@ -542,6 +609,7 @@ async def confirm_upload(
     db: AsyncSession = Depends(get_db),
 ):
     ent = _scope(user)
+    await lock_firm(db, ent)
     # Claim the upload atomically so a double-click can't start two extractions.
     claimed = await db.execute(
         update(AAUpload)
@@ -558,7 +626,7 @@ async def confirm_upload(
     )).scalars().all()}
     company_ids = {a.company_id for a in body.assignments if a.company_id}
     valid = set((await db.execute(
-        select(AACompany.id).where(AACompany.id.in_(list(company_ids)), AACompany.enterprise_id == ent)
+        select(AACompany.id).where(AACompany.id.in_(list(company_ids)), AACompany.enterprise_id == ent, AACompany.archived_at.is_(None))
     )).scalars()) if company_ids else set()
     if company_ids - valid:
         await db.rollback()
@@ -585,6 +653,10 @@ async def confirm_upload(
             audit.record(db, label="Upload",
                          ent=ent, company_id=a.company_id, user=user, entity="upload", entity_id=upload_id,
                          action="confirm", after={"files": [files[fid].original_filename for fid in a.file_ids]})
+        elif a.skip and a.file_ids:
+            audit.record(db, ent=ent, company_id=None, user=user, entity="upload", entity_id=upload_id,
+                         action="skip", label="Skipped upload files",
+                         after={"files": [files[fid].original_filename for fid in a.file_ids]})
     upload = await db.get(AAUpload, upload_id)
     upload.status = "extracting" if has_work else "done"
     await db.commit()
@@ -601,6 +673,7 @@ async def retry_upload(
 ):
     """Read again the files of a finished upload that failed (e.g. the AI service was busy or out of quota)."""
     ent = _scope(user)
+    await lock_firm(db, ent)
     await _assert_budget(db, user)
     failed = (await db.execute(
         select(AAFile).join(AAUpload, AAUpload.id == AAFile.upload_id)
@@ -609,6 +682,11 @@ async def retry_upload(
     )).scalars().all()
     if not failed:
         raise HTTPException(status.HTTP_409_CONFLICT, "There are no failed files to retry in this upload")
+    archived = (await db.execute(select(AACompany.id).where(
+        AACompany.enterprise_id == ent, AACompany.id.in_({f.company_id for f in failed}),
+        AACompany.archived_at.is_not(None)).limit(1))).first()
+    if archived:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Restore the company before retrying its uploads")
     claimed = await db.execute(
         update(AAUpload)
         .where(AAUpload.id == upload_id, AAUpload.enterprise_id == ent, AAUpload.status.in_(("done", "failed")))
@@ -620,6 +698,9 @@ async def retry_upload(
     for f in failed:
         f.status = "uploaded"
         f.error_message = None
+    audit.record(db, ent=ent, company_id=None, user=user, entity="upload", entity_id=upload_id,
+                 action="retry", label="Retry failed upload files",
+                 after={"files": [f.original_filename for f in failed]}, always=True)
     await db.commit()
     pipeline.start_extraction(upload_id, str(user.id), ent)
     return await _upload_out(db, ent, upload_id)
@@ -676,7 +757,7 @@ def _quarter_status(outputs, filed, doc_changes, input_changes, asset_changes=()
 async def get_tree(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     ent = _scope(user)
     companies = (await db.execute(
-        select(AACompany).where(AACompany.enterprise_id == ent)
+        select(AACompany).where(AACompany.enterprise_id == ent, AACompany.archived_at.is_(None))
         .order_by(AACompany.pinned.desc(), AACompany.registered_name)
     )).scalars().all()
     open_review = case(
@@ -899,6 +980,7 @@ async def patch_document(
     db: AsyncSession = Depends(get_db),
 ):
     ent = _scope(user)
+    await lock_firm(db, ent)
     doc = await _document_or_404(db, ent, doc_id)
     company = await _company_or_404(db, ent, doc.company_id)
     sent = body.model_fields_set
@@ -1007,6 +1089,7 @@ async def bulk_resolve(body: BulkResolveIn, user: User = Depends(get_current_use
     """Resolve many documents flagged for the same reason in one go (mark reviewed or exclude), one audit event
     per document; documents that are already resolved or don't carry the reason are skipped and listed."""
     ent = _scope(user)
+    await lock_firm(db, ent)
     ids = list(dict.fromkeys(body.document_ids))
     docs = list((await db.execute(select(AADocument).where(
         AADocument.enterprise_id == ent, AADocument.id.in_(ids)))).scalars().all())
@@ -1042,13 +1125,14 @@ async def bulk_resolve(body: BulkResolveIn, user: User = Depends(get_current_use
             + [{"id": str(i), "why": "not found"} for i in ids if i not in found]}
 
 
-async def _bank_after_document_change(db: AsyncSession, doc: AADocument, company: AACompany | None) -> None:
+async def _bank_after_document_change(db: AsyncSession, doc: AADocument, company: AACompany | None,
+                                      *, line_ids: set[uuid.UUID] | None = None) -> None:
     """A deleted / excluded statement's lines stop counting; any other document a bank line pays (or could pay)
     changed, so the lines are matched again."""
     if doc.doc_type == "statement":
-        await bank_service.statement_document_changed(db, doc)
+        await bank_service.statement_document_changed(db, doc, line_ids=line_ids)
     elif company is not None:
-        await bank_service.rematch(db, company)
+        await bank_service.rematch(db, company, line_ids=line_ids)
 
 
 @router.delete("/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1056,7 +1140,10 @@ async def delete_document(
     doc_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     ent = _scope(user)
+    await lock_firm(db, ent)
     doc = await _document_or_404(db, ent, doc_id)
+    company = await _company_or_404(db, ent, doc.company_id)
+    affected_lines = await deletion.protect_document(db, company, doc)
     doc.deleted_at = datetime.now(timezone.utc)
     audit.record(db, label=audit.document_label(doc),
                  ent=ent, company_id=doc.company_id, user=user, entity="document", entity_id=doc.id,
@@ -1064,7 +1151,7 @@ async def delete_document(
                                                               "gross_amount", "category")), after=None)
     await db.flush()
     await relink_receipts(db, doc.company_id)
-    await _bank_after_document_change(db, doc, await db.get(AACompany, doc.company_id))
+    await _bank_after_document_change(db, doc, company, line_ids={l.id for l in affected_lines})
     await duplicates.refresh_flags(db, doc.company_id)  # the copy left behind is no longer a duplicate
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -1084,6 +1171,8 @@ class _MoveTarget:
 
 
 async def _move_target(db: AsyncSession, ent: uuid.UUID, target: AACompany) -> _MoveTarget:
+    if target.archived_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Restore the company before moving documents into it")
     rules = {r.counterparty_tin: (r.category, r.account) for r in (await db.execute(
         select(AASupplierRule).where(AASupplierRule.company_id == target.id))).scalars().all()}
     others = frozenset((await db.execute(select(AACompany.tin).where(
@@ -1157,6 +1246,7 @@ async def move_document_to_company(
     quarter by its fiscal year). The file stays where it is; only the document moves. Refused (409) while something
     in the old company still depends on it."""
     ent = _scope(user)
+    await lock_firm(db, ent)
     doc = await _document_or_404(db, ent, doc_id)
     source = await _company_or_404(db, ent, doc.company_id)
     target = await _company_or_404(db, ent, body.company_id)

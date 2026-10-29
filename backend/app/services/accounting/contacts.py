@@ -66,6 +66,10 @@ def merge_check(source, target, rows: list) -> str | None:
         return "This contact is already merged into another one."
     if target.merged_into_id is not None:
         return "Pick the contact it was merged into instead."
+    if getattr(source, "archived_at", None) is not None:
+        return "Restore this contact before merging it."
+    if getattr(target, "archived_at", None) is not None:
+        return "Restore the target contact before merging into it."
     if resolve(target.key, rows) is source:
         return "That would merge the two contacts into each other."
     return None

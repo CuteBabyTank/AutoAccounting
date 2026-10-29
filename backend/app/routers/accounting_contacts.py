@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse, Response
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,10 +19,11 @@ from app.models.accounting import AAAccount, AACompany, AAContact, AADocument, A
 from app.models.user import User
 from app.routers.accounting_scope import MANAGER_ROLES, company_or_404, scope_for
 from app.schemas.accounting_contacts import (
-    AgingOut, AgingRowOut, CertificateOut, ContactDocumentOut, ContactListOut, ContactOut, ContactPatch,
+    AgingOut, AgingRowOut, CertificateOut, ContactCreate, ContactDocumentOut, ContactListOut, ContactOut, ContactPatch,
     ContactPaymentOut, ContactRowOut, Cwt2307In, Cwt2307Out, MergeIn, OpenItemOut, Outgoing2307Out, TieLineOut,
 )
 from app.services.accounting import audit
+from app.services.accounting.assignment import lock_firm
 from app.services.accounting.books.closing import header_for
 from app.services.accounting.books.receipts import party_key
 from app.services.accounting.books.subledger import (
@@ -85,6 +87,7 @@ def contact_rows(sub: Subledger, role: str) -> list[ContactRowOut]:
         docs = [d for d in sub.docs if d.kind == kind and d.contact_key == c.key]
         pending = [x for x in sub.cwt if x.contact_key == c.key and x.status == "pending"] if kind == "ar" else []
         out.append(ContactRowOut(
+            archived_at=getattr(c, "archived_at", None),
             id=c.id, key=c.key, role=c.role, tin=c.tin, registered_name=c.registered_name,
             aliases=list(c.aliases or []), open_balance=c2(sum((i.open for i in items), ZERO)),
             overdue=c2(sum((i.open for i in items if i.days_past_due > 0), ZERO)), open_count=len(items),
@@ -176,6 +179,7 @@ async def _contact_out(db: AsyncSession, company: AACompany, row: AAContact, sub
     account, atc = await _supplier_defaults(db, company.id, row.tin)
     auto = await supplier_automatic(db, company, row.tin) if row.role in ("supplier", "both") else None
     return ContactOut(
+        archived_at=row.archived_at,
         id=row.id, key=row.key, role=row.role, tin=row.tin, registered_name=row.registered_name,
         aliases=list(row.aliases or []), address=row.address, vat_status=row.vat_status,
         payment_terms_days=row.payment_terms_days, default_account=account, default_atc=atc,
@@ -190,6 +194,72 @@ async def _contact_out(db: AsyncSession, company: AACompany, row: AAContact, sub
         open_items=[_item_out(i, _recovered(sub)) for i in items], cwt_2307s=cwt, certificates=certificates,
         outgoing_2307s=sorted(outgoing, key=lambda o: o.doc_date, reverse=True),
     )
+
+
+@router.post("/companies/{company_id}/contacts", response_model=ContactOut, status_code=status.HTTP_201_CREATED)
+async def create_contact(company_id: uuid.UUID, body: ContactCreate, user: User = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)):
+    if user.role not in MANAGER_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and managers can add contacts")
+    ent = scope_for(user)
+    company = await company_or_404(db, ent, company_id)
+    row = AAContact(id=uuid.uuid4(), enterprise_id=ent, company_id=company.id,
+                    key=party_key(body.tin, body.registered_name), **body.model_dump(),
+                    aliases=[], manual=list(EDITABLE), merged_into_id=None, archived_at=None)
+    db.add(row)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "This contact already exists; show archived contacts to restore it") from None
+    audit.record(db, ent=ent, company_id=company.id, user=user, entity="contact", entity_id=row.id,
+                 action="create", after=audit.snapshot(row, EDITABLE + ("tin",)), label=_label(row))
+    sub = await load_subledger(db, company, today())
+    await db.commit()
+    return await _contact_out(db, company, row, sub)
+
+
+@router.delete("/contacts/{contact_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def archive_contact(contact_id: uuid.UUID, user: User = Depends(get_current_user),
+                          db: AsyncSession = Depends(get_db)):
+    if user.role not in MANAGER_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and managers can archive contacts")
+    ent = scope_for(user)
+    await lock_firm(db, ent)
+    row = await _contact_or_404(db, ent, contact_id)
+    company = await company_or_404(db, ent, row.company_id)
+    sub = await load_subledger(db, company, today())
+    target = key_map_for(sub.contacts).get(row.key, row.key)
+    if row.merged_into_id is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This contact was merged; manage the target contact instead")
+    if any(i.doc.contact_key == target for i in sub.items) or any(
+        c.contact_key == target and c.status == "pending" for c in sub.cwt
+    ):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Settle open items and receive pending 2307s before archiving this contact")
+    before = {"archived_at": row.archived_at}
+    row.archived_at = row.archived_at or datetime.now(_MANILA)
+    audit.record(db, ent=ent, company_id=company.id, user=user, entity="contact", entity_id=row.id,
+                 action="archive", before=before, after={"archived_at": row.archived_at}, label=_label(row))
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/contacts/{contact_id}/restore", status_code=status.HTTP_204_NO_CONTENT)
+async def restore_contact(contact_id: uuid.UUID, user: User = Depends(get_current_user),
+                          db: AsyncSession = Depends(get_db)):
+    if user.role not in MANAGER_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and managers can restore contacts")
+    ent = scope_for(user)
+    await lock_firm(db, ent)
+    row = await _contact_or_404(db, ent, contact_id)
+    if row.merged_into_id is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This contact was merged; manage the target contact instead")
+    before = {"archived_at": row.archived_at}
+    row.archived_at = None
+    audit.record(db, ent=ent, company_id=row.company_id, user=user, entity="contact", entity_id=row.id,
+                 action="restore", before=before, after={"archived_at": None}, label=_label(row))
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/contacts/{contact_id}", response_model=ContactOut)
@@ -275,10 +345,12 @@ async def merge_contact(contact_id: uuid.UUID, body: MergeIn, as_of: date | None
     if user.role not in MANAGER_ROLES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only a manager can merge contacts")
     ent = scope_for(user)
+    await lock_firm(db, ent)
     source = await _contact_or_404(db, ent, contact_id)
     target = await _contact_or_404(db, ent, body.into)
     company = await company_or_404(db, ent, source.company_id)
-    rows = list((await db.execute(select(AAContact).where(AAContact.company_id == company.id))).scalars().all())
+    rows = list((await db.execute(select(AAContact).where(
+        AAContact.company_id == company.id, AAContact.enterprise_id == ent))).scalars().all())
     problem = merge_check(source, target, rows)
     if problem:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, problem)

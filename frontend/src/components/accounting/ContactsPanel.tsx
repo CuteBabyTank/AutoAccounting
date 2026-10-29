@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FilePdf, FileXls, MagnifyingGlass } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
 import ContactPanel from "@/components/accounting/ContactPanel";
+import ContactForm from "@/components/accounting/ContactForm";
 import WriteOffPanel from "@/components/accounting/WriteOffPanel";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
@@ -48,6 +49,9 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
   const [refresh, setRefresh] = useState(0);
   const [error, setError] = useState("");
   const [writingOff, setWritingOff] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [busy, setBusy] = useState(false);
   const kind = role === "customer" ? "ar" : "ap";
 
   useEffect(() => {
@@ -71,13 +75,14 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
     const digits = q.replace(/\D/g, "");
     return (list?.contacts ?? []).filter(
       (c) =>
+        (!c.archived_at || showArchived || Number(c.open_balance) !== 0 || Number(c.cwt_pending) > 0) &&
         (!openOnly || Number(c.open_balance) !== 0 || Number(c.cwt_pending) > 0) &&
         (!q ||
           c.registered_name.toLowerCase().includes(q) ||
           c.aliases.some((a) => a.toLowerCase().includes(q)) ||
           (digits.length > 0 && c.tin.includes(digits))),
     );
-  }, [list, search, openOnly]);
+  }, [list, search, openOnly, showArchived]);
   const agingById = useMemo(() => new Map((aging?.rows ?? []).map((r) => [r.contact_id, r])), [aging]);
   const file = useFilePreview();
   const sheet = useWorkbookPreview();
@@ -113,6 +118,7 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
           </Hint>
         </h2>
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {canManage && <button className={BTN} onClick={() => setAdding(true)}>Add contact</button>}
           <label className="text-xs text-[var(--text-secondary)]" htmlFor="contacts-as-of">As of</label>
           <input id="contacts-as-of" type="date" className={INPUT} value={asOf} onChange={(e) => setAsOf(e.target.value)} />
           <button className={BTN} onClick={() =>
@@ -137,6 +143,7 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
         receipts, paid-on dates and matched bank lines.
       </p>
       {error && <p className="mb-2 text-sm text-[var(--alert-error-text)]">{error}</p>}
+      {adding && <ContactForm companyId={companyId} role={role} onClose={() => setAdding(false)} onSaved={(id) => { setAdding(false); setOpenOnly(false); setContactId(id); setRefresh((n) => n + 1); }} />}
       {writingOff && (
         <WriteOffPanel
           companyId={companyId}
@@ -177,10 +184,11 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
               <input type="checkbox" checked={openOnly} onChange={(e) => setOpenOnly(e.target.checked)} />
               With a balance only
             </label>
+            <label className="flex items-center gap-1.5 text-sm text-[var(--text-primary)]"><input type="checkbox" checked={showArchived} onChange={(e) => { setShowArchived(e.target.checked); if (e.target.checked) setOpenOnly(false); }} />Show archived contacts</label>
           </div>
           {rows.length === 0 ? (
             <p className="py-6 text-center text-sm text-[var(--text-secondary)]">
-              {list.contacts.length === 0 ? `No ${title.toLowerCase()} in the documents yet.` : "Nothing matches."}
+              {list.contacts.length === 0 ? `No ${title.toLowerCase()} yet. Add a contact or upload its documents.` : "Nothing matches. Turn off With a balance only to manage contacts without a balance."}
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -206,6 +214,7 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
                       >
                         <td className="py-1.5 pr-3">
                           <span className="font-medium">{c.registered_name}</span>
+                          {c.archived_at && <span className="ml-2 text-xs text-[var(--text-secondary)]">Archived</span>}
                           {c.tin && <span className="ml-2 text-xs text-[var(--text-secondary)]">{c.tin}</span>}
                           {c.role === "both" && <span className="ml-2 text-xs text-[var(--text-secondary)]">customer and supplier</span>}
                           {(c.default_account || c.payment_terms_days != null) && (
@@ -221,6 +230,17 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
                         ))}
                         <td className="py-1.5 pr-3 text-right font-semibold tabular-nums">{formatPeso(c.open_balance)}</td>
                         <td className="py-1.5 whitespace-nowrap">
+                          {canManage && <button className={BTN} disabled={busy} onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!c.archived_at && !window.confirm(`Archive "${c.registered_name}"? Its identity and tax records are retained. Open balances or pending 2307s must be settled first.`)) return;
+                            setBusy(true); setError("");
+                            try {
+                              if (c.archived_at) await accountingApi.restoreContact(c.id);
+                              else await accountingApi.archiveContact(c.id);
+                              setRefresh((n) => n + 1);
+                            } catch (e) { setError(apiErrorMessage(e, "Couldn't change the contact's archive status")); }
+                            finally { setBusy(false); }
+                          }}>{c.archived_at ? "Restore" : "Archive"}</button>}
                           {Number(c.overdue) > 0 && (
                             <span className={`${CHIP} bg-[var(--badge-yellow-bg)] text-[var(--badge-yellow-text)]`}>Overdue</span>
                           )}

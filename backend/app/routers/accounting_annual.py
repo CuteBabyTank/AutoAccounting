@@ -18,7 +18,8 @@ from app.schemas.accounting import (
     AnnualInputsModel, AnnualPeriodOut, AssetOut, AssetPatch, CompanyBrief, FiledIn, OpeningAssetIn, OutputBrief,
     OutputOut,
 )
-from app.services.accounting import audit
+from app.services.accounting import audit, deletion
+from app.services.accounting.assignment import lock_firm
 from app.services.accounting.assets import active_assets, is_asset_document, sync_assets, to_asset
 from app.services.accounting.books.loader import touch_books
 from app.services.accounting.compute.annual import (
@@ -245,7 +246,8 @@ async def list_assets(company_id: uuid.UUID, year: int | None = Query(default=No
     await db.commit()
     rows = (await db.execute(
         select(AAAsset, AADocument).outerjoin(AADocument, AADocument.id == AAAsset.document_id)
-        .where(AAAsset.company_id == company.id).order_by(AAAsset.in_service, AAAsset.description)
+        .where(AAAsset.company_id == company.id, AAAsset.enterprise_id == company.enterprise_id,
+               AAAsset.deleted_at.is_(None)).order_by(AAAsset.in_service, AAAsset.description)
     )).all()
     fy = year or _current_year(company)
     return [_asset_out(row, doc, fy, company.fiscal_year_end_month) for row, doc in rows]
@@ -255,14 +257,19 @@ async def list_assets(company_id: uuid.UUID, year: int | None = Query(default=No
 async def patch_asset(asset_id: uuid.UUID, body: AssetPatch, year: int | None = Query(default=None, ge=2000, le=2100),
                       user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     ent = scope_for(user)
+    await lock_firm(db, ent)
     found = (await db.execute(
         select(AAAsset, AADocument).outerjoin(AADocument, AADocument.id == AAAsset.document_id)
-        .where(AAAsset.id == asset_id, AAAsset.enterprise_id == ent)
+        .where(AAAsset.id == asset_id, AAAsset.enterprise_id == ent, AAAsset.deleted_at.is_(None))
     )).one_or_none()
     if found is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
     row, doc = found
     company = await company_or_404(db, ent, row.company_id)
+    if "cost" in body.model_fields_set and row.document_id is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Edit the source document to change this asset's cost")
+    if row.document_id is None and body.model_fields_set & {"cost", "in_service", "useful_life_months", "end_date"}:
+        await deletion.protect_history(db, company, from_date=min(row.in_service, body.in_service or row.in_service))
     before = audit.snapshot(row, _ASSET_FIELDS)
     for name in body.model_fields_set:
         value = getattr(body, name)
@@ -274,6 +281,7 @@ async def patch_asset(asset_id: uuid.UUID, body: AssetPatch, year: int | None = 
     audit.record(db, label=row.description,
                  ent=ent, company_id=company.id, user=user, entity="asset", entity_id=row.id, action="update",
                  before=before, after=audit.snapshot(row, _ASSET_FIELDS))
+    touch_books(company)
     await db.commit()
     return _asset_out(row, doc, year or _current_year(company), company.fiscal_year_end_month)
 
@@ -305,7 +313,9 @@ async def add_opening_asset(company_id: uuid.UUID, body: OpeningAssetIn,
 async def delete_opening_asset(asset_id: uuid.UUID, user: User = Depends(get_current_user),
                                db: AsyncSession = Depends(get_db)):
     ent = scope_for(user)
-    row = (await db.execute(select(AAAsset).where(AAAsset.id == asset_id, AAAsset.enterprise_id == ent)
+    await lock_firm(db, ent)
+    row = (await db.execute(select(AAAsset).where(AAAsset.id == asset_id, AAAsset.enterprise_id == ent,
+                                               AAAsset.deleted_at.is_(None))
                             )).scalar_one_or_none()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
@@ -313,11 +323,12 @@ async def delete_opening_asset(asset_id: uuid.UUID, user: User = Depends(get_cur
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "This asset comes from a document; move or exclude the document instead")
     company = await company_or_404(db, ent, row.company_id)
+    await deletion.protect_history(db, company, from_date=row.in_service)
     audit.record(db, label=row.description,
                  ent=ent, company_id=company.id, user=user, entity="asset", entity_id=row.id, action="delete",
                  before=audit.snapshot(row, _ASSET_FIELDS), after=None)
-    await db.delete(row)
-    company.facts_updated_at = datetime.now(timezone.utc)  # no row left to date the change: every version is stale
+    row.deleted_at = datetime.now(timezone.utc)
+    company.facts_updated_at = datetime.now(timezone.utc)  # removing it from the live register makes old versions stale
     if company.books_start is not None:
         touch_books(company)
     await db.commit()

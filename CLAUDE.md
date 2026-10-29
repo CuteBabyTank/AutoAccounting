@@ -272,7 +272,7 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
 - **Production (`deploy/README.md`):** Cloud Run `asia-southeast1` (`aa-backend` ≤ 1 instance, request-based CPU,
   scale to zero; `aa-frontend`), Supabase via the 6543 pooler as `aa_app` (NOBYPASSRLS; never `postgres`, which
   bypasses RLS; Data API off), uploads in a versioned bucket mounted at `/data` = `ACCOUNTING_DIR`, nightly
-  `aa-db-backup` job. `bash deploy/setup-gcp.sh` once, `bash deploy/deploy.sh` per release (settings in
+  `aa-db-backup` job. `bash deploy/setup-gcp.sh` once; a push to `prod` deploys (Cloud Build trigger `aa-prod-deploy`), or `bash deploy/deploy.sh` for the local tree (settings in
   `deploy/config.sh`, secrets `AA_*` in Secret Manager). Upload jobs are in-process tasks: a dead one is resumed on
   the next read of its upload (`jobs.stale_action`, `pipeline.resume`; failed after 24 h) and shutdown dates running
   ones back (`pipeline.release_running`). Keep anything new that runs after a response resumable the same way.
@@ -289,3 +289,8 @@ Alphalist DAT export (BIR layout unverified), Gemini read of scanned payroll reg
 - Logging: structured key=value; auth events → `auth.audit`, Gemini → `gemini`.
 - Frontend: strict TS, `@/*` → `src/*`, page-scoped `useState`; accounting UI lives under `components/accounting`.
 - App background: every page shares `components/layout/AppFlow` (the homepage line ribbons in the right gutter + a slow emerald glow). AuthGate mounts it once inside `<main>`, so new signed-in pages get it automatically: give the page root `className="lp ..."` and no background of its own (nested `.lp` roots are transparent). Public pages outside the shell (login, pending) render `<AppFlow />` in their own `.lp` root. No grid or blob backdrops.
+
+## Archive and deletion guards
+
+- Companies/contacts use `archived_at`; assets/payroll use `deleted_at`. Keep identities, TIN uniqueness, source files and tax history (≥5 years); active loaders must exclude tombstones. Contact merges require both contacts restored first.
+- Before deleting accounting sources, use `services/accounting/deletion.py` (`protect_document`, `protect_entry`, `protect_history`), backed by pure `compute/retention.py`. Refuse closed/filed history, including later returns affected by carry-forwards, depreciation and bank/reference dependencies. Take `assignment.lock_firm` before reading mutation facts; competing filing/closing/bank writes use the same lock. Rematch only the bank lines covered by the guard, retain rows with tombstones, audit before commit, and confirm destructive UI actions.

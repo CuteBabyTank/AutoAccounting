@@ -94,7 +94,8 @@ async def store_statement(db: AsyncSession, doc: AADocument) -> AABankStatement 
     return statement
 
 
-async def statement_document_changed(db: AsyncSession, doc: AADocument) -> None:
+async def statement_document_changed(db: AsyncSession, doc: AADocument,
+                                      *, line_ids: set[uuid.UUID] | None = None) -> None:
     """A statement's document was deleted, excluded or put back: its lines stop (or start) counting, so the
     reconciliations from its period on no longer hold and the other lines may match differently. Flushes."""
     from app.services.accounting.books.loader import touch_books
@@ -108,7 +109,7 @@ async def statement_document_changed(db: AsyncSession, doc: AADocument) -> None:
     await db.flush()
     company = await db.get(AACompany, doc.company_id)
     if company is not None:
-        await rematch(db, company)
+        await rematch(db, company, line_ids=line_ids)
         touch_books(company)
 
 
@@ -250,27 +251,30 @@ async def bank_paid_ids(db: AsyncSession, company_id: uuid.UUID) -> set[str]:
     return {str(i) for i in ids} | {str(s) for _, s in settled if s is not None}
 
 
-async def rematch(db: AsyncSession, company: AACompany) -> int:
-    """Match every line a person hasn't decided yet; returns how many lines are matched. Flushes."""
+async def rematch(db: AsyncSession, company: AACompany, *, line_ids: set[uuid.UUID] | None = None) -> int:
+    """Match undecided lines (optionally a guarded subset), reserving payments on every unchanged line."""
     from app.services.accounting.books.loader import ensure_chart
 
     lines = (await db.execute(select(AABankLine).where(
-        AABankLine.company_id == company.id, AABankLine.account_code != "", live_line()).order_by(AABankLine.line_date))
+        AABankLine.enterprise_id == company.enterprise_id, AABankLine.company_id == company.id,
+        AABankLine.account_code != "", live_line()).order_by(AABankLine.line_date))
              ).scalars().all()
     if not lines:
         return 0
     docs = await _documents(db, company.id)
-    decided = [l for l in lines if l.match_status in ("confirmed", "excluded")]
+    decided = [l for l in lines if l.match_status in ("confirmed", "excluded")
+               or (line_ids is not None and l.id not in line_ids)]
     used: dict[str, Decimal] = defaultdict(lambda: ZERO)
     used_refs: set[str] = set()
     for l in decided:
-        if l.match_status == "confirmed" and l.matched_ref:
+        if l.match_status in ("confirmed", "matched") and l.matched_ref:
             used[l.matched_ref] += c2(l.match_amount if l.match_amount is not None else abs(l.amount))
             used_refs.add(l.matched_ref)
     candidates = await _candidates(db, company, docs, dict(used), used_refs)
     chart = await ensure_chart(db, company)
     accounts = await bank_accounts(db, company.id)
-    pending = [l for l in lines if l.match_status not in ("confirmed", "excluded")]
+    pending = [l for l in lines if l.match_status not in ("confirmed", "excluded")
+               and (line_ids is None or l.id in line_ids)]
     results = match_all([_fact(l) for l in pending], candidates, await company_rules(db, company.id),
                         {str(l.id): set(l.rejected or []) for l in pending},
                         [(a.code, a.bank_account_no) for a in accounts])

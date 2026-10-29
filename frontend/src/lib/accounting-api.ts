@@ -36,6 +36,7 @@ import type {
   AtcDatabank,
   Aging,
   ContactDetail,
+  ContactCreate,
   ContactList,
   ContactPatch,
   Cwt2307,
@@ -45,6 +46,7 @@ import type {
   BankMonth,
   BankOverview,
   BankRule,
+  BankRuleInput,
   BankStatement,
   ReconcileResult,
   Company,
@@ -101,17 +103,24 @@ export const accountingApi = {
   bankRules: (companyId: string) =>
     api.get<BankRule[]>(`/accounting/companies/${seg(companyId)}/bank/rules`).then((r) => r.data),
   deleteBankRule: (id: string) => api.delete(`/accounting/bank-rules/${seg(id)}`).then(() => undefined),
+  createBankRule: (companyId: string, body: BankRuleInput) => api.post<BankRule>(`/accounting/companies/${seg(companyId)}/bank/rules`, body).then((r) => r.data),
+  updateBankRule: (id: string, body: BankRuleInput) => api.put<BankRule>(`/accounting/bank-rules/${seg(id)}`, body).then((r) => r.data),
   /** Audit log: newest first, firm-scoped; filter by company, person, Manila calendar days, entity. */
   auditEvents: (filters: AuditFilters) =>
     api.get<AuditPage>("/accounting/audit-events", { params: filters }).then((r) => r.data),
-  listCompanies: (q = "") =>
-    api.get<Company[]>("/accounting/companies", { params: q ? { q } : {} }).then((r) => r.data),
+  listCompanies: (q = "", includeArchived = false) =>
+    api.get<Company[]>("/accounting/companies", { params: { q, include_archived: includeArchived } }).then((r) => r.data),
+  archiveCompany: (id: string) => api.delete<Company>(`/accounting/companies/${seg(id)}`).then((r) => r.data),
+  restoreCompany: (id: string) => api.post<Company>(`/accounting/companies/${seg(id)}/restore`).then((r) => r.data),
   createCompany: (data: CompanyInput & { coa_template?: string }) =>
     api.post<Company>("/accounting/companies", data).then((r) => r.data),
   coaTemplates: () => api.get<CoaTemplate[]>("/accounting/coa-templates").then((r) => r.data),
   saveCoaTemplate: (companyId: string, name: string, description = "") =>
     api.post<CoaTemplate>(`/accounting/companies/${seg(companyId)}/coa-template`, { name, description }).then((r) => r.data),
   deleteCoaTemplate: (id: string) => api.delete(`/accounting/coa-templates/${seg(id)}`).then(() => undefined),
+  coaTemplateAccounts: (id: string) => api.get<{ code: string; name: string; type: string; placement: string; active: boolean }[]>(`/accounting/coa-templates/${seg(id)}`).then((r) => r.data),
+  updateCoaTemplate: (id: string, body: { name: string; description: string; source_company_id?: string }) =>
+    api.put<CoaTemplate>(`/accounting/coa-templates/${seg(id)}`, body).then((r) => r.data),
   reclassifyCandidates: (companyId: string, params: { start: string; end: string; account: string; atc?: string }) =>
     api.get<ReclassifyList>(`/accounting/companies/${seg(companyId)}/reclassify`, { params }).then((r) => r.data),
   reclassifyPreview: (companyId: string, body: ReclassifyInput) =>
@@ -356,6 +365,10 @@ export const accountingApi = {
     api.get<ContactDetail>(`/accounting/contacts/${seg(contactId)}`, { params: { as_of: asOf } }).then((r) => r.data),
   updateContact: (contactId: string, patch: ContactPatch, asOf: string) =>
     api.patch<ContactDetail>(`/accounting/contacts/${seg(contactId)}`, patch, { params: { as_of: asOf } }).then((r) => r.data),
+  createContact: (companyId: string, body: ContactCreate) =>
+    api.post<ContactDetail>(`/accounting/companies/${seg(companyId)}/contacts`, body).then((r) => r.data),
+  archiveContact: (id: string) => api.delete(`/accounting/contacts/${seg(id)}`).then(() => undefined),
+  restoreContact: (id: string) => api.post(`/accounting/contacts/${seg(id)}/restore`).then(() => undefined),
   mergeContact: (contactId: string, into: string, reason: string, asOf: string) =>
     api.post<ContactDetail>(`/accounting/contacts/${seg(contactId)}/merge`, { into, reason }, { params: { as_of: asOf } }).then((r) => r.data),
   markCwt2307: (documentId: string, status: "pending" | "received" | "auto", certificateId: string | null = null, reason = "") =>

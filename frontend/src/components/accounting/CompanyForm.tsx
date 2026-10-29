@@ -70,7 +70,7 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
   const [template, setTemplate] = useState("");
 
   useEffect(() => {
-    if (!companyId) accountingApi.coaTemplates().then(setTemplates).catch(() => undefined);
+    if (!companyId) accountingApi.coaTemplates().then(setTemplates).catch((e) => setError(apiErrorMessage(e, "Couldn't load chart templates. Close and reopen to retry.")));
   }, [companyId]);
 
   const set = <K extends keyof CompanyInput>(key: K, value: CompanyInput[K]) =>

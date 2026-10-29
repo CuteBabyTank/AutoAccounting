@@ -5,7 +5,7 @@ import asyncio
 import io
 import json
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
@@ -14,14 +14,15 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
 from app.models.accounting import AACompany, AAEmployee, AAOutput, AAPeriod
 from app.models.user import User
 from app.routers.accounting_scope import MANAGER_ROLES, company_or_404, scope_for
-from app.services.accounting import audit
+from app.services.accounting import audit, deletion
+from app.services.accounting.assignment import lock_firm
 from app.services.accounting.compute.alphalist import (
     FIELD_LABELS, MonthRemittance, build_alphalist, employee_from_json,
 )
@@ -131,7 +132,8 @@ async def remittances_for(db: AsyncSession, company: AACompany, year: int) -> li
 
 async def _rows(db: AsyncSession, company_id: uuid.UUID, year: int) -> list[AAEmployee]:
     return list((await db.execute(select(AAEmployee).where(
-        AAEmployee.company_id == company_id, AAEmployee.year == year).order_by(AAEmployee.created_at)
+        AAEmployee.company_id == company_id, AAEmployee.year == year,
+        AAEmployee.deleted_at.is_(None)).order_by(AAEmployee.created_at)
     )).scalars().all())
 
 
@@ -204,9 +206,13 @@ async def import_employees(company_id: uuid.UUID, year: int, file: UploadFile, m
     if not records:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No employee rows found with that mapping."
                             + (f" {errors[0]}" if errors else ""))
+    await _protect_payroll(db, company, year)
     replaced = (await db.execute(select(func.count(AAEmployee.id)).where(
-        AAEmployee.company_id == company.id, AAEmployee.year == year))).scalar_one()
-    await db.execute(delete(AAEmployee).where(AAEmployee.company_id == company.id, AAEmployee.year == year))
+        AAEmployee.enterprise_id == ent, AAEmployee.company_id == company.id, AAEmployee.year == year,
+        AAEmployee.deleted_at.is_(None)))).scalar_one()
+    await db.execute(update(AAEmployee).where(AAEmployee.enterprise_id == ent,
+        AAEmployee.company_id == company.id, AAEmployee.year == year, AAEmployee.deleted_at.is_(None)
+    ).values(deleted_at=datetime.now(timezone.utc)))
     audit.record(db, label=f"{year} employees",
                  ent=ent, company_id=company.id, user=user, entity="employee", entity_id=f"{year}",
                  action="import", before={"employees": replaced},
@@ -248,10 +254,14 @@ def _validate(data: dict) -> None:
 
 async def _employee_or_404(db: AsyncSession, ent: uuid.UUID, employee_id: uuid.UUID) -> AAEmployee:
     row = (await db.execute(select(AAEmployee).where(AAEmployee.id == employee_id,
-                                                     AAEmployee.enterprise_id == ent))).scalar_one_or_none()
+        AAEmployee.enterprise_id == ent, AAEmployee.deleted_at.is_(None)))).scalar_one_or_none()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
     return row
+
+
+async def _protect_payroll(db: AsyncSession, company: AACompany, year: int) -> None:
+    await deletion.protect_history(db, company, [date(year, m, 1) for m in range(1, 13)])
 
 
 @router.put("/employees/{employee_id}", response_model=EmployeesOut)
@@ -259,6 +269,7 @@ async def update_employee(employee_id: uuid.UUID, body: dict, user: User = Depen
                           db: AsyncSession = Depends(get_db)):
     _require_manager(user)
     ent = scope_for(user)
+    await lock_firm(db, ent)
     row = await _employee_or_404(db, ent, employee_id)
     data = _clean(body)
     _validate(data)
@@ -276,12 +287,15 @@ async def delete_employee(employee_id: uuid.UUID, user: User = Depends(get_curre
                           db: AsyncSession = Depends(get_db)):
     _require_manager(user)
     ent = scope_for(user)
+    await lock_firm(db, ent)
     row = await _employee_or_404(db, ent, employee_id)
     company_id, year = row.company_id, row.year
+    company = await company_or_404(db, ent, company_id)
+    await _protect_payroll(db, company, year)
     audit.record(db, label=audit.employee_label(row.data),
                  ent=ent, company_id=company_id, user=user, entity="employee", entity_id=row.id,
                  action="delete", before={"year": year, **(row.data or {})}, after=None)
-    await db.delete(row)
+    row.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     company = await company_or_404(db, ent, company_id)
     return await _out(db, company, year)
@@ -505,10 +519,12 @@ async def alphalist_status(year: int = Query(..., ge=2000, le=2100), user: User 
     """Every client with employees: is its 1604-C alphalist ready for the year?"""
     ent = scope_for(user)
     companies = (await db.execute(select(AACompany).where(
-        AACompany.enterprise_id == ent, AACompany.has_employees.is_(True)).order_by(AACompany.registered_name)
+        AACompany.enterprise_id == ent, AACompany.archived_at.is_(None),
+        AACompany.has_employees.is_(True)).order_by(AACompany.registered_name)
     )).scalars().all()
     counts = dict((await db.execute(select(AAEmployee.company_id, func.count()).where(
-        AAEmployee.enterprise_id == ent, AAEmployee.year == year).group_by(AAEmployee.company_id))).all())
+        AAEmployee.enterprise_id == ent, AAEmployee.year == year,
+        AAEmployee.deleted_at.is_(None)).group_by(AAEmployee.company_id))).all())
     out = []
     for c in companies:
         n = counts.get(c.id, 0)

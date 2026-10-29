@@ -84,6 +84,8 @@ class AACompany(Base):
     # Set when a field that changes the returns is edited (not pin/aliases): outputs older than this are stale.
     facts_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Retire a client without ever cascading away its retained tax records.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Company-level review flags: {"opening_balance_missing": {account code: {date, statement, books}}}
     review_flags: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     created_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -345,6 +347,7 @@ class AAAsset(Base):
     in_service: Mapped[date] = mapped_column(Date, nullable=False)
     useful_life_months: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -494,6 +497,7 @@ class AAEmployee(Base):
     )
     year: Mapped[int] = mapped_column(Integer, nullable=False)          # calendar year
     data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # alphalist fields (compute/alphalist.py)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -670,6 +674,7 @@ class AAContact(Base):
     address: Mapped[str] = mapped_column(Text, nullable=False, default="")
     vat_status: Mapped[str] = mapped_column(String(10), nullable=False, default="")   # vat | non_vat | ""
     payment_terms_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     manual: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")  # fields a person set
     merged_into_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("aa_contacts.id", ondelete="SET NULL"), nullable=True

@@ -52,8 +52,9 @@ async def work_people(user: User = Depends(get_current_user), db: AsyncSession =
     return [_person_out(p) for p in await firm_people(db, scope_for(user))]
 
 
-def _settings_out(row: AAFirmSettings, user: User) -> FirmSettingsOut:
+def _settings_out(row: AAFirmSettings, user: User, organization_name: str = "") -> FirmSettingsOut:
     return FirmSettingsOut(
+        organization_name=organization_name,
         auto_assign=row.auto_assign, can_auto_assign=user.role in MANAGER_ROLES,
         approve_before_close=row.approve_before_close, deadline_days=row.deadline_days,
         can_edit=user.role in OWNER_ROLES, can_file=may_file(user.role, row.approve_before_close))
@@ -61,7 +62,9 @@ def _settings_out(row: AAFirmSettings, user: User) -> FirmSettingsOut:
 
 @router.get("/work/settings", response_model=FirmSettingsOut)
 async def get_firm_settings(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return _settings_out(await firm_settings(db, scope_for(user)), user)
+    ent = scope_for(user)
+    name = (await db.execute(select(User.organization_name).where(User.id == ent))).scalar_one_or_none() or ""
+    return _settings_out(await firm_settings(db, ent), user, name)
 
 
 @router.put("/work/settings", response_model=FirmSettingsOut)
@@ -78,19 +81,23 @@ async def put_firm_settings(body: FirmSettingsIn, user: User = Depends(get_curre
     await db.execute(pg_insert(AAFirmSettings).values(id=uuid.uuid4(), enterprise_id=ent).on_conflict_do_nothing(
         index_elements=["enterprise_id"]))
     row = (await db.execute(select(AAFirmSettings).where(AAFirmSettings.enterprise_id == ent))).scalar_one()
-    before = audit.snapshot(row, fields)
-    for field in sent:
+    owner = (await db.execute(select(User).where(User.id == ent))).scalar_one()
+    before = audit.snapshot(row, fields) | {"organization_name": owner.organization_name or ""}
+    if "organization_name" in sent and body.organization_name is not None:
+        owner.organization_name = body.organization_name.strip() or None
+    for field in sent - {"organization_name"}:
         value = getattr(body, field)
         if value is not None:
             setattr(row, field, value)
     audit.record(db, ent=ent, company_id=None, user=user, entity="firm_settings", entity_id=ent, action="update",
-                 label="Firm settings", before=before, after=audit.snapshot(row, fields))
+                 label="Firm settings", before=before,
+                 after=audit.snapshot(row, fields) | {"organization_name": owner.organization_name or ""})
     await db.commit()
-    return _settings_out(row, user)
+    return _settings_out(row, user, owner.organization_name or "")
 
 
 async def firm_companies(db: AsyncSession, ent: uuid.UUID) -> list[AACompany]:
-    return list((await db.execute(select(AACompany).where(AACompany.enterprise_id == ent)
+    return list((await db.execute(select(AACompany).where(AACompany.enterprise_id == ent, AACompany.archived_at.is_(None))
                                   .order_by(AACompany.registered_name))).scalars().all())
 
 

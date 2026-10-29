@@ -18,6 +18,7 @@ from google import genai
 from google.genai import types
 
 from app.config import settings
+from app.services.pdf_render import render_zoom
 
 logger = logging.getLogger("gemini")
 
@@ -249,7 +250,8 @@ def render_pdf_page(pdf_path: str, page_number: int, dpi: int = 200) -> bytes:
         doc.close()
         raise ValueError(f"Page {page_number} does not exist (PDF has {len(doc)} pages)")
     page = doc[page_number]
-    pix = page.get_pixmap(dpi=dpi)
+    zoom = render_zoom(page.rect.width, page.rect.height, dpi)
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
     img_bytes = pix.tobytes("png")
     doc.close()
     return img_bytes
@@ -266,7 +268,8 @@ def render_pdf_page_jpeg(pdf_path: str, page_number: int, dpi: int = 130, qualit
         doc.close()
         raise ValueError(f"Page {page_number} does not exist (PDF has {len(doc)} pages)")
     page = doc[page_number]
-    pix = page.get_pixmap(dpi=dpi)
+    zoom = render_zoom(page.rect.width, page.rect.height, dpi)
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
     img_bytes = pix.tobytes("jpeg", jpg_quality=quality)
     doc.close()
     return img_bytes
@@ -290,7 +293,8 @@ def render_pdf_page_webp(pdf_path: str, page_number: int, dpi: int = 130, qualit
         doc.close()
         raise ValueError(f"Page {page_number} does not exist (PDF has {len(doc)} pages)")
     page = doc[page_number]
-    pix = page.get_pixmap(dpi=dpi)
+    zoom = render_zoom(page.rect.width, page.rect.height, dpi)
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
     try:
         return _encode_pixmap_webp(pix, quality)
     finally:
@@ -315,7 +319,7 @@ def render_pdf_page_thumb_webp(pdf_path: str, page_number: int, target_width: in
     page = doc[page_number]
     try:
         width_pt = page.rect.width or float(target_width)
-        zoom = target_width / width_pt
+        zoom = render_zoom(width_pt, page.rect.height, 72 * target_width / width_pt)
         pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
         return _encode_pixmap_webp(pix, quality)
     finally:

@@ -13,13 +13,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from app import startup_migrations
+from app.body_limit import BodySizeLimitMiddleware
 from app.config import settings, validate_secrets_at_startup
 from app.database import DB_POOLER, engine
 from app.logging_config import setup_logging
 from app.routers import accounting, admin, auth, features, team
 from app.services.accounting import pipeline
 from app.services.features import feature_gate
-from app.auth.security import global_ip_limiter
+from app.auth.security import global_ip_limiter, should_limit_ip
 
 logger = logging.getLogger("app")
 
@@ -85,30 +86,11 @@ _CSP_POLICY = (
 )
 
 
-# JSON / non-multipart bodies are capped here. Multipart uploads enforce
-# their own per-file limit (settings.max_file_size_mb) inside the route after
-# streaming chunks to disk, so this middleware skips multipart content types.
-# Bounded as an abuse guard; these endpoints are authenticated + per-user rate limited.
 _JSON_BODY_MAX_BYTES = 25 * 1024 * 1024  # 25 MB
-
-
-@app.middleware("http")
-async def request_size_limit_middleware(request: Request, call_next) -> Response:
-    content_type = request.headers.get("content-type", "").lower()
-    if "multipart/form-data" in content_type:
-        return await call_next(request)
-    content_length = request.headers.get("content-length")
-    if content_length is not None:
-        try:
-            length = int(content_length)
-        except ValueError:
-            return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"})
-        if length > _JSON_BODY_MAX_BYTES:
-            return JSONResponse(
-                status_code=413,
-                content={"detail": f"Request body too large (max {_JSON_BODY_MAX_BYTES // (1024 * 1024)} MB)"},
-            )
-    return await call_next(request)
+# Bound the whole batch as well as each file; reserve space for multipart headers/fields.
+_MULTIPART_BODY_MAX_BYTES = min(
+    settings.max_file_size_mb * settings.max_batch_size * 1024 * 1024, 256 * 1024 * 1024,
+) + settings.max_batch_size * 64 * 1024 + 1024 * 1024
 
 
 @app.middleware("http")
@@ -186,9 +168,7 @@ async def abuse_protection_middleware(request: Request, call_next) -> Response:
     # 429s that aren't actually abuse. The IP cap still applies to anonymous
     # endpoints (login, OAuth callback, public assets) where it does block
     # credential-stuffing / scraping.
-    auth_header = request.headers.get("authorization", "")
-    is_authenticated = auth_header.lower().startswith("bearer ")
-    if not is_authenticated:
+    if should_limit_ip(request.url.path, request.headers.get("authorization", "")):
         if not global_ip_limiter.check_and_record(ip):
             logger.warning("rate_limited scope=global_ip ip=%s path=%s rid=%s", ip, request.url.path, request_id)
             return JSONResponse(
@@ -211,6 +191,10 @@ async def abuse_protection_middleware(request: Request, call_next) -> Response:
 
 
 # ---------------------------------------------------------------------------
+# Count bytes outside the HTTP middleware stack, including multipart parser reads.
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=_JSON_BODY_MAX_BYTES,
+                   multipart_max_bytes=_MULTIPART_BODY_MAX_BYTES)
+
 # CORS: must be added LAST to be the outermost middleware (processed first for requests)
 # ---------------------------------------------------------------------------
 app.add_middleware(

@@ -9,6 +9,8 @@ import io
 import fitz
 from PIL import Image, ImageFilter
 
+from app.services.pdf_render import render_zoom
+
 _PROBE_DPI = 36
 _INK = 40               # how much darker than the paper a pixel must be to count as content
 _KEEP_RATIO = 0.85      # don't bother when the content already covers most of the page
@@ -66,19 +68,21 @@ def render_pdf_page_trimmed(pdf_path: str, page_number: int) -> bytes | None:
         if page_number >= len(doc):
             return None
         page = doc[page_number]
-        probe = page.get_pixmap(dpi=_PROBE_DPI)
+        zoom = render_zoom(page.rect.width, page.rect.height, _PROBE_DPI)
+        probe = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
         img = Image.frombytes("RGB" if probe.n < 4 else "RGBA", (probe.width, probe.height), probe.samples)
         box = content_box(img)
         if box is None:
             return None
-        scale = 72 / _PROBE_DPI
+        scale = 1 / zoom
         r = page.rect
         clip = fitz.Rect(r.x0 + box[0] * scale, r.y0 + box[1] * scale, r.x0 + box[2] * scale, r.y0 + box[3] * scale)
         clip &= r
         if clip.is_empty:
             return None
         dpi = min(_MAX_DPI, int(72 * (_TARGET_PIXELS / (clip.width * clip.height)) ** 0.5))
-        pix = page.get_pixmap(dpi=max(130, dpi), clip=clip)
+        zoom = render_zoom(clip.width, clip.height, max(130, dpi))
+        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), clip=clip)
         out = io.BytesIO()
         Image.frombytes("RGB" if pix.n < 4 else "RGBA", (pix.width, pix.height), pix.samples).convert("RGB").save(
             out, "WEBP", quality=80)

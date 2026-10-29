@@ -1,11 +1,16 @@
 """Management report pack: PDF (cover, contents, statements, aging, KPIs, notes) and DOCX."""
 
+import asyncio
 import io
+import uuid
 import zipfile
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 import fitz
+import pytest
+from fastapi import HTTPException
 
 from app.models.accounting import AAPeriod
 from app.services.accounting.books.chart import Chart, standard_chart
@@ -24,6 +29,45 @@ ENTRIES = [
     Entry("doc:s:sale", date(2026, 11, 5), "SJ", "0006", "Kalayaan", "", "Sale", "document",
           (Line("1100", D("11200")), Line("4010", credit=D("10000")), Line("2100", credit=D("1200")))),
 ]
+
+
+def test_pack_generation_is_limited_before_loading_books(monkeypatch):
+    from app.auth.security import RateLimiter
+    from app.routers import accounting_reports as routes
+
+    user = SimpleNamespace(id=uuid.uuid4())
+    limiter = RateLimiter(1, 600)
+    limiter.check_and_record(str(user.id))
+    monkeypatch.setattr(routes, "export_limiter", limiter)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(routes.generate_pack("company", 2026, 4, user=user, db=None))
+    assert exc.value.status_code == 429
+
+    async def load_books(*args):
+        raise ValueError("another user can load books")
+
+    monkeypatch.setattr(routes, "_pack_period", load_books)
+    with pytest.raises(ValueError, match="another user can load books"):
+        asyncio.run(routes.generate_pack("company", 2026, 4, user=SimpleNamespace(id=uuid.uuid4()), db=None))
+
+
+def test_superseded_pack_cleanup_stays_inside_storage(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.routers.accounting_reports import _delete_pack_files
+
+    root = tmp_path / "storage"
+    root.mkdir()
+    monkeypatch.setattr(settings, "accounting_dir", str(root))
+    inside, outside = root / "old.pdf", tmp_path / "outside.docx"
+    inside.write_bytes(b"old")
+    outside.write_bytes(b"keep")
+    link = root / "link.docx"
+    link.symlink_to(outside)
+    _delete_pack_files({"pdf": str(inside), "docx": str(link), "by": str(outside)})
+    assert not inside.exists()
+    assert outside.read_bytes() == b"keep" and link.is_symlink()
+    _delete_pack_files({"pdf": str(root / ".." / "outside.docx"), "docx": str(inside)})
+    assert outside.exists()  # traversal and already-missing paths are safe
 
 
 def _pack(notes: str = "Sales rose in November.\nAsk the client for the Oct–Nov bank statement <soon> & more.") -> Pack:

@@ -36,8 +36,8 @@ class Settings(BaseSettings):
 
     # File Storage
     upload_dir: str = "./uploads"
-    max_file_size_mb: int = 5120
-    max_batch_size: int = 1000
+    max_file_size_mb: int = 50
+    max_batch_size: int = 200
     # Source documents. Tax records must be kept >=5 years, so in production
     # this is a dedicated long-retention volume/bucket mounted here. Unset in
     # dev -> falls back to upload_dir.
@@ -129,6 +129,10 @@ def validate_secrets_at_startup() -> None:
     errors: list[str] = []
     if settings.jwt_secret in _INSECURE_DEFAULTS or len(settings.jwt_secret) < 32:
         errors.append("JWT_SECRET must be set to a random value (>= 32 chars) in production")
+    if settings.jwt_secret_previous and (
+        settings.jwt_secret_previous in _INSECURE_DEFAULTS or len(settings.jwt_secret_previous) < 32
+    ):
+        errors.append("JWT_SECRET_PREVIOUS must be a random value (>= 32 chars) when set in production")
     if not settings.gemini_api_key or settings.gemini_api_key == "your-gemini-api-key-here":
         errors.append("GEMINI_API_KEY must be set to a valid API key")
     if not settings.google_client_id:

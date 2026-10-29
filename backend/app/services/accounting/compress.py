@@ -12,6 +12,7 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -122,9 +123,10 @@ PDF_MEMORY_BYTES = 1536 * 1024 * 1024  # address-space cap for the rewrite proce
 PDF_TIMEOUT_S = 90
 _APP_ROOT = str(Path(__file__).resolve().parents[3])  # backend/, so the child can import app.*
 
-# The child caps its own memory before touching the file, then writes the result (or nothing) to stdout.
+# The child caps its own memory before reading the input, then writes the result (or nothing) to a file.
 _WORKER = """
 import resource, sys
+from pathlib import Path
 limit = int(sys.argv[2])
 try:
     resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
@@ -132,25 +134,35 @@ except (ValueError, OSError):
     pass
 sys.path.insert(0, sys.argv[1])
 from app.services.accounting.compress import _pdf_bytes
-out = _pdf_bytes(sys.stdin.buffer.read())
+out = _pdf_bytes(Path(sys.argv[3]).read_bytes())
 if out:
-    sys.stdout.buffer.write(out)
+    Path(sys.argv[4]).write_bytes(out)
 """
 
 
-def _pdf_bytes_isolated(data: bytes) -> bytes | None:
+def _pdf_file_isolated(src: Path, dest: Path) -> bool:
     """``_pdf_bytes`` in a separate process with a memory cap and a timeout: a PDF that would make MuPDF decode
     something enormous (an inline or annotation image the pre-check can't see) kills only that process."""
     try:
-        proc = subprocess.run([sys.executable, "-I", "-c", _WORKER, _APP_ROOT, str(PDF_MEMORY_BYTES)],
-                              input=data, capture_output=True, timeout=PDF_TIMEOUT_S, check=False)
+        proc = subprocess.run([sys.executable, "-I", "-c", _WORKER, _APP_ROOT, str(PDF_MEMORY_BYTES),
+                               str(src.resolve()), str(dest.resolve())],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                              timeout=PDF_TIMEOUT_S, check=False)
     except subprocess.TimeoutExpired:
         logger.warning("compress_skipped type=pdf error=timeout")
-        return None
+        return False
     if proc.returncode != 0:
         logger.warning("compress_skipped type=pdf error=worker_exit_%s", proc.returncode)
-        return None
-    return proc.stdout or None
+        return False
+    return dest.is_file()
+
+
+def _pdf_bytes_isolated(data: bytes) -> bytes | None:
+    """Compatibility for callers that already hold bytes; uploads use paths directly."""
+    with tempfile.TemporaryDirectory() as folder:
+        src, dest = Path(folder) / "input.pdf", Path(folder) / "output.pdf"
+        src.write_bytes(data)
+        return dest.read_bytes() if _pdf_file_isolated(src, dest) else None
 
 
 def compress_bytes(data: bytes, file_type: str) -> tuple[bytes, str] | None:
@@ -174,6 +186,19 @@ _EXT = {"pdf": ".pdf", "jpg": ".jpg", "png": ".png"}
 def compress_file(path: str, file_type: str) -> Compressed:
     """Compress a stored upload in place (a PNG may become a .jpg next to it). Blocking: run in an executor."""
     src = Path(path)
+    original_size = src.stat().st_size
+    if file_type == "pdf":
+        try:
+            with tempfile.TemporaryDirectory(dir=src.parent) as folder:
+                tmp = Path(folder) / "compressed.pdf"
+                if _pdf_file_isolated(src, tmp) and tmp.stat().st_size <= original_size * (1 - MIN_SAVING):
+                    size = tmp.stat().st_size
+                    os.replace(tmp, src)
+                    logger.info("compressed type=pdf from=%d to=%d", original_size, size)
+                    return Compressed(path, file_type, size, original_size)
+        except Exception as e:
+            logger.warning("compress_skipped type=pdf error=%s", type(e).__name__)
+        return Compressed(path, file_type, original_size, original_size)
     data = src.read_bytes()
     result = compress_bytes(data, file_type)
     if result is None:

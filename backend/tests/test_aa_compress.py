@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import io
 import random
+from pathlib import Path
 
 import pymupdf
 from fastapi import UploadFile
@@ -75,6 +76,26 @@ def test_compress_file_replaces_in_place_and_renames_a_png(tmp_path):
     kept = compress_file(str(src), "png")
     assert kept.file_type == "jpg" and kept.path.endswith("x.jpg")
     assert not src.exists() and (tmp_path / "x.jpg").stat().st_size == kept.size < kept.original_size
+
+
+def test_pdf_compress_file_does_not_read_the_upload_in_the_parent(tmp_path, monkeypatch):
+    src = tmp_path / "scan.pdf"
+    data = _scanned_pdf(1)
+    src.write_bytes(data)
+    read_bytes = Path.read_bytes
+
+    def guarded_read(path):
+        if path == src:
+            raise AssertionError("the parent must pass the PDF path to the capped worker")
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", guarded_read)
+    kept = compress_file(str(src), "pdf")
+    assert kept.path == str(src) and kept.original_size == len(data)
+    assert kept.size < len(data) * 0.7
+    with pymupdf.open(src) as doc:
+        assert doc.page_count == 1 and "SALES INVOICE No. 0001" in doc[0].get_text()
+    assert list(tmp_path.iterdir()) == [src]
 
 
 def test_stream_upload_keeps_the_small_copy_but_the_original_hash(tmp_path):

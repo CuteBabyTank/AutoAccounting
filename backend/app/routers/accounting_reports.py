@@ -2,6 +2,7 @@
 invalid journal transactions, drill-down postings and sources, KPIs, exports (XLSX / PDF)."""
 
 import asyncio
+import logging
 import re
 import uuid
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
+from app.auth.security import export_limiter
 from app.config import settings
 from app.models.accounting import (
     AAAsset, AABankLine, AABankStatement, AACompany, AADocument, AAJournalEntry, AAPeriod,
@@ -37,6 +39,7 @@ from app.services.accounting.storage import is_stored_path_safe
 from app.services.accounting.xlsx_preview import workbook_preview
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 Kind = Literal["pnl", "balance-sheet", "gl", "transactions", "adjusted-tb", "adjusting", "invalid"]
 TITLES = {"pnl": "Profit and loss", "balance-sheet": "Balance sheet", "gl": "General ledger detail",
@@ -389,10 +392,26 @@ def _quarter_label(year: int, quarter: int, fye: int) -> str:
     return f"Q{quarter} {year}" if fye == 12 else f"Q{quarter} FY{year}"
 
 
+def _delete_pack_files(files: dict) -> None:
+    for kind in ("pdf", "docx"):
+        stored = files.get(kind)
+        if not isinstance(stored, str) or not stored:
+            continue
+        try:
+            path = Path(stored).resolve()
+            if is_stored_path_safe(str(path)):
+                path.unlink(missing_ok=True)
+        except (OSError, RuntimeError, ValueError):
+            logger.warning("pack_cleanup_failed type=%s", kind)
+
+
 @router.post("/companies/{company_id}/pack/{year}/{quarter}")
 async def generate_pack(company_id: str, year: int = PathParam(ge=2000, le=2100), quarter: int = PathParam(ge=1, le=4),
                         user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Build the pack from the books as they are now and save PDF + DOCX in the quarter's output folder."""
+    if not export_limiter.check_and_record(str(user.id)):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many exports. Please try again later.",
+                            headers={"Retry-After": "600"})
     company, period = await _pack_period(db, user, company_id, year, quarter)
     if company.books_start is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Books are off for this company: set Books start first.")
@@ -408,11 +427,15 @@ async def generate_pack(company_id: str, year: int = PathParam(ge=2000, le=2100)
 
     await asyncio.get_running_loop().run_in_executor(None, write)
     now = datetime.now(timezone.utc).isoformat()
+    old_files = period.pack_files or {}
     period.pack_files = {"pdf": str(pdf_path), "docx": str(docx_path), "generated_at": now, "by": user.email}
     audit.record(db, label=f"{year} Q{quarter} · management pack", ent=company.enterprise_id, company_id=company.id,
                  user=user, entity="period", entity_id=f"{year}-Q{quarter}", action="pack_generated",
                  after={"files": [pdf_path.name, docx_path.name]})
     await db.commit()
+    await asyncio.to_thread(_delete_pack_files, {
+        kind: old_files.get(kind) for kind in ("pdf", "docx") if old_files.get(kind) != period.pack_files.get(kind)
+    })
     return JSONResponse(jsonable(_pack_out(company, period)))
 
 

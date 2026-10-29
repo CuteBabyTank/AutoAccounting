@@ -1,11 +1,14 @@
 """Authentication service: Google SSO only."""
 
+import asyncio
 import base64
 import logging
+from functools import lru_cache
 
+import requests
 from fastapi import HTTPException
 from google.oauth2 import id_token
-from google.auth.transport import requests
+from google.auth.transport.requests import Request as GoogleRequest
 from sqlalchemy import inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +17,17 @@ from app.config import settings
 from app.models.user import User, UserRole
 
 logger = logging.getLogger("auth.audit")
+
+
+class _GoogleSession(requests.Session):
+    def request(self, method: str, url: str, **kwargs) -> requests.Response:
+        kwargs["timeout"] = (5, 10)  # bounded connect/read time, including Google's default timeout
+        return super().request(method, url, **kwargs)
+
+
+@lru_cache(maxsize=1)
+def _google_request() -> GoogleRequest:
+    return GoogleRequest(session=_GoogleSession())
 
 
 class _AccountDeactivated(Exception):
@@ -31,8 +45,8 @@ async def google_login(db: AsyncSession, credential: str, client_id: str) -> tup
             # token issuer. Without it, a token minted right at a second boundary can be
             # rejected as "used too early" when our clock lags by ~1s (common on the
             # Docker Desktop VM locally, and possible under NTP jitter on Cloud Run).
-            idinfo = id_token.verify_oauth2_token(
-                credential, requests.Request(), client_id, clock_skew_in_seconds=10
+            idinfo = await asyncio.to_thread(
+                id_token.verify_oauth2_token, credential, _google_request(), client_id, clock_skew_in_seconds=10
             )
         except ValueError:
             # Token verification failure: do NOT propagate Google's error text;

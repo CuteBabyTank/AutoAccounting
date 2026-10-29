@@ -4,6 +4,20 @@ import time
 from collections import defaultdict
 from threading import Lock
 
+from app.auth.jwt import verify_token
+
+
+def should_limit_ip(path: str, authorization: str) -> bool:
+    """Only verified access tokens on protected routes can use the per-user bucket."""
+    protected = ("/api/accounting", "/api/admin", "/api/team", "/api/features")
+    if not any(path == prefix or path.startswith(prefix + "/") for prefix in protected):
+        return True
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return True
+    payload = verify_token(token)
+    return payload is None or payload.get("scope") is not None
+
 
 _EVICTION_INTERVAL = 300  # evict stale keys every 5 minutes
 _MAX_TRACKED_KEYS = 50_000  # hard cap to prevent unbounded memory growth
@@ -74,8 +88,8 @@ export_limiter = RateLimiter(max_attempts=30, window_seconds=600)
 chat_limiter = RateLimiter(max_attempts=60, window_seconds=60)
 
 # Global: per-IP across all *unauthenticated* endpoints, 200 requests per minute.
-# Applied in main.py only when no Bearer token is present, so users sharing
-# one egress IP (corp NAT, CGNAT) don't compete for a single bucket.
+# Applied in main.py unless a protected route has a verified access token,
+# so users sharing one egress IP (corp NAT, CGNAT) don't compete for a bucket.
 global_ip_limiter = RateLimiter(max_attempts=200, window_seconds=60)
 
 # Authenticated: per-user across all endpoints, 300 requests per minute.

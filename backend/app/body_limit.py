@@ -20,8 +20,15 @@ class BodySizeLimitMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        headers = dict(scope.get("headers", []))
-        multipart = headers.get(b"content-type", b"").lower().startswith(b"multipart/form-data")
+        # Starlette reads the first Content-Type; refuse duplicates so the limit and the parser agree.
+        types = [v for k, v in scope.get("headers", []) if k.lower() == b"content-type"]
+        if len(types) > 1:
+            body = b'{"detail":"Duplicate Content-Type header"}'
+            await send({"type": "http.response.start", "status": 400, "headers": [
+                (b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+            await send({"type": "http.response.body", "body": body})
+            return
+        multipart = (types[0] if types else b"").lower().startswith(b"multipart/form-data")
         limit = self.multipart_max_bytes if multipart else self.max_bytes
         received = 0
         exceeded = rejected = started = False

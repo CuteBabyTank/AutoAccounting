@@ -74,6 +74,13 @@ def test_body_limit_counts_received_bytes_without_trusting_headers(headers):
     assert [m["status"] for m in sent if m["type"] == "http.response.start"] == [413]
 
 
+def test_duplicate_content_type_is_refused_before_reading_the_body():
+    headers = [(b"content-type", b"application/json"), (b"content-type", b"multipart/form-data; boundary=x")]
+    received, sent = _body_response(headers, [b"123"])
+    assert received == []
+    assert [m["status"] for m in sent if m["type"] == "http.response.start"] == [400]
+
+
 def test_body_limit_allows_exact_limit_and_counts_empty_chunks():
     received, sent = _body_response([], [b"12", b"", b"345"])
     assert b"".join(received) == b"12345"

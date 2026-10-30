@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 class GoogleAuthRequest(BaseModel):
     credential: str  # The ID token from Google
-    # A first sign-in only creates the account when the person ticked the privacy policy box.
+    # A first sign-in only creates the account when the person ticked the terms of service + privacy policy box.
     accept_privacy: bool = False
 
 

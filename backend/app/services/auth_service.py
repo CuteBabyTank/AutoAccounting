@@ -19,9 +19,11 @@ from app.models.user import User, UserRole
 
 logger = logging.getLogger("auth.audit")
 
-# Effective date of frontend/public/privacy.html; bump it when the policy changes.
+# Effective dates of frontend/public/privacy.html and terms.html; bump one when its text changes.
 PRIVACY_POLICY_VERSION = "2026-10-30"
-# 428 details the login page answers with the consent step: a new account, or one that hasn't accepted this version.
+TERMS_VERSION = "2026-10-30"
+# 428 details the login page answers with the consent step: a new account, or one that hasn't accepted these versions.
+# An update names what changed after a colon ("privacy_consent_updated:privacy,terms") so only that is shown.
 CONSENT_REQUIRED = "privacy_consent_required"
 CONSENT_UPDATED = "privacy_consent_updated"
 
@@ -40,6 +42,25 @@ def _google_request() -> GoogleRequest:
 class _AccountDeactivated(Exception):
     """Distinct signal so we can surface a friendly message without leaking
     arbitrary text from Google's token-verification ValueError."""
+
+
+def _changed_documents(user: User) -> list[str]:
+    """The documents updated since this person last accepted them; empty means sign in without asking."""
+    changed = []
+    if user.privacy_policy_version != PRIVACY_POLICY_VERSION:
+        changed.append("privacy")
+    if user.terms_version != TERMS_VERSION:
+        changed.append("terms")
+    return changed
+
+
+def _record_consent(user: User) -> None:
+    """One checkbox accepts both the current privacy policy and terms of service."""
+    now = datetime.now(timezone.utc)
+    user.privacy_accepted_at = now
+    user.privacy_policy_version = PRIVACY_POLICY_VERSION
+    user.terms_accepted_at = now
+    user.terms_version = TERMS_VERSION
 
 
 async def google_login(
@@ -77,29 +98,28 @@ async def google_login(
                 # and sends the same token back.
                 logger.info("google_registration_needs_consent")
                 raise HTTPException(status_code=428, detail=CONSENT_REQUIRED)
-            user = User(
-                email=email, role=UserRole.UNVERIFIED,
-                privacy_accepted_at=datetime.now(timezone.utc), privacy_policy_version=PRIVACY_POLICY_VERSION,
-            )
+            user = User(email=email, role=UserRole.UNVERIFIED)
+            _record_consent(user)
             db.add(user)
             await db.commit()
             await db.refresh(user)
-            logger.info("google_registration_success user_id=%s email=%s privacy_version=%s",
-                        user.id, email, PRIVACY_POLICY_VERSION)
+            logger.info("google_registration_success user_id=%s email=%s privacy_version=%s terms_version=%s",
+                        user.id, email, PRIVACY_POLICY_VERSION, TERMS_VERSION)
         else:
             if not user.is_active:
                 logger.warning("google_login_failed reason=deactivated user_id=%s email=%s", user.id, email)
                 raise _AccountDeactivated()
-            if user.privacy_policy_version != PRIVACY_POLICY_VERSION:
+            changed = _changed_documents(user)
+            if changed:
                 if not accept_privacy:
-                    logger.info("google_login_needs_consent user_id=%s privacy_version=%s",
-                                user.id, user.privacy_policy_version)
-                    raise HTTPException(status_code=428, detail=CONSENT_UPDATED)
-                user.privacy_accepted_at = datetime.now(timezone.utc)
-                user.privacy_policy_version = PRIVACY_POLICY_VERSION
+                    logger.info("google_login_needs_consent user_id=%s privacy_version=%s terms_version=%s",
+                                user.id, user.privacy_policy_version, user.terms_version)
+                    raise HTTPException(status_code=428, detail=f"{CONSENT_UPDATED}:{','.join(changed)}")
+                _record_consent(user)
                 await db.commit()
                 await db.refresh(user)
-                logger.info("privacy_consent_recorded user_id=%s privacy_version=%s", user.id, PRIVACY_POLICY_VERSION)
+                logger.info("privacy_consent_recorded user_id=%s privacy_version=%s terms_version=%s",
+                            user.id, PRIVACY_POLICY_VERSION, TERMS_VERSION)
             logger.info("google_login_success user_id=%s email=%s", user.id, email)
 
         if user.role == UserRole.UNVERIFIED:

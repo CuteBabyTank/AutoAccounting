@@ -1,4 +1,4 @@
-"""First Google sign-in only creates an account once the person accepts the privacy policy."""
+"""First Google sign-in only creates an account once the person accepts the terms of service and privacy policy."""
 
 import asyncio
 import uuid
@@ -72,11 +72,13 @@ def test_new_person_who_agrees_is_registered_with_the_policy_version():
     assert user.role == UserRole.UNVERIFIED
     assert user.privacy_accepted_at is not None
     assert user.privacy_policy_version == auth_service.PRIVACY_POLICY_VERSION
+    assert user.terms_accepted_at is not None
+    assert user.terms_version == auth_service.TERMS_VERSION
 
 
-def _existing(version: str | None) -> User:
+def _existing(version: str | None, terms: str | None = auth_service.TERMS_VERSION) -> User:
     return User(id=uuid.uuid4(), email="new.person@example.com", role=UserRole.EMPLOYEE, is_active=True,
-                privacy_policy_version=version)
+                privacy_policy_version=version, terms_version=terms)
 
 
 def test_existing_account_on_the_current_policy_is_not_asked_again():
@@ -94,13 +96,34 @@ def test_existing_account_without_current_consent_must_accept(version):
     with pytest.raises(HTTPException) as exc:
         _login(db, accept=False)
     assert exc.value.status_code == 428
-    assert exc.value.detail == auth_service.CONSENT_UPDATED
+    assert exc.value.detail == f"{auth_service.CONSENT_UPDATED}:privacy"
     assert existing.privacy_policy_version == version and db.commits == 0
 
     user, token = _login(db, accept=True)
     assert user is existing and token and db.added == []
     assert user.privacy_policy_version == auth_service.PRIVACY_POLICY_VERSION
     assert user.privacy_accepted_at is not None
+
+
+@pytest.mark.parametrize("terms", [None, "2000-01-01"])
+def test_existing_account_without_current_terms_must_accept(terms):
+    existing = _existing(auth_service.PRIVACY_POLICY_VERSION, terms)
+    db = _Session(existing)
+    with pytest.raises(HTTPException) as exc:
+        _login(db, accept=False)
+    assert exc.value.status_code == 428
+    assert exc.value.detail == f"{auth_service.CONSENT_UPDATED}:terms"
+    assert existing.terms_version == terms and db.commits == 0
+
+    user, _ = _login(db, accept=True)
+    assert user.terms_version == auth_service.TERMS_VERSION
+    assert user.terms_accepted_at is not None
+
+
+def test_both_documents_updated_are_named():
+    with pytest.raises(HTTPException) as exc:
+        _login(_Session(_existing("2000-01-01", "2000-01-01")), accept=False)
+    assert exc.value.detail == f"{auth_service.CONSENT_UPDATED}:privacy,terms"
 
 
 def test_deactivated_account_is_refused_before_any_consent_step():

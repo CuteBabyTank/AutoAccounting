@@ -9,7 +9,7 @@ interface AuthState {
   user: User | null;
   token: string | null;
   loading: boolean;
-  /** acceptPrivacy: the person ticked the privacy policy box (needed only to create a new account). */
+  /** acceptPrivacy: the person ticked the terms + privacy policy box (needed to create an account or after either changes). */
   googleLogin: (credential: string, acceptPrivacy?: boolean) => Promise<User>;
   /** Development-only sign-in; no email signs in as the platform admin. */
   devLogin: (email?: string) => Promise<User>;

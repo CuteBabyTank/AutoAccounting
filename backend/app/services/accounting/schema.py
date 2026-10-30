@@ -18,6 +18,8 @@ def column_statements() -> list[str]:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar BYTEA",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_accepted_at TIMESTAMPTZ",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_policy_version VARCHAR(20)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_version VARCHAR(20)",
         "ALTER TABLE aa_documents ADD COLUMN IF NOT EXISTS seller_branch VARCHAR(5) NOT NULL DEFAULT ''",
         "ALTER TABLE aa_documents ADD COLUMN IF NOT EXISTS buyer_branch VARCHAR(5) NOT NULL DEFAULT ''",
         "ALTER TABLE aa_documents ADD COLUMN IF NOT EXISTS ewt_atc VARCHAR(10) NOT NULL DEFAULT ''",

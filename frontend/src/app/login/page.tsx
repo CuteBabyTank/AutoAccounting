@@ -8,9 +8,21 @@ import { HOMEPAGE, roleHome } from "@/lib/roles";
 import api from "@/lib/api";
 import AppFlow from "@/components/layout/AppFlow";
 import LogoMark from "@/components/layout/LogoMark";
-import PrivacyPolicyText from "@/components/PrivacyPolicyText";
+import LegalText, { PRIVACY_POLICY, TERMS_OF_SERVICE, type LegalDoc } from "@/components/LegalText";
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
+
+// "privacy_consent_updated:privacy,terms" names the documents updated since the person last accepted.
+function updatedDocs(detail: string): LegalDoc[] {
+  const names = detail.split(":")[1]?.split(",") ?? [];
+  const docs = [names.includes("terms") && TERMS_OF_SERVICE, names.includes("privacy") && PRIVACY_POLICY];
+  const found = docs.filter((doc): doc is LegalDoc => !!doc);
+  return found.length ? found : [TERMS_OF_SERVICE, PRIVACY_POLICY];
+}
+
+function joinTitles(docs: LegalDoc[]): string {
+  return docs.map((doc) => doc.title).join(" and ");
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,11 +39,13 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [deactivated, setDeactivated] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
-  // A Google token waits here until the person agrees to the privacy policy: a new account (nothing is stored yet)
-  // or one that hasn't accepted the current version.
+  // A Google token waits here until the person agrees: a new account (nothing is stored yet) ticks the box for both
+  // documents; an existing one is shown only what was updated since they last accepted and presses OK.
   const [consentCredential, setConsentCredential] = useState<string | null>(null);
   const [consentIsNew, setConsentIsNew] = useState(true);
+  const [consentDocs, setConsentDocs] = useState<LegalDoc[]>([TERMS_OF_SERVICE, PRIVACY_POLICY]);
   const [agreed, setAgreed] = useState(false);
+  const [legalDoc, setLegalDoc] = useState(TERMS_OF_SERVICE);
 
   // Already signed in (e.g. a bookmarked /login), so go straight home.
   useEffect(() => {
@@ -50,8 +64,12 @@ export default function LoginPage() {
       const detail = axiosErr.response?.data?.detail || "";
       if (axiosErr.response?.status === 428 && detail.startsWith("privacy_consent_") && credential) {
         setConsentCredential(credential);
-        setConsentIsNew(detail === "privacy_consent_required");
-        setAgreed(false);
+        const isNew = detail === "privacy_consent_required";
+        const docs = isNew ? [TERMS_OF_SERVICE, PRIVACY_POLICY] : updatedDocs(detail);
+        setConsentIsNew(isNew);
+        setConsentDocs(docs);
+        setLegalDoc(docs[0]);
+        setAgreed(!isNew); // an update is accepted by pressing OK
       } else if (axiosErr.response?.status === 403 && /deactivat/i.test(detail)) {
         setDeactivated(true);
       } else {
@@ -107,30 +125,56 @@ export default function LoginPage() {
         {consentCredential && (
           <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-tertiary)] p-4">
             <p className="mb-1 text-sm font-semibold text-[var(--text-primary)]">
-              {consentIsNew ? "Create your account" : "Privacy Policy"}
+              {consentIsNew ? "Create your account" : `We've updated our ${joinTitles(consentDocs)}`}
             </p>
             <p className="mb-4 text-xs leading-relaxed text-[var(--text-secondary)]">
               {consentIsNew
-                ? "This Google account isn't registered yet. To create an account, please read and accept how we handle your data. If you don't accept, no account is created and nothing is saved."
-                : "Before you continue, please read and accept how we handle your data. You can't sign in until you accept."}
+                ? "This Google account isn't registered yet. To create an account, please read and accept our terms and how we handle your data. If you don't accept, no account is created and nothing is saved."
+                : `Please read the updated ${joinTitles(consentDocs)}. By pressing OK you agree to ${consentDocs.length > 1 ? "them" : "it"}. You can't continue into AutoAccounting until you do.`}
             </p>
-            <PrivacyPolicyText className="mb-4 max-h-64" />
-            <label className="mb-4 flex cursor-pointer items-start gap-2.5 text-sm text-[var(--text-primary)]">
-              <input
-                type="checkbox"
-                className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]"
-                checked={agreed}
-                onChange={(e) => setAgreed(e.target.checked)}
-                disabled={signingIn}
-              />
-              <span>
-                I have read and agree to the{" "}
-                <a href="/privacy.html" target="_blank" rel="noopener" className="font-medium text-[var(--accent)] underline underline-offset-2">
-                  Privacy Policy
-                </a>
-                .
-              </span>
-            </label>
+            {consentDocs.length > 1 && (
+              <div role="tablist" aria-label="Legal documents" className="mb-2 flex gap-1">
+                {consentDocs.map((doc) => (
+                  <button
+                    key={doc.src}
+                    type="button"
+                    role="tab"
+                    aria-selected={legalDoc.src === doc.src}
+                    onClick={() => setLegalDoc(doc)}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                      legalDoc.src === doc.src
+                        ? "bg-[var(--bg-card)] text-[var(--text-primary)] ring-1 ring-[var(--border)]"
+                        : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                    }`}
+                  >
+                    {doc.title}
+                  </button>
+                ))}
+              </div>
+            )}
+            <LegalText doc={legalDoc} className="mb-4 max-h-64" />
+            {consentIsNew && (
+              <label className="mb-4 flex cursor-pointer items-start gap-2.5 text-sm text-[var(--text-primary)]">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]"
+                  checked={agreed}
+                  onChange={(e) => setAgreed(e.target.checked)}
+                  disabled={signingIn}
+                />
+                <span>
+                  I have read and agree to the{" "}
+                  <a href={TERMS_OF_SERVICE.src} target="_blank" rel="noopener" className="font-medium text-[var(--accent)] underline underline-offset-2">
+                    {TERMS_OF_SERVICE.title}
+                  </a>{" "}
+                  and the{" "}
+                  <a href={PRIVACY_POLICY.src} target="_blank" rel="noopener" className="font-medium text-[var(--accent)] underline underline-offset-2">
+                    {PRIVACY_POLICY.title}
+                  </a>
+                  .
+                </span>
+              </label>
+            )}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
@@ -146,7 +190,7 @@ export default function LoginPage() {
                 disabled={!agreed || signingIn}
                 className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
               >
-                {consentIsNew ? "Create account" : "Accept and continue"}
+                {consentIsNew ? "Create account" : "OK"}
               </button>
             </div>
           </div>

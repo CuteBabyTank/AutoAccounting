@@ -37,6 +37,9 @@ class User(Base):
     # Privacy policy accepted at sign-up (version = its effective date); NULL for accounts made before consent existed.
     privacy_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     privacy_policy_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Terms of service accepted the same way (one checkbox covers both); NULL before terms existed.
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    terms_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Profile picture: a small square WebP (services/avatar_service). Deferred so the per-request user load skips it;
     # load it with `db.refresh(user, ["avatar"])`.
     avatar: Mapped[bytes | None] = deferred(mapped_column(LargeBinary, nullable=True), raiseload=True)

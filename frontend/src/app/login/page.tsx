@@ -8,6 +8,7 @@ import { HOMEPAGE, roleHome } from "@/lib/roles";
 import api from "@/lib/api";
 import AppFlow from "@/components/layout/AppFlow";
 import LogoMark from "@/components/layout/LogoMark";
+import PrivacyPolicyText from "@/components/PrivacyPolicyText";
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 
@@ -113,6 +114,7 @@ export default function LoginPage() {
                 ? "This Google account isn't registered yet. To create an account, please read and accept how we handle your data. If you don't accept, no account is created and nothing is saved."
                 : "Before you continue, please read and accept how we handle your data. You can't sign in until you accept."}
             </p>
+            <PrivacyPolicyText className="mb-4 max-h-64" />
             <label className="mb-4 flex cursor-pointer items-start gap-2.5 text-sm text-[var(--text-primary)]">
               <input
                 type="checkbox"

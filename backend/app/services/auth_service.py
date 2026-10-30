@@ -20,7 +20,7 @@ from app.models.user import User, UserRole
 logger = logging.getLogger("auth.audit")
 
 # Effective date of frontend/public/privacy.html; bump it when the policy changes.
-PRIVACY_POLICY_VERSION = "2026-10-29"
+PRIVACY_POLICY_VERSION = "2026-10-30"
 # 428 details the login page answers with the consent step: a new account, or one that hasn't accepted this version.
 CONSENT_REQUIRED = "privacy_consent_required"
 CONSENT_UPDATED = "privacy_consent_updated"

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import type { Account, BankRule, BankRuleInput } from "@/types/accounting";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 const INPUT = "rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-sm text-[var(--text-primary)]";
 const BTN = "rounded-lg border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-primary)] disabled:opacity-50";
@@ -34,7 +35,7 @@ export default function BankRules({ companyId, accounts, canManage, onChanged }:
     <ul className="space-y-2">{rules.map((r) => <li key={r.id} className="flex flex-wrap items-center gap-2 text-[var(--text-primary)]">
       <span>&ldquo;{r.pattern}&rdquo; ({r.direction}) → {r.kind === "payee" ? r.payee_name || r.payee_tin : r.account_code}</span>
       <span className="text-xs text-[var(--text-secondary)]">used {r.hits}×</span>
-      {canManage && <><button className={BTN} disabled={busy} onClick={() => setEditing({ id: r.id, body: { pattern: r.pattern, direction: r.direction, kind: r.kind, account_code: r.account_code, payee_name: r.payee_name, payee_tin: r.payee_tin } })}>Edit</button><button className={BTN} disabled={busy} onClick={() => { if (window.confirm(`Delete the rule "${r.pattern}"? Affected open lines will be matched again; finalized and reconciled history is protected.`)) run(() => accountingApi.deleteBankRule(r.id)); }}>Delete</button></>}
+      {canManage && <><button className={BTN} disabled={busy} onClick={() => setEditing({ id: r.id, body: { pattern: r.pattern, direction: r.direction, kind: r.kind, account_code: r.account_code, payee_name: r.payee_name, payee_tin: r.payee_tin } })}>Edit</button><button className={BTN} disabled={busy} onClick={async () => { if (await confirmDialog({ title: `Delete the rule "${r.pattern}"?`, message: "Affected open lines will be matched again; finalized and reconciled history is protected.", confirmLabel: "Delete", danger: true })) run(() => accountingApi.deleteBankRule(r.id)); }}>Delete</button></>}
     </li>)}</ul>
     {editing && <form className="mt-3 grid gap-2 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); run(() => editing.id ? accountingApi.updateBankRule(editing.id, editing.body) : accountingApi.createBankRule(companyId, editing.body)); }}>
       <label className="flex flex-col text-xs text-[var(--text-secondary)]">Narration contains<input className={INPUT} minLength={2} maxLength={80} required value={editing.body.pattern} onChange={(e) => set({ pattern: e.target.value })} /></label>

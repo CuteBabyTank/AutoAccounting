@@ -5,6 +5,7 @@ import { Archive, Bank, Buildings, CaretDown, CaretRight, Plus } from "@phosphor
 import Hint from "@/components/guide/Hint";
 import { useFeatures } from "@/lib/features";
 import type { FolderRef, TreeAnnual, TreeBankAccount, TreeCompany } from "@/types/accounting";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 interface Props {
   tree: TreeCompany[];
@@ -164,7 +165,12 @@ export default function FolderTree({ tree, selected, onSelect, canManage, onAddC
       {canManage && on("companies") && <button type="button" aria-label={`Archive ${c.registered_name}`} title="Archive company" disabled={archiving !== null}
         className="rounded p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
         onClick={async () => {
-          if (!window.confirm(`Archive "${c.registered_name}"? Documents, books and tax records are retained. Restore it on Companies → Show archived companies.`)) return;
+          if (!(await confirmDialog({
+            title: `Archive ${c.registered_name}?`,
+            message: "Documents, books and tax records are retained. Restore it on Companies → Show archived companies.",
+            confirmLabel: "Archive",
+            danger: true,
+          }))) return;
           setArchiving(c.id);
           try { await onArchiveCompany(c.id); } finally { setArchiving(null); }
         }}><Archive size={14} /></button>}

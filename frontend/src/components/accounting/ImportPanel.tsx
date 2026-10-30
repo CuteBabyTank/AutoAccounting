@@ -7,6 +7,7 @@ import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
 import { BTN, BTN_PRIMARY, Chip, INPUT } from "@/components/work/ui";
 import type { Account, ImportKind, ImportOptions, ImportPreview, ImportResult, OpeningItems } from "@/types/accounting";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 interface Props {
   companyId: string;
@@ -451,7 +452,7 @@ export default function ImportPanel({ companyId, companyName, onChanged }: Props
                         </div>
                       </td>
                       <td className={TD}>
-                        <button className={BTN} disabled={busy} onClick={() => window.confirm(`Delete ${i.doc_number || "this item"} of ${i.contact_name}?`) && act(() => accountingApi.deleteOpeningItem(i.id))}>Delete</button>
+                        <button className={BTN} disabled={busy} onClick={async () => { if (await confirmDialog({ title: `Delete ${i.doc_number || "this item"} of ${i.contact_name}?`, confirmLabel: "Delete", danger: true })) act(() => accountingApi.deleteOpeningItem(i.id)); }}>Delete</button>
                       </td>
                     </tr>
                   );

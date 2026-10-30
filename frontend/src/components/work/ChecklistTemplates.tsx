@@ -8,6 +8,7 @@ import { apiErrorMessage } from "@/lib/accounting-format";
 import { useAuth } from "@/lib/auth";
 import type { Cadence, ChecklistInput, ChecklistItem, ChecklistTemplate } from "@/types/extras";
 import { BTN, BTN_PRIMARY, Chip, INPUT } from "@/components/work/ui";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 const CADENCE: Record<Cadence, string> = { monthly: "Monthly", quarterly: "Quarterly", annual: "Yearly" };
 const BLANK_ITEM: ChecklistItem = { title: "", notes: "", offset_days: 5, priority: "normal" };
@@ -52,7 +53,12 @@ export default function ChecklistTemplates() {
   }
 
   async function remove(t: ChecklistTemplate) {
-    if (!window.confirm(`Delete the checklist "${t.name}"? Tasks it already created stay.`)) return;
+    if (!(await confirmDialog({
+      title: `Delete the checklist "${t.name}"?`,
+      message: "Tasks it already created stay.",
+      confirmLabel: "Delete",
+      danger: true,
+    }))) return;
     setBusy(true);
     try {
       await extrasApi.deleteChecklist(t.id);

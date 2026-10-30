@@ -17,6 +17,7 @@ import { teamApi } from "@/lib/api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import { roleLabel } from "@/lib/roles";
 import type { FirmUsage, Member } from "@/types";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -174,17 +175,17 @@ export default function TeamPage() {
                           </button>
                         )}
                         {isOwner && m.role === "manager" && (
-                          <button disabled={busy} onClick={() => { if (window.confirm(`Make ${m.email} an employee? Their manager permissions will be removed.`)) run(() => teamApi.demote(m.id), "Couldn't demote"); }} className="text-[var(--accent)] hover:underline">
+                          <button disabled={busy} onClick={async () => { if (await confirmDialog({ title: `Make ${m.email} an employee?`, message: "Their manager permissions will be removed.", confirmLabel: "Make employee" })) run(() => teamApi.demote(m.id), "Couldn't demote"); }} className="text-[var(--accent)] hover:underline">
                             Make employee
                           </button>
                         )}
-                        <button disabled={busy} onClick={() => { if (!m.is_active || window.confirm(`Deactivate ${m.email}? Their account and records stay, but they cannot sign in.`)) run(() => teamApi.setActive(m.id, !m.is_active), "Couldn't update"); }} className="text-[var(--accent)] hover:underline">
+                        <button disabled={busy} onClick={async () => { if (!m.is_active || await confirmDialog({ title: `Deactivate ${m.email}?`, message: "Their account and records stay, but they cannot sign in.", confirmLabel: "Deactivate", danger: true })) run(() => teamApi.setActive(m.id, !m.is_active), "Couldn't update"); }} className="text-[var(--accent)] hover:underline">
                           {m.is_active ? "Deactivate" : "Reactivate"}
                         </button>
                         <button
                           disabled={busy}
-                          onClick={() => {
-                            if (window.confirm(`Remove ${m.email} from the firm? Their account stays and can be re-added.`)) {
+                          onClick={async () => {
+                            if (await confirmDialog({ title: `Remove ${m.email} from the firm?`, message: "Their account stays and can be re-added.", confirmLabel: "Remove", danger: true })) {
                               run(() => teamApi.remove(m.id), "Couldn't remove");
                             }
                           }}

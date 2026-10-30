@@ -18,6 +18,7 @@ import { firmSettings, safeId, workApi } from "@/lib/work-api";
 import { WORK_TARGET_EVENT, focusName } from "@/lib/focus";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import type { Board, BoardFilters, CompanySummary, FirmSettings, WorkCard, WorkItemInput } from "@/types/work";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 type Tab = "filings" | "clients" | "tasks" | "history";
 type Window = "default" | "next7" | "next30" | "overdue" | "year";
@@ -167,7 +168,12 @@ export default function WorkBoardPage() {
       setBoard((b) => b ? { ...b, companies: b.companies.map((c) => c.company_id === summary.company_id ? { ...c, handler_id: result.handler_id } : c) } : b);
       if (handlerId && settings?.auto_assign && summary.unassigned_open_items > 0) {
         const name = board?.people.find((p) => p.id === handlerId)?.name || "this handler";
-        if (window.confirm(`Also give ${name} this client's ${summary.unassigned_open_items} unassigned open items in the current board window?`)) await autoAssign(summary.company_id);
+        if (await confirmDialog({
+          title: `Also assign open items to ${name}?`,
+          message: `This client has ${summary.unassigned_open_items} unassigned open items in the current board window.`,
+          confirmLabel: "Assign them",
+          cancelLabel: "Not now",
+        })) await autoAssign(summary.company_id);
       }
     } catch (e) {
       setError(apiErrorMessage(e, "Couldn't update the client handler"));

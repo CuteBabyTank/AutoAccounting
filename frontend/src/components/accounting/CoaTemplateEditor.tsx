@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import type { CoaTemplate } from "@/types/accounting";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 const INPUT = "w-full rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 text-sm text-[var(--text-primary)]";
 
@@ -24,7 +25,11 @@ export default function CoaTemplateEditor({ template, companyId, onSaved, onClos
   return <form className="mt-3 space-y-2 rounded-lg border border-[var(--border)] p-3" onSubmit={async (e) => {
     e.preventDefault();
     if (template.builtin) return;
-    if (refresh && !window.confirm(`Replace the accounts in "${template.name}" with this company's current chart? Existing companies keep their chart.`)) return;
+    if (refresh && !(await confirmDialog({
+      title: `Replace the accounts in "${template.name}"?`,
+      message: "They'll be replaced with this company's current chart. Existing companies keep their chart.",
+      confirmLabel: "Replace",
+    }))) return;
     setBusy(true); setError("");
     try { onSaved(await accountingApi.updateCoaTemplate(template.id, { name: name.trim(), description, ...(refresh ? { source_company_id: companyId } : {}) })); }
     catch (e) { setError(apiErrorMessage(e, "Couldn't update the chart template")); }

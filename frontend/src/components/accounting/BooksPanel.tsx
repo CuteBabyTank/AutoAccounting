@@ -11,6 +11,7 @@ import OpeningAssets from "@/components/accounting/OpeningAssets";
 import RecurringEntries from "@/components/accounting/RecurringEntries";
 import { useFeatures } from "@/lib/features";
 import type { Account, JournalEntry, JournalEntryInput } from "@/types/accounting";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 interface Props {
   companyId: string;
@@ -95,7 +96,12 @@ export default function BooksPanel({ companyId, year, booksStart, fiscalYearEndM
   }
 
   async function remove(id: string) {
-    if (!window.confirm("Delete this journal entry? It will be removed from the live books and retained in the audit history. Deleting a write-off reopens its invoices.")) return;
+    if (!(await confirmDialog({
+      title: "Delete this journal entry?",
+      message: "It will be removed from the live books and retained in the audit history. Deleting a write-off reopens its invoices.",
+      confirmLabel: "Delete",
+      danger: true,
+    }))) return;
     setBusy(true);
     setError("");
     try {

@@ -15,6 +15,7 @@ import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import { roleLabel } from "@/lib/roles";
 import { markFeaturesStale } from "@/lib/features";
 import type { Account, AdminFeatures, BudgetOperation, UserRole } from "@/types";
+import { confirmDialog, promptDialog } from "@/components/ui/Dialogs";
 
 type AssignableRole = Exclude<UserRole, "admin">;
 type Tab = "accounts" | "features" | "billing" | "audit";
@@ -90,14 +91,23 @@ export default function AdminPage() {
     );
   }, [accounts, search]);
 
-  function promoteFirm(a: Account) {
-    const name = window.prompt(`Firm name for ${a.email}`, a.organization_name ?? "");
+  async function promoteFirm(a: Account) {
+    const name = await promptDialog({
+      title: "Make firm",
+      message: `Firm name for ${a.email}`,
+      defaultValue: a.organization_name ?? "",
+      confirmLabel: "Make firm",
+    });
     if (name === null) return;
     run(() => adminApi.promoteFirm(a.id, name), "Couldn't create the firm");
   }
 
-  function changeRole(a: Account, role: AssignableRole) {
-    if (!window.confirm(`Change ${a.email}'s role to ${role}? This changes their access to firm records.`)) return;
+  async function changeRole(a: Account, role: AssignableRole) {
+    if (!(await confirmDialog({
+      title: `Change ${a.email}'s role to ${role}?`,
+      message: "This changes their access to firm records.",
+      confirmLabel: "Change role",
+    }))) return;
     if (role === "employee" || role === "manager") {
       if (firms.length === 0) {
         setError("Create a firm first, then assign members to it.");
@@ -109,9 +119,15 @@ export default function AdminPage() {
     run(() => adminApi.setRole(a.id, role), "Couldn't change the role");
   }
 
-  function adjustBudget(a: Account, operation: BudgetOperation) {
+  async function adjustBudget(a: Account, operation: BudgetOperation) {
     const verb = operation === "add" ? "Top up" : operation === "subtract" ? "Deduct from" : "Set";
-    const raw = window.prompt(`${verb} ${a.organization_name || a.email}'s budget (₱)`, "");
+    const raw = await promptDialog({
+      title: `${verb} ${a.organization_name || a.email}'s budget`,
+      message: "Amount in pesos (₱)",
+      placeholder: "0.00",
+      inputMode: "decimal",
+      confirmLabel: verb,
+    });
     if (raw === null) return;
     const amount = Number(raw);
     if (!Number.isFinite(amount) || amount < 0) {
@@ -364,7 +380,7 @@ export default function AdminPage() {
                             </>
                           )}
                           {!isSelf && a.role !== "admin" && (
-                            <button disabled={busy} onClick={() => { if (!a.is_active || window.confirm(`Deactivate ${a.email}? ${isFirm ? "Members of this firm will also be deactivated. " : ""}Accounts and retained records stay.`)) run(() => adminApi.toggleActive(a.id), "Couldn't update"); }} className="aa-ghost">
+                            <button disabled={busy} onClick={async () => { if (!a.is_active || await confirmDialog({ title: `Deactivate ${a.email}?`, message: `${isFirm ? "Members of this firm will also be deactivated. " : ""}Accounts and retained records stay.`, confirmLabel: "Deactivate", danger: true })) run(() => adminApi.toggleActive(a.id), "Couldn't update"); }} className="aa-ghost">
                               {a.is_active ? "Deactivate" : "Reactivate"}
                             </button>
                           )}

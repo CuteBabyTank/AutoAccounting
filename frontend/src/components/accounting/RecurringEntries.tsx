@@ -8,6 +8,7 @@ import { focusName } from "@/lib/focus";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import type { Account, JournalEntryInput } from "@/types/accounting";
 import type { Frequency, RecurringEntry, RecurringInput } from "@/types/extras";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)]";
 const INPUT = "px-2 py-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]";
@@ -93,7 +94,11 @@ export default function RecurringEntries({ companyId, accounts, defaultDate, onP
 
   async function post(r: RecurringEntry) {
     const dates = r.due.map(fmt).join(", ");
-    if (!window.confirm(`Post ${r.due.length} entr${r.due.length === 1 ? "y" : "ies"} of "${r.name}" dated ${dates}?`)) return;
+    if (!(await confirmDialog({
+      title: `Post ${r.due.length} entr${r.due.length === 1 ? "y" : "ies"} of "${r.name}"?`,
+      message: `Dated ${dates}.`,
+      confirmLabel: "Post",
+    }))) return;
     setBusy(true);
     setError("");
     setNote("");
@@ -110,7 +115,12 @@ export default function RecurringEntries({ companyId, accounts, defaultDate, onP
   }
 
   async function remove(r: RecurringEntry) {
-    if (!window.confirm(`Delete the recurring entry "${r.name}"? Entries it already posted stay in the books.`)) return;
+    if (!(await confirmDialog({
+      title: `Delete the recurring entry "${r.name}"?`,
+      message: "Entries it already posted stay in the books.",
+      confirmLabel: "Delete",
+      danger: true,
+    }))) return;
     setBusy(true);
     try {
       await extrasApi.deleteRecurring(r.id);

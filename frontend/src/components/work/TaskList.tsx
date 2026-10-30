@@ -9,6 +9,7 @@ import { apiErrorMessage } from "@/lib/accounting-format";
 import { useAuth } from "@/lib/auth";
 import type { Person, Task, TaskFilters, TaskInput } from "@/types/work";
 import { BTN, Chip, INPUT, completionWhen, shortDate } from "@/components/work/ui";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 interface Props {
   companies: { id: string; registered_name: string }[];
@@ -75,7 +76,7 @@ export default function TaskList({ companies, people, fixed, defaults, compact, 
   }
 
   async function remove(t: Task) {
-    if (!window.confirm(`Delete the task "${t.title}"?`)) return;
+    if (!(await confirmDialog({ title: `Delete the task "${t.title}"?`, confirmLabel: "Delete", danger: true }))) return;
     try {
       await workApi.deleteTask(t.id);
       changed();

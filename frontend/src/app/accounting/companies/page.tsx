@@ -13,6 +13,7 @@ import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatTin } from "@/lib/accounting-format";
 import { useAuth } from "@/lib/auth";
 import type { Company } from "@/types/accounting";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const TYPE_LABELS: Record<Company["taxpayer_type"], string> = {
@@ -61,7 +62,12 @@ export default function AccountingCompaniesPage() {
   }, [companies, search, showArchived]);
 
   async function changeArchive(c: Company) {
-    if (!c.archived_at && !window.confirm(`Archive "${c.registered_name}"? Documents, books and tax records are retained. Restore it from Show archived companies.`)) return;
+    if (!c.archived_at && !(await confirmDialog({
+      title: `Archive ${c.registered_name}?`,
+      message: "Documents, books and tax records are retained. Restore it from Show archived companies.",
+      confirmLabel: "Archive",
+      danger: true,
+    }))) return;
     setBusy(true);
     setError("");
     try {

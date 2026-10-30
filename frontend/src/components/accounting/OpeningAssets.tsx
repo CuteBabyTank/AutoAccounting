@@ -5,6 +5,7 @@ import AmountInput from "@/components/AmountInput";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import type { Asset } from "@/types/accounting";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 const INPUT = "w-full px-2.5 py-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]";
 const LABEL = "block text-[11px] font-medium text-[var(--text-secondary)] mb-1";
@@ -77,7 +78,12 @@ export default function OpeningAssets({ companyId, year, openingPpe, onChanged }
   }
 
   async function remove(id: string) {
-    if (!window.confirm("Remove this opening asset from the live register? Its retained record stays; removal is refused for filed returns or closed books.")) return;
+    if (!(await confirmDialog({
+      title: "Remove this opening asset?",
+      message: "It leaves the live register; its retained record stays. Removal is refused for filed returns or closed books.",
+      confirmLabel: "Remove",
+      danger: true,
+    }))) return;
     setBusy(true);
     setError("");
     try {

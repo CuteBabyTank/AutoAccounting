@@ -11,6 +11,7 @@ import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import { useFilePreview } from "@/components/accounting/PdfPreview";
 import { useWorkbookPreview } from "@/components/accounting/WorkbookPreview";
 import type { Aging, AgingBucket, ContactList } from "@/types/accounting";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 interface Props {
   companyId: string;
@@ -232,7 +233,12 @@ export default function ContactsPanel({ companyId, companyName, role, canManage,
                         <td className="py-1.5 whitespace-nowrap">
                           {canManage && <button className={BTN} disabled={busy} onClick={async (e) => {
                             e.stopPropagation();
-                            if (!c.archived_at && !window.confirm(`Archive "${c.registered_name}"? Its identity and tax records are retained. Open balances or pending 2307s must be settled first.`)) return;
+                            if (!c.archived_at && !(await confirmDialog({
+                              title: `Archive ${c.registered_name}?`,
+                              message: "Its identity and tax records are retained. Open balances or pending 2307s must be settled first.",
+                              confirmLabel: "Archive",
+                              danger: true,
+                            }))) return;
                             setBusy(true); setError("");
                             try {
                               if (c.archived_at) await accountingApi.restoreContact(c.id);

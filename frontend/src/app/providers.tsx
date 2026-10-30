@@ -7,6 +7,7 @@ import { useEffect, useState, ReactNode } from "react";
 import Sidebar from "@/components/layout/Sidebar";
 import AppFlow from "@/components/layout/AppFlow";
 import AssistantDock from "@/components/assistant/AssistantDock";
+import { DialogHost } from "@/components/ui/Dialogs";
 import { PUBLIC_ROUTES, canAccess, roleHome } from "@/lib/roles";
 import { FeatureOff, FeaturesProvider, useFeatures, type FeatureKey } from "@/lib/features";
 
@@ -94,6 +95,7 @@ export function Providers({ children, nonce }: { children: ReactNode; nonce?: st
       <AuthProvider>
         <FeaturesProvider>
           <AuthGate>{children}</AuthGate>
+          <DialogHost />
         </FeaturesProvider>
       </AuthProvider>
     </ThemeProvider>

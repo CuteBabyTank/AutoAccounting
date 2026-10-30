@@ -6,6 +6,7 @@ import CoaTemplateEditor from "@/components/accounting/CoaTemplateEditor";
 import { accountingApi } from "@/lib/accounting-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import type { Account, CoaTemplate } from "@/types/accounting";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 const INPUT = "px-2 py-1 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] text-sm text-[var(--text-primary)]";
 
@@ -104,8 +105,13 @@ export default function ChartEditor({ companyId, canManage }: { companyId: strin
                 {a.system_key ? (
                   <span className="inline-flex items-center gap-1 text-[var(--text-secondary)]"><Lock size={12} /> used by posting</span>
                 ) : canManage ? (
-                  <button className="text-[var(--accent)]" onClick={() => {
-                    if (a.active && !window.confirm(`Deactivate ${a.code} ${a.name}? Existing reports are retained; new postings must use another account.`)) return;
+                  <button className="text-[var(--accent)]" onClick={async () => {
+                    if (a.active && !(await confirmDialog({
+                      title: `Deactivate ${a.code} ${a.name}?`,
+                      message: "Existing reports are retained; new postings must use another account.",
+                      confirmLabel: "Deactivate",
+                      danger: true,
+                    }))) return;
                     run(async () => replace(await accountingApi.updateAccount(a.id, { active: !a.active })));
                   }}>
                     {a.active ? "Deactivate" : "Activate"}
@@ -186,8 +192,13 @@ export default function ChartEditor({ companyId, canManage }: { companyId: strin
                   <button className="text-[var(--accent)]" onClick={() => setEditingTemplate(t)}>{t.builtin ? "View" : "View / edit"}</button>
                   {!t.builtin && <button
                     className="text-[var(--alert-error-text)]"
-                    onClick={() => {
-                      if (!window.confirm(`Delete the chart template "${t.name}"? Existing companies keep their chart.`)) return;
+                    onClick={async () => {
+                      if (!(await confirmDialog({
+                        title: `Delete the chart template "${t.name}"?`,
+                        message: "Existing companies keep their chart.",
+                        confirmLabel: "Delete",
+                        danger: true,
+                      }))) return;
                       run(async () => {
                         await accountingApi.deleteCoaTemplate(t.id);
                         setTemplates((all) => all.filter((x) => x.id !== t.id));

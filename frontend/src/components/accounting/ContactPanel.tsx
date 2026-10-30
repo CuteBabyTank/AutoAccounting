@@ -9,6 +9,7 @@ import { apiErrorMessage, formatPeso, saveBlob } from "@/lib/accounting-format";
 import { useFilePreview } from "@/components/accounting/PdfPreview";
 import type { StatementType } from "@/types/extras";
 import type { Account, ContactDetail, ContactPatch, ContactRow } from "@/types/accounting";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 interface Props {
   companyId: string;
@@ -478,9 +479,14 @@ export default function ContactPanel({ companyId, contactId, asOf, canManage, on
             <button
               className={BTN}
               disabled={!mergeInto || busy !== ""}
-              onClick={() => {
+              onClick={async () => {
                 const target = others.find((o) => o.id === mergeInto);
-                if (!target || !window.confirm(`Merge ${data.registered_name} into ${target.registered_name}? Its documents and balances will count for the target. This merge cannot be undone here.`)) return;
+                if (!target || !(await confirmDialog({
+                  title: `Merge ${data.registered_name} into ${target.registered_name}?`,
+                  message: "Its documents and balances will count for the target. This merge cannot be undone here.",
+                  confirmLabel: "Merge",
+                  danger: true,
+                }))) return;
                 run("merge", async () => {
                   const target = await accountingApi.mergeContact(contactId, mergeInto, reason, asOf);
                   onOpenContact(target.id);

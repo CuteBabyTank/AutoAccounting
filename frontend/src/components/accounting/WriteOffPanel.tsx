@@ -8,6 +8,7 @@ import { extrasApi } from "@/lib/extras-api";
 import { apiErrorMessage, formatPeso } from "@/lib/accounting-format";
 import type { Account } from "@/types/accounting";
 import type { WriteOffCandidates } from "@/types/extras";
+import { confirmDialog } from "@/components/ui/Dialogs";
 
 const BTN = "inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-60";
 const INPUT = "rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]";
@@ -74,7 +75,12 @@ export default function WriteOffPanel({ companyId, asOf, onClose, onDone }: Prop
 
   async function submit() {
     if (!chosen.length || !account || !reason.trim()) return;
-    if (!window.confirm(`Write off ${chosen.length} invoice${chosen.length === 1 ? "" : "s"} for ₱${formatPeso(total)} to ${account} on ${entryDate}?`)) return;
+    if (!(await confirmDialog({
+      title: `Write off ${chosen.length} invoice${chosen.length === 1 ? "" : "s"}?`,
+      message: `₱${formatPeso(total)} to ${account} on ${entryDate}.`,
+      confirmLabel: "Write off",
+      danger: true,
+    }))) return;
     setBusy(true);
     setError("");
     try {

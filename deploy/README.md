@@ -109,7 +109,7 @@ Enterprise-only), so the Worker `aa-edge` (`deploy/cloudflare/`) fetches the run
 - `X-AA-Origin`: the shared secret (`AA_ORIGIN_SECRET`; the Worker's `ORIGIN_SECRET` secret). The backend has it as
   `ORIGIN_SECRET` (cloudbuild.yaml). The lock that closes the run.app URLs (403 without the header; `/api/health`
   stays open for probes) is `ORIGIN_LOCK=true` on the backend plus `ORIGIN_SECRET` on the frontend
-  (`src/middleware.ts`); both are off until every resolver has dropped the old Porkbun delegation (24 h TTL).
+  (`src/middleware.ts`), both set in cloudbuild.yaml.
 - `X-AA-Client-IP`: the visitor's IP, trusted by the backend only alongside the secret (`app/edge.py`).
 - HSTS on every response.
 

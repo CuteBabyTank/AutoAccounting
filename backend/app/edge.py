@@ -3,8 +3,8 @@
 Cloud Run's front end appends the caller's address to ``X-Forwarded-For``; anything before it was sent by the
 client and can be forged, so only the last entry is trusted. Behind Cloudflare that last entry is the Worker
 (``deploy/cloudflare/worker.js``), which passes the visitor's address in ``X-AA-Client-IP``; that header is only
-believed when the request also carries the origin secret the Worker adds. With ``ORIGIN_SECRET`` set, a request
-without it never came through Cloudflare (someone calling the run.app URL directly) and is refused.
+believed when the request also carries the origin secret the Worker adds. With ``ORIGIN_LOCK`` on too, a request
+without the secret never came through Cloudflare (someone calling the run.app URL directly) and is refused.
 """
 
 import hmac

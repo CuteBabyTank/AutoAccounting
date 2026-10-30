@@ -113,6 +113,10 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
 - **Transaction pooler (port 6543):** statement caches are off. No session state across transactions (`SET LOCAL`/`set_config(..., true)` only), no advisory locks, temp tables or LISTEN/NOTIFY.
 - **CORS middleware must be added LAST** in `main.py` so it wraps everything and answers preflight.
 - **Abuse middleware** blocks empty User-Agent always and bot UAs (`curl`, `python-requests`…) in prod; skips `/api/health` + `OPTIONS`.
+- **Client IP / Cloudflare:** prod sits behind the Cloudflare Worker `aa-edge` (`deploy/cloudflare/`, details in
+  `deploy/README.md`). Use `app/edge.client_ip` for any per-IP logic: it trusts the Worker's `X-AA-Client-IP` only with
+  the origin secret, else the last `X-Forwarded-For` entry (the first is client-forged). The lock (403 without
+  `X-AA-Origin`, except `/api/health`) is `ORIGIN_LOCK=true` on the backend and `ORIGIN_SECRET` on the frontend.
 - **In-memory rate limiters** are per instance; N instances ≈ N× the limit.
 - **Bank statements:** `kind == "statement"` docs stay category `support`; their lines live in `aa_bank_statements` / `aa_bank_lines` (stored by `books/bank.store_statement` in the pipeline, then `bank.rematch`). A line only posts when `match_status` is `matched` (auto: one strong candidate, partial with payee + number, or a cash-deposit transfer) or `confirmed`, and its statement has an `account_code` (resolved by the last 4 digits of `aa_accounts.bank_account_no`). A document match **replaces** the doc's `paid_on` payment (`compute/bank_books.apply_bank_lines`); never add another payment path for bank-matched docs. Amount alone never auto-links. Anything that changes a line must `void_reconciliations` + `rematch` + `touch_books`. Lines keep the file page they are printed on (`aa_bank_lines.page`, via `bank_statement.file_page`; None for
   older extractions). Closing a month with unreconciled statement lines needs `override_reason` (409 `bank_unreconciled:` otherwise). `aa_companies.review_flags.opening_balance_missing` is refreshed by `bank.refresh_opening_flag`.

@@ -33,9 +33,10 @@ class Settings(BaseSettings):
     # Passwordless email sign-in for local development, standing in for Google
     # SSO. Off unless set explicitly, and also refused outside development.
     enable_dev_login: bool = False
-    # Shared with the Cloudflare Worker, which adds it as the X-AA-Origin header. When set, requests without it
-    # are refused (direct run.app calls) and the Worker's X-AA-Client-IP is trusted. Empty = no lock (dev).
+    # Shared with the Cloudflare Worker, which adds it as the X-AA-Origin header. With it, the Worker's
+    # X-AA-Client-IP is trusted; with origin_lock too, requests without it (direct run.app calls) are refused.
     origin_secret: str = ""
+    origin_lock: bool = False
 
     # File Storage
     upload_dir: str = "./uploads"
@@ -144,6 +145,8 @@ def validate_secrets_at_startup() -> None:
         errors.append("GEMINI_API_KEY must be set to a valid API key")
     if not settings.google_client_id:
         errors.append("GOOGLE_CLIENT_ID must be set in production")
+    if settings.origin_lock and not settings.origin_secret:
+        errors.append("ORIGIN_LOCK needs ORIGIN_SECRET")
     if settings.origin_secret and len(settings.origin_secret) < 32:
         errors.append("ORIGIN_SECRET must be a random value (>= 32 chars) when set")
     if settings.enable_dev_login:

@@ -99,16 +99,34 @@ docker exec aa-restore psql -U postgres -c "select count(*) from aa_documents"
 docker rm -f aa-restore
 ```
 
-## Custom domain (later)
+## Domain and Cloudflare
+
+autoaccounting.ph is registered at Porkbun with Cloudflare's nameservers (zone on the Free plan). DNS: `@`, `www` →
+`aa-frontend-<number>.asia-southeast1.run.app`, `api` → `aa-backend-…run.app`, all proxied, plus the Search Console
+TXT. Cloud Run picks the service by Host and Cloudflare Free can't rewrite it (Origin Rules' host override is
+Enterprise-only), so the Worker `aa-edge` (`deploy/cloudflare/`) fetches the run.app URL itself and adds:
+
+- `X-AA-Origin`: the shared secret (`AA_ORIGIN_SECRET`; the Worker's `ORIGIN_SECRET` secret). The backend has it as
+  `ORIGIN_SECRET` (cloudbuild.yaml). The lock that closes the run.app URLs (403 without the header; `/api/health`
+  stays open for probes) is `ORIGIN_LOCK=true` on the backend plus `ORIGIN_SECRET` on the frontend
+  (`src/middleware.ts`); both are off until every resolver has dropped the old Porkbun delegation (24 h TTL).
+- `X-AA-Client-IP`: the visitor's IP, trusted by the backend only alongside the secret (`app/edge.py`).
+- HSTS on every response.
+
+No certificate on our domain comes from Google (Cloudflare's edge certificate in front, run.app's own behind), so
+nothing needs renewing. Zone settings: Always Use HTTPS, minimum TLS 1.2, rate limit 20 requests / 10 s per IP on
+`/api/auth/` (block 10 s). Bot Fight Mode is off: on Free it can't be skipped for the API and blocks XHR calls.
+Cloudflare Free refuses request bodies over 100 MB, so a drop is capped at 95 MB (`MAX_DROP_MB`).
 
 ```bash
-gcloud beta run domain-mappings create --service aa-frontend --domain app.example.com --region asia-southeast1
-gcloud beta run domain-mappings create --service aa-backend  --domain api.example.com --region asia-southeast1
+cd deploy/cloudflare && npx wrangler deploy                      # after editing worker.js
+gcloud secrets versions access latest --secret AA_ORIGIN_SECRET --project $PROJECT_ID \
+  | npx wrangler secret put ORIGIN_SECRET                         # after rotating the secret (then redeploy Cloud Run)
 ```
 
-Add the DNS records it prints, then set in `deploy/config.sh`
-`API_URL="https://api.example.com"` and `FRONTEND_URL="https://app.example.com,https://aa-frontend-<number>.asia-southeast1.run.app"`,
-add the new origin to the OAuth client, and redeploy (the API URL is baked into the frontend build).
+Workers Free allows 100k requests a day; if the dashboard shows traffic near it, move to Workers Paid ($5/month).
+To bypass Cloudflare in an emergency: unset the services' `ORIGIN_SECRET` (redeploy without it), then put Porkbun's
+nameservers back and recreate Cloud Run domain mappings.
 
 ## Assistant (hosted Qwen)
 

@@ -140,8 +140,8 @@ async def abuse_protection_middleware(request: Request, call_next) -> Response:
     ip = _extract_client_ip(request)
     request_id = str(_uuid.uuid4())[:8]
 
-    # --- Origin lock: with ORIGIN_SECRET set, only traffic through Cloudflare reaches the API ---
-    if not origin_allowed(request.url.path, request.headers, settings.origin_secret):
+    # --- Origin lock: with ORIGIN_LOCK on, only traffic through Cloudflare reaches the API ---
+    if settings.origin_lock and not origin_allowed(request.url.path, request.headers, settings.origin_secret):
         logger.warning("blocked reason=bypassed_edge ip=%s path=%s rid=%s", ip, request.url.path, request_id)
         return JSONResponse(status_code=403, content={"detail": "Forbidden"})
 

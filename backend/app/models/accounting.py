@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text,
+    BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -896,4 +896,29 @@ class AAChecklistTemplate(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class AAAssistantUsage(Base):
+    """One person's daily assistant usage within their firm (Manila dates)."""
+
+    __tablename__ = "aa_assistant_usage"
+    __table_args__ = (
+        UniqueConstraint("enterprise_id", "user_id", "day", name="uq_aa_assistant_usage_user_day"),
+        Index("ix_aa_assistant_usage_firm_day", "enterprise_id", "day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    turns: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    calls: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    prompt_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    completion_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    cached_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     updated_at: Mapped[datetime] = _updated()

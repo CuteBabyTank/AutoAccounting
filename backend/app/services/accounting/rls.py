@@ -17,7 +17,8 @@ _FIRM_TABLES = ("aa_companies", "aa_uploads", "aa_files", "aa_documents", "aa_pe
                 "aa_accounts", "aa_journal_entries", "aa_book_closes", "aa_employees", "aa_bank_statements",
                 "aa_bank_lines", "aa_bank_rules", "aa_bank_reconciliations", "aa_contacts", "aa_work_items",
                 "aa_tasks", "aa_firm_settings", "aa_notification_states", "aa_coa_templates",
-                "aa_opening_items", "aa_recurring_entries", "aa_checklist_templates", "aa_import_batches")
+                "aa_opening_items", "aa_recurring_entries", "aa_checklist_templates", "aa_import_batches",
+                "aa_assistant_usage")
 _COMPANY_TABLES = ("aa_supplier_rules", "aa_atc_defaults")  # no enterprise_id: scoped through their company
 _APPEND_ONLY_TABLES = ("aa_audit_events",)  # read and insert only: nobody rewrites history
 
@@ -55,4 +56,11 @@ def rls_statements() -> list[str]:
         statements += _policy(table, _company_scope(table))
     for table in _APPEND_ONLY_TABLES:
         statements += _append_only_policy(table, f"enterprise_id = {_FIRM_EXPR}")
+    # Platform reporting needs cross-firm reads, never cross-firm writes.
+    statements += [
+        "DROP POLICY IF EXISTS aa_assistant_usage_admin_read ON aa_assistant_usage",
+        "CREATE POLICY aa_assistant_usage_admin_read ON aa_assistant_usage FOR SELECT USING ("
+        "EXISTS (SELECT 1 FROM users u WHERE u.role = 'admin' AND u.id = "
+        "NULLIF(current_setting('app.current_user_id', true), '')::uuid))",
+    ]
     return statements

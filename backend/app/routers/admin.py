@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -311,3 +311,14 @@ async def set_firm_feature(
     await db.commit()
     features.logger.info("feature_switch firm=%s key=%s enabled=%s admin=%s", firm_id, key, req.enabled, admin.id)
     return await _features_out(db)
+
+
+@router.get("/assistant-usage")
+async def assistant_usage(
+    days: int = Query(default=30, ge=1, le=90),
+    db: AsyncSession = Depends(get_db), _admin: User = Depends(require_admin),
+):
+    from app.services.accounting.assistant import usage
+
+    # Bound admin identity uses this table's SELECT-only admin policy under FORCE RLS.
+    return await usage.report(db, days)

@@ -2,6 +2,12 @@
 
 import asyncio
 import json
+import logging
+import math
+import random
+import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import re
 import uuid
 from urllib.parse import urlsplit
@@ -10,8 +16,49 @@ import httpx
 
 from app.config import settings
 
+logger = logging.getLogger("assistant")
+
 CONNECT_TIMEOUT_SECONDS = 5
 RETRY_DELAY_SECONDS = 1.5
+
+
+class RateLimited(Exception):
+    """The provider cannot accept another request within this call's budget."""
+
+
+class ContentRejected(Exception):
+    """The provider declined the content; rephrasing needs a new turn."""
+
+
+def retry_after(value: str | None, now: datetime | None = None) -> float | None:
+    if not value:
+        return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            when = parsedate_to_datetime(value)
+            seconds = (when - (now or datetime.now(timezone.utc))).total_seconds()
+        except (ValueError, TypeError, OverflowError):
+            return None
+    return max(0, seconds) if math.isfinite(seconds) else None
+
+
+def response_message(data: dict, provider: str) -> dict:
+    if provider == "ollama":
+        reply = normalize(data["message"])
+        reply["usage"] = {"prompt": int(data.get("prompt_eval_count") or 0),
+                          "completion": int(data.get("eval_count") or 0), "cached": 0}
+        reply["truncated"] = data.get("done_reason") == "length"
+    else:
+        choice = data["choices"][0]
+        reply = normalize(choice["message"])
+        usage = data.get("usage") or {}
+        reply["usage"] = {"prompt": int(usage.get("prompt_tokens") or 0),
+                          "completion": int(usage.get("completion_tokens") or 0),
+                          "cached": int((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0)}
+        reply["truncated"] = choice.get("finish_reason") == "length"
+    return reply
 
 
 def strip_think(content: str) -> str:
@@ -56,6 +103,7 @@ def normalize(message: dict) -> dict:
 
 
 async def _chat(messages: list[dict], tools: list[dict], tool_choice: str) -> dict:
+    deadline = time.monotonic() + settings.assistant_llm_timeout_seconds
     base = settings.assistant_llm_base_url.rstrip("/")
     if settings.assistant_llm_provider == "ollama":
         url = f"{base}/api/chat"
@@ -81,24 +129,56 @@ async def _chat(messages: list[dict], tools: list[dict], tool_choice: str) -> di
         headers["Authorization"] = f"Bearer {settings.assistant_llm_api_key}"
     timeout = httpx.Timeout(settings.assistant_llm_timeout_seconds, connect=CONNECT_TIMEOUT_SECONDS)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        for attempt in range(2):
+        for attempt in range(3):
+            delay = None
             try:
                 response = await client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
-                data = response.json()
-                return normalize(data["message"] if settings.assistant_llm_provider == "ollama"
-                                 else data["choices"][0]["message"])
+                return response_message(response.json(), settings.assistant_llm_provider)
             except (httpx.ConnectError, httpx.ConnectTimeout):
-                if attempt:
+                if attempt == 2:
                     raise
+                failure = None
             except httpx.HTTPStatusError as exc:
-                if attempt or (exc.response.status_code != 429 and exc.response.status_code < 500):
+                status = exc.response.status_code
+                if status == 400:
+                    try:
+                        body = exc.response.json()
+                    except ValueError:
+                        body = {}
+                    if isinstance(body, dict) and (body.get("code") == "data_inspection_failed" or
+                            isinstance(body.get("error"), dict) and
+                            body["error"].get("code") == "data_inspection_failed"):
+                        raise ContentRejected from exc
+                if status != 429 and not 500 <= status < 600:
                     raise
-            await asyncio.sleep(RETRY_DELAY_SECONDS)
+                if attempt == 2:
+                    if status == 429:
+                        raise RateLimited from exc
+                    raise
+                failure = exc
+                delay = retry_after(exc.response.headers.get("Retry-After"))
+            if delay is None:
+                delay = RETRY_DELAY_SECONDS * 2 ** attempt * random.uniform(.75, 1.25)
+            if delay >= deadline - time.monotonic():
+                if failure is not None and failure.response.status_code == 429:
+                    raise RateLimited from failure
+                raise TimeoutError("Provider retry exceeds the call budget")
+            await asyncio.sleep(delay)
     raise RuntimeError("Chat completion failed")
 
 
 async def chat(messages: list[dict], tools: list[dict], tool_choice: str) -> dict:
-    # A wall-clock cap as well as HTTP inactivity timeouts, including retry delays.
-    async with asyncio.timeout(settings.assistant_llm_timeout_seconds):
-        return await _chat(messages, tools, tool_choice)
+    started = time.monotonic()
+    reply = {}
+    try:
+        # A wall-clock cap as well as HTTP inactivity timeouts, including retry delays.
+        async with asyncio.timeout(settings.assistant_llm_timeout_seconds):
+            reply = await _chat(messages, tools, tool_choice)
+            return reply
+    finally:
+        usage = reply.get("usage", {})
+        logger.info("assistant_llm_call provider=%s model=%s prompt=%d completion=%d cached=%d truncated=%s ms=%d",
+                    settings.assistant_llm_provider, settings.assistant_llm_model, usage.get("prompt", 0),
+                    usage.get("completion", 0), usage.get("cached", 0), reply.get("truncated", False),
+                    int((time.monotonic() - started) * 1000))

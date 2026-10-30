@@ -1,14 +1,30 @@
 import type { SearchItem } from "@/types/search";
 
+export interface AssistantUsage {
+  prompt: number;
+  completion: number;
+  cached: number;
+  calls: number;
+}
+
+export interface AssistantDailyUsage {
+  turns: number;
+  calls: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cached_tokens: number;
+}
+
 /** One server-sent event of an assistant turn (backend `services/accounting/assistant/loop.py`). */
 export type AssistantEvent =
   | { type: "start" }
   | { type: "thought"; text: string }
-  | { type: "clarify"; question: string; replies?: string[] }
+  | { type: "clarify"; question: string; replies?: string[]; usage?: AssistantUsage }
   | { type: "action"; tool: string; args: Record<string, unknown>; label?: string }
   | { type: "observation"; tool: string; ok: boolean; summary: string }
   | {
       type: "final";
+      usage?: AssistantUsage;
       answer: string;
       sources: SearchItem[];
       tools_used: string[];
@@ -17,7 +33,7 @@ export type AssistantEvent =
       /** One-tap answers when it ends by asking something: "Yes", or the companies to choose from. */
       replies?: string[];
     }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; usage?: AssistantUsage };
 
 /** One line of the thinking trail: the model's plan, a lookup, or the figure check at the end. */
 export interface AssistantStep {
@@ -49,4 +65,7 @@ export interface AssistantInfo {
   provider: string;
   ready: boolean;
   local: boolean;
+  day?: string;
+  usage?: { user: AssistantDailyUsage; firm?: AssistantDailyUsage };
+  caps?: { user: number; firm: number };
 }

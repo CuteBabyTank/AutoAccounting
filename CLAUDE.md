@@ -83,6 +83,9 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
 `ASSISTANT_LLM_NUM_CTX` (16384), `ASSISTANT_LLM_MAX_OUTPUT_TOKENS` (1024),
 `ASSISTANT_LLM_TIMEOUT_SECONDS` (90 per call, fixed 5-second connect timeout), `ASSISTANT_TURN_SECONDS` (180),
 `ASSISTANT_MAX_STEPS` (5), `ASSISTANT_MAX_CALLS_PER_STEP` (3), `ASSISTANT_OBSERVATION_CHARS` (6000),
+`ASSISTANT_CONTEXT_CHARS` (48000 tool-message budget, recent/repeated results protected),
+`ASSISTANT_FIRM_DAILY_TOKENS` (3000000), `ASSISTANT_USER_DAILY_TOKENS` (600000),
+`ASSISTANT_PLATFORM_DAILY_TOKENS` (20000000 per instance; all caps reset at Manila midnight, 0 disables),
 `ASSISTANT_HISTORY_TURNS` (12 messages), `ASSISTANT_HISTORY_CHARS` (800 per message),
 `ASSISTANT_HISTORY_BUDGET_CHARS` (4000 total), `ASSISTANT_ANSWER_CHARS` (4000, truncated with `…`), `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB` (50), `MAX_BATCH_SIZE` (200), `BOOTSTRAP_ADMIN_EMAIL`, `ENABLE_DEV_LOGIN`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
@@ -223,16 +226,27 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   Pull it on the host with `ollama pull qwen3:4b-instruct`. Docker's host gateway is configured. No Gemini key/quota dependency;
   document extraction still uses Gemini. Empty base URL gives 503. Settings/defaults are in the env list above and
   `.env.example`; recreate backend after env changes. Hosted Qwen switch: `ASSISTANT_LLM_PROVIDER=openai`,
-  `ASSISTANT_LLM_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1`, `ASSISTANT_LLM_MODEL=qwen-plus`,
+  `ASSISTANT_LLM_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1`, `ASSISTANT_LLM_MODEL=qwen3.8-flash`,
   `ASSISTANT_LLM_API_KEY=<DashScope key>`. Hosted requests use `max_tokens`; only DashScope receives
   `enable_thinking=false`. Native replies get synthetic tool ids; tool messages use `tool_name`.
-  One retry for connect errors / 429 / 5xx; no read-timeout retry. Per-call timeout 90s, connect 5s, whole turn 180s
+  Up to two retries for connect errors / 429 / 5xx, respecting Retry-After (seconds/date) or jittered 1.5s/3s
+  backoff within the call budget; no read-timeout retry. Exhausted 429s ask the person to try again; DashScope
+  `data_inspection_failed` gets a rephrasing message without retry. Per-call timeout 90s, connect 5s, whole turn 180s
   including tools/retries. When near the turn budget, reserve a final call if a full call still fits, else emit a
   clear timeout. Model-unreachable gets its own error. At most 5 lookup rounds, 3 executed calls/round; repeats reuse
-  results. Forced final omits native tools (OpenAI `tool_choice=none`) and says it stopped early; ignored forced-final
-  calls fall back to plain text. History is untrusted text only, capped to 12 messages × 800 chars / 4000 total.
-  Observations are sanitized valid JSON ≤6000 chars; answers ≤4000 chars. Figures still pass numeric grounding and
-  unsupported peso claims are refused. Obvious instruction attacks are declined without a model call. The short
+  results with a short same-as-earlier pointer. Forced final omits native tools (OpenAI `tool_choice=none`) and
+  says it stopped early; ignored forced-final calls fall back to plain text. History is untrusted text only, capped to 12 messages × 800 chars / 4000 total.
+  Observations are sanitized valid JSON ≤6000 chars, shrinking lists with omitted counts before fragment slicing;
+  tool context trims oldest results to summaries above 48000 chars (recent rounds and repeated keys protected).
+  Grounding keeps the original observations. Answers ≤4000 chars; provider-truncated answers end in `…` without retry.
+  Per-call and turn logs include prompt/completion/cached tokens; terminal SSE events carry usage. Finished
+  turns upsert `aa_assistant_usage` per firm/person/Manila day under RLS, including clarify and partial-error turns;
+  usage-write failures log without breaking replies. Prompt + completion count toward daily firm/person caps (429),
+  including cached input; the in-memory platform cap returns 503. Running turns finish, charged on their finish day.
+  `GET /assistant/info` includes personal usage/caps and firm usage for owners/managers; admin-only
+  `GET /api/admin/assistant-usage?days=30` (1–90) reads daily firm totals via a SELECT-only admin RLS policy.
+  The static system prefix ends with the Manila date for DashScope's automatic prefix cache. Figures still pass
+  numeric grounding and unsupported peso claims are refused. Obvious instruction attacks are declined without a model call. The short
   system prompt restricts scope to firm data/BIR notes; ambiguous company/period uses `ask_clarification`, emitted as
   a terminal `clarify` event and rendered as a question without numeric grounding. Progress labels are deterministic;
   model thinking is never streamed, even when `ASSISTANT_LLM_THINK=true`.

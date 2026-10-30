@@ -129,7 +129,7 @@ class Script:
 
 
 def _sans_replies(event: dict) -> dict:
-    return {k: v for k, v in event.items() if k != "replies"}
+    return {k: v for k, v in event.items() if k not in {"replies", "usage"}}
 
 
 async def _db_rollback():
@@ -344,7 +344,7 @@ async def test_turn_budget_stops_waiting(monkeypatch):
         await asyncio.sleep(1)
         return _say("late")
     events, _ = await _events(slow, monkeypatch, {})
-    assert events[-1] == {"type": "error", "message": loop.TIMEOUT_MESSAGE}
+    assert _sans_replies(events[-1]) == {"type": "error", "message": loop.TIMEOUT_MESSAGE}
 
 
 async def test_unreachable_has_clear_error(monkeypatch):
@@ -352,7 +352,7 @@ async def test_unreachable_has_clear_error(monkeypatch):
     async def unreachable(*args):
         raise httpx.ConnectError("secret endpoint")
     events, _ = await _events(unreachable, monkeypatch, {})
-    assert events[-1] == {"type": "error", "message": "The assistant's model isn't reachable"}
+    assert _sans_replies(events[-1]) == {"type": "error", "message": "The assistant's model isn't reachable"}
 
 
 async def test_native_provider_payload_and_normalization(monkeypatch):
@@ -719,7 +719,8 @@ async def test_non_dashscope_openai_does_not_receive_thinking_extension(monkeypa
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK", "thinking": "hidden"}}]})
     client_class = httpx.AsyncClient
     monkeypatch.setattr(llm.httpx, "AsyncClient", lambda **kw: client_class(transport=httpx.MockTransport(handle), **kw))
-    assert await llm.chat([], [], "none") == {"role": "assistant", "content": "OK"}
+    assert await llm.chat([], [], "none") == {"role": "assistant", "content": "OK",
+        "usage": {"prompt": 0, "completion": 0, "cached": 0}, "truncated": False}
 
 
 async def test_model_call_wall_clock_timeout(monkeypatch):
@@ -761,7 +762,8 @@ async def test_native_thinking_can_be_enabled_without_exposing_it(monkeypatch):
         return httpx.Response(200, json={"message": {"content": "Answer", "thinking": "private"}})
     client_class = httpx.AsyncClient
     monkeypatch.setattr(llm.httpx, "AsyncClient", lambda **kw: client_class(transport=httpx.MockTransport(handle), **kw))
-    assert await llm.chat([], [], "none") == {"role": "assistant", "content": "Answer"}
+    assert await llm.chat([], [], "none") == {"role": "assistant", "content": "Answer",
+        "usage": {"prompt": 0, "completion": 0, "cached": 0}, "truncated": False}
 
 
 async def test_per_call_read_timeout_becomes_turn_error(monkeypatch):
@@ -769,7 +771,7 @@ async def test_per_call_read_timeout_becomes_turn_error(monkeypatch):
     async def slow(*args):
         raise httpx.ReadTimeout("internal URL must not leak")
     events, _ = await _events(slow, monkeypatch, {})
-    assert events[-1] == {"type": "error", "message": loop.TIMEOUT_MESSAGE}
+    assert _sans_replies(events[-1]) == {"type": "error", "message": loop.TIMEOUT_MESSAGE}
 
 
 async def test_budget_cancels_slow_tool(monkeypatch):
@@ -780,7 +782,7 @@ async def test_budget_cancels_slow_tool(monkeypatch):
         return tools.Result({"companies": []})
     monkeypatch.setattr(tools, "call", slow_tool)
     events = [event async for event in loop.run(_ctx(), "Which companies?", [], Script(_call("list_companies")))]
-    assert events[-1] == {"type": "error", "message": loop.TIMEOUT_MESSAGE}
+    assert _sans_replies(events[-1]) == {"type": "error", "message": loop.TIMEOUT_MESSAGE}
 
 
 async def test_no_time_for_final_call_ends_with_timeout(monkeypatch):
@@ -789,7 +791,7 @@ async def test_no_time_for_final_call_ends_with_timeout(monkeypatch):
     script = Script(_call("list_companies"))
     events, _ = await _events(script, monkeypatch, {"list_companies": tools.Result({"companies": []})})
     assert script.modes == ["auto"]
-    assert events[-1] == {"type": "error", "message": loop.TIMEOUT_MESSAGE}
+    assert _sans_replies(events[-1]) == {"type": "error", "message": loop.TIMEOUT_MESSAGE}
 
 
 async def test_company_health_without_a_company_is_firm_wide(monkeypatch):

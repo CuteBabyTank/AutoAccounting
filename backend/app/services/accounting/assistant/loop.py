@@ -22,6 +22,7 @@ import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
+from copy import deepcopy
 
 import httpx
 
@@ -137,9 +138,11 @@ async def with_replies(ctx: tools.Ctx, event: dict) -> dict:
     return {**event, "replies": names[:MAX_REPLIES] if len(names) >= 2 else guard.quick_replies(text)}
 
 
-def clarify_event(question: str) -> dict:
+def clarify_event(question: str, truncated: bool = False) -> dict:
     question = guard.humanize(guard.drop_plan_lead(_NOT_FOUND_LEAD.sub("", question, count=1) or question))
-    return {"type": "clarify", "question": question[:settings.assistant_history_chars]}
+    question = (truncated_answer(question, settings.assistant_history_chars) if truncated
+                else question[:settings.assistant_history_chars])
+    return {"type": "clarify", "question": question}
 
 
 async def _needs_clarification(ctx: tools.Ctx, answer: str, used: list[str], coverage: Coverage) -> bool:
@@ -161,8 +164,37 @@ def declarations() -> list[dict]:
         "name": t.name, "description": t.description, "parameters": t.parameters}} for t in tools.TOOLS]
 
 
-def observation(data: dict) -> str:
+def shrink_lists(data: dict) -> str:
+    """Keep valid JSON and counts; never mutate the full observations used for grounding."""
+    data = deepcopy(data)
+    def lists(value, owner=None, key=None):
+        found = []
+        if isinstance(value, dict):
+            for k, v in value.items():
+                found.extend(lists(v, value, k))
+        elif isinstance(value, list):
+            # Search group totals must survive even if every item is omitted.
+            if value and owner is not None and not (owner is data and key == "groups" and "total_matches" in data):
+                found.append((value, owner, key))
+            for row in value:
+                found.extend(lists(row, owner, key))
+        return found
+
     text = guard.sanitize(json.dumps(data, ensure_ascii=False))
+    while len(text) > OBSERVATION_CHARS:
+        candidates = lists(data)
+        if not candidates:
+            break
+        rows, owner, key = max(candidates, key=lambda item: len(item[0]))
+        rows.pop()
+        counter = f"{key}_more_not_shown"
+        owner[counter] = owner.get(counter, 0) + 1
+        text = guard.sanitize(json.dumps(data, ensure_ascii=False))
+    return text
+
+
+def observation(data: dict) -> str:
+    text = shrink_lists(data)
     if len(text) > OBSERVATION_CHARS:
         totals = {}
         if "total_matches" in data:  # search counts must survive even when record text fills the observation
@@ -224,11 +256,43 @@ def history_contents(turns: list[guard.Turn]) -> list[dict]:
     return [{"role": t.role, "content": t.text} for t in turns]
 
 
+@dataclass
+class ToolContext:
+    message: dict
+    key: str
+    round: int
+    summary: str
+    first_result: bool = False
+
+
+def trim_context(messages: list[ToolContext], repeated: set[str]) -> None:
+    if not messages:
+        return
+    total = sum(len(m.message["content"]) for m in messages)
+    recent = messages[-1].round
+    for item in messages:
+        if total <= settings.assistant_context_chars:
+            break
+        if item.round == recent or item.key in repeated:
+            continue
+        compact = guard.sanitize(json.dumps({"trimmed": True, "summary": item.summary}, ensure_ascii=False))
+        if len(compact) < len(item.message["content"]):
+            total -= len(item.message["content"]) - len(compact)
+            item.message["content"] = compact
+
+
+def truncated_answer(answer: str, limit: int | None = None) -> str:
+    logger.warning("assistant_answer_truncated")
+    return cap_answer(answer.rstrip("…").rstrip() + "…", limit)
+
+
 async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, generate: Generate = llm.chat) -> AsyncIterator[dict]:
     started = time.monotonic()
     stopped_early = False
     before_nudge: str | None = None  # the answer that named a tool, kept in case the extra round finds nothing
     used_at_nudge = 0
+    nudge_truncated = False
+    answer_truncated = False
     forced: list[dict] = []
     nudged_fresh = False
     turns = guard.trim_history(history)
@@ -238,6 +302,8 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
     observed: list[str] = []
     sources: list[dict] = []
     seen: dict[str, str] = {}
+    repeated: set[str] = set()
+    tool_context: list[ToolContext] = []
     used: list[str] = []
     coverage = Coverage()
     answer = ""
@@ -250,9 +316,11 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
             if forced:  # lookups the server runs itself for a part of the question the model skipped
                 resp, forced = {"content": "", "tool_calls": forced}, []
             else:
+                trim_context(tool_context, repeated)
                 resp = await generate(contents, declarations(), "auto")
             calls = resp.get("tool_calls") or []
             if not calls:
+                answer_truncated = bool(resp.get("truncated"))
                 answer = llm.strip_think(resp.get("content") or "").strip()
                 remaining = settings.assistant_turn_seconds - (time.monotonic() - started)
                 if (not used and not nudged_fresh and turns and guard.firm_question(topic)
@@ -276,7 +344,7 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                     answer = ""
                     continue
                 if await _needs_clarification(ctx, answer, used, coverage):
-                    yield await with_replies(ctx, clarify_event(answer))
+                    yield await with_replies(ctx, clarify_event(answer, answer_truncated))
                     return
                 remaining = settings.assistant_turn_seconds - (time.monotonic() - started)
                 if (guard.overreach(answer) and not coverage.firm_wide and _step + 1 < MAX_STEPS
@@ -290,11 +358,13 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                 if before_nudge is not None and len(used) == used_at_nudge:
                     # The extra round looked nothing up: the first answer (minus its tool talk) is the better one.
                     answer = guard.drop_tool_talk(before_nudge)
+                    answer_truncated = nudge_truncated
                     break
                 missing = guard.missing_tools(topic, used) if used else []
                 if missing and before_nudge is None and _step + 2 < MAX_STEPS \
                         and remaining >= 1.5 * settings.assistant_llm_timeout_seconds:
                     # A small model often answers half of a two-part question: look the other half up for it.
+                    nudge_truncated = answer_truncated
                     before_nudge, used_at_nudge = guard.drop_tool_talk(answer), len(used)
                     forced = [{"id": f"auto_{i}", "type": "function",
                                "function": {"name": tool, "arguments": json.dumps(guard.default_args(tool, topic))}}
@@ -303,6 +373,7 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                     continue
                 if guard.promises_lookup(answer) and before_nudge is None and _step + 1 < MAX_STEPS \
                         and remaining >= 1.5 * settings.assistant_llm_timeout_seconds:
+                    nudge_truncated = answer_truncated
                     before_nudge, used_at_nudge = answer, len(used)
                     contents.append({"role": "assistant", "content": answer})
                     contents.append({"role": "user", "content": "Go ahead: call the tool now instead of saying you "
@@ -313,6 +384,7 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                 if named and before_nudge is None and _step + 1 < MAX_STEPS \
                         and remaining >= 1.5 * settings.assistant_llm_timeout_seconds:
                     tool = guard.tool_named(named)
+                    nudge_truncated = answer_truncated
                     before_nudge, used_at_nudge = answer, len(used)  # once; kept if the extra round finds nothing
                     contents.append({"role": "assistant", "content": answer})
                     contents.append({"role": "user", "content": (
@@ -358,11 +430,18 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                 key = f"{name}:{json.dumps(args, sort_keys=True, default=str)}"
                 yield {"type": "action", "tool": name, "args": args,
                        "label": STEP_LABELS.get(name, "Checking the records")}
+                summary = invalid or "Same as before"
+                first_result = False
                 if invalid:
                     text = json.dumps({"error": invalid})
                     yield {"type": "observation", "tool": name, "ok": False, "summary": invalid}
                 elif key in seen:
-                    text = seen[key]
+                    repeated.add(key)
+                    for item in tool_context:
+                        if item.key == key and item.first_result:
+                            item.message["content"] = seen[key]
+                    text = json.dumps({"same_as_earlier": True,
+                                       "note": "Identical to the earlier result for this lookup above."})
                     yield {"type": "observation", "tool": name, "ok": True, "summary": "Same as before"}
                 else:
                     try:
@@ -376,14 +455,18 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                     coverage.add(name, args, result)
                     text = observation(data)
                     seen[key] = text
+                    summary = summarize(name, data)
+                    first_result = True
                     used.append(name)
                     for s in result.sources:
                         if len(sources) < MAX_SOURCES and all(s["id"] != x["id"] for x in sources):
                             sources.append(tools.as_json(s))
                     yield {"type": "observation", "tool": name, "ok": "error" not in data,
-                           "summary": summarize(name, data)}
-                observed.append(text)
-                contents.append({"role": "tool", "tool_call_id": call["id"], "content": text})
+                           "summary": summary}
+                observed.append(seen[key] if not invalid else text)
+                message = {"role": "tool", "tool_call_id": call["id"], "content": text}
+                contents.append(message)
+                tool_context.append(ToolContext(message, key, _step, summary, first_result))
         else:
             stopped_early = True
         if stopped_early:
@@ -392,14 +475,16 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                 raise TimeoutError
             contents.append({"role": "user", "content": "Stop looking up data. Answer briefly from the results so far; "
                              "say that you stopped early."})
+            trim_context(tool_context, repeated)
             resp = await generate(contents, declarations(), "none")
             if not resp.get("tool_calls"):
                 answer = llm.strip_think(resp.get("content") or "")
+                answer_truncated = bool(resp.get("truncated"))
             answer = f"{EARLY_STOP} {answer}".strip()
         if not answer:
             answer = "I couldn't put an answer together from what I found. Try asking more specifically."
         if stopped_early and await _needs_clarification(ctx, answer, used, coverage):
-            yield await with_replies(ctx, clarify_event(answer))
+            yield await with_replies(ctx, clarify_event(answer, answer_truncated))
             return
         answer = guard.humanize(guard.drop_plan_lead(guard.drop_tool_talk(answer) or answer))
         caveat = (f"\n\nI only checked {coverage.names()}; other companies weren't checked."
@@ -409,14 +494,15 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
         loose = guard.ungrounded(answer, context)
         if loose and guard.unsupported_money_claim(answer, len(used)):
             answer, loose = NO_FIGURE, []
+            answer_truncated = False
         if caveat:
             answer = cap_answer(answer, max(1, settings.assistant_answer_chars - len(caveat))) + caveat
         answer = cap_answer(answer)
-        logger.info("assistant_turn user=%s tools=%s steps=%d ungrounded=%d ms=%d", ctx.user.id, ",".join(used),
-                    len(used), len(loose), int((time.monotonic() - started) * 1000))
+        if answer_truncated:
+            answer = truncated_answer(answer)
         yield await with_replies(ctx, {"type": "final", "answer": answer, "sources": sources, "tools_used": used,
                                        "grounded": not loose, "ungrounded_numbers": loose})
-    except (TimeoutError, httpx.TimeoutException, httpx.ConnectError):
+    except (TimeoutError, httpx.TimeoutException, httpx.ConnectError, llm.RateLimited, llm.ContentRejected):
         raise
     except Exception:
         logger.exception("assistant_failed user=%s", ctx.user.id)
@@ -430,18 +516,44 @@ def cap_answer(answer: str, limit: int | None = None) -> str:
 
 async def run(ctx: tools.Ctx, question: str, history: list[dict] | None,
               generate: Generate = llm.chat) -> AsyncIterator[dict]:
+    started = time.monotonic()
+    usage = {"prompt": 0, "completion": 0, "cached": 0, "calls": 0}
+    terminal = {}
+
+    async def counted(contents, declarations, choice):
+        usage["calls"] += 1
+        reply = await generate(contents, declarations, choice)
+        for key in ("prompt", "completion", "cached"):
+            usage[key] += reply.get("usage", {}).get(key, 0)
+        return reply
+
     yield {"type": "start"}
-    decline = guard.precheck(question)
-    if decline:
-        yield {"type": "final", "answer": cap_answer(decline), "sources": [], "tools_used": [],
-               "grounded": True, "ungrounded_numbers": []}
-        return
     try:
-        # Cancellation covers tools, model retries and waits, not just individual HTTP calls.
-        async with asyncio.timeout(settings.assistant_turn_seconds):
-            async for event in _run(ctx, question, history, generate):
-                yield event
+        decline = guard.precheck(question)
+        if decline:
+            terminal = {"type": "final", "answer": cap_answer(decline), "sources": [], "tools_used": [],
+                        "grounded": True, "ungrounded_numbers": []}
+        else:
+            # Cancellation covers tools, model retries and waits, not just individual HTTP calls.
+            async with asyncio.timeout(settings.assistant_turn_seconds):
+                async for event in _run(ctx, question, history, counted):
+                    if event["type"] in {"final", "clarify", "error"}:
+                        terminal = event
+                    else:
+                        yield event
+    except llm.RateLimited:
+        terminal = {"type": "error", "message": "The assistant is busy right now. Please try again in a minute."}
+    except llm.ContentRejected:
+        terminal = {"type": "error", "message": "I can't answer that one. Try rephrasing the question."}
     except (httpx.ConnectError, httpx.ConnectTimeout):
-        yield {"type": "error", "message": "The assistant's model isn't reachable"}
+        terminal = {"type": "error", "message": "The assistant's model isn't reachable"}
     except (TimeoutError, httpx.TimeoutException):
-        yield {"type": "error", "message": TIMEOUT_MESSAGE}
+        terminal = {"type": "error", "message": TIMEOUT_MESSAGE}
+    finally:
+        used = terminal.get("tools_used", [])
+        logger.info("assistant_turn user=%s tools=%s steps=%d ungrounded=%d prompt=%d completion=%d cached=%d "
+                    "calls=%d ms=%d", ctx.user.id, ",".join(used), len(used),
+                    len(terminal.get("ungrounded_numbers", [])), usage["prompt"], usage["completion"],
+                    usage["cached"], usage["calls"], int((time.monotonic() - started) * 1000))
+    if terminal:
+        yield {**terminal, "usage": usage}

@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     # Passwordless email sign-in for local development, standing in for Google
     # SSO. Off unless set explicitly, and also refused outside development.
     enable_dev_login: bool = False
-    # Shared with Cloudflare, which adds it as the X-AA-Origin header (Transform Rule). When set, requests
-    # without it are refused (direct run.app calls) and CF-Connecting-IP is trusted. Empty = no lock (dev).
+    # Shared with the Cloudflare Worker, which adds it as the X-AA-Origin header. When set, requests without it
+    # are refused (direct run.app calls) and the Worker's X-AA-Client-IP is trusted. Empty = no lock (dev).
     origin_secret: str = ""
 
     # File Storage

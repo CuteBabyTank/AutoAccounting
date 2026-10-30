@@ -111,7 +111,7 @@ async def add_security_headers(request: Request, call_next) -> Response:
 
 
 def _extract_client_ip(request: Request) -> str:
-    """The caller's IP: Cloudflare's CF-Connecting-IP when the origin secret proves it, else the last
+    """The caller's IP: the Cloudflare Worker's X-AA-Client-IP when the origin secret proves it, else the last
     X-Forwarded-For entry (the one Cloud Run appends; earlier entries are client-supplied)."""
     return client_ip(request.headers, request.client.host if request.client else None, settings.origin_secret)
 

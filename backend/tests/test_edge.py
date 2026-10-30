@@ -15,12 +15,12 @@ def test_falls_back_to_peer():
     assert client_ip({}, None, "") == "unknown"
 
 
-def test_cf_connecting_ip_needs_the_secret():
-    headers = {"cf-connecting-ip": "198.51.100.4", "x-forwarded-for": "172.70.1.1"}
+def test_worker_client_ip_needs_the_secret():
+    headers = {"x-aa-client-ip": "198.51.100.4", "x-forwarded-for": "172.70.1.1"}
     assert client_ip(headers, None, SECRET) == "172.70.1.1"
     assert client_ip({**headers, "x-aa-origin": "wrong"}, None, SECRET) == "172.70.1.1"
     assert client_ip({**headers, "x-aa-origin": SECRET}, None, SECRET) == "198.51.100.4"
-    # No secret configured: a client-sent CF-Connecting-IP is never believed.
+    # No secret configured: a client-sent X-AA-Client-IP is never believed.
     assert client_ip({**headers, "x-aa-origin": ""}, None, "") == "172.70.1.1"
 
 

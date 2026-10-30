@@ -1,0 +1,14 @@
+# Deploy: cd deploy/cloudflare && npx wrangler deploy
+# Secret (same value as Secret Manager AA_ORIGIN_SECRET):
+#   gcloud secrets versions access latest --secret AA_ORIGIN_SECRET --project autoaccounting-ph \
+#     | npx wrangler secret put ORIGIN_SECRET
+name = "aa-edge"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = false
+
+routes = [
+  { pattern = "autoaccounting.ph/*", zone_name = "autoaccounting.ph" },
+  { pattern = "www.autoaccounting.ph/*", zone_name = "autoaccounting.ph" },
+  { pattern = "api.autoaccounting.ph/*", zone_name = "autoaccounting.ph" },
+]

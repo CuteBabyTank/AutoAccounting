@@ -55,11 +55,12 @@ import type {
 
 const PICKER_KEY = "aa:lastPicker";
 const ACCEPT = { "application/pdf": [".pdf"], "image/png": [".png"], "image/jpeg": [".jpg", ".jpeg"] };
-// Mirrors the backend defaults (MAX_FILE_SIZE_MB, MAX_BATCH_SIZE, the multipart cap in main.py),
-// so an oversized drop is explained before it is sent instead of failing with a bare 413.
+// Mirrors the backend defaults (MAX_FILE_SIZE_MB, MAX_BATCH_SIZE), so an oversized drop is explained before it is
+// sent instead of failing with a bare 413. The drop total is Cloudflare's: its Free plan refuses request bodies over
+// 100 MB, below the backend's own multipart cap in main.py.
 const MAX_FILE_MB = 50;
 const MAX_FILES = 200;
-const MAX_DROP_MB = 256;
+const MAX_DROP_MB = 95;
 
 function dropProblem(files: File[]): string | null {
   const MB = 1024 * 1024;

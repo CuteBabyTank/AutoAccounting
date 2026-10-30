@@ -84,7 +84,7 @@ steps:
       - '4Gi'  # 3 concurrent PDF compressions (compress.PDF_WORKERS) + app + uploads
       - '--execution-environment'
       - 'gen2'
-      - '--cpu-throttling'
+      - '--no-cpu-throttling'  # extraction runs after the upload request returns; throttled CPU stalls it
       - '--min-instances'
       - '0'
       - '--max-instances'

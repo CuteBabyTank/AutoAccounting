@@ -8,6 +8,7 @@ no transaction is held open across the network (transaction pooler).
 import asyncio
 import logging
 import uuid
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -42,6 +43,9 @@ _TASKS: set[asyncio.Task] = set()
 # Uploads with a job on this instance (queued for a slot or running) -> the user it runs as.
 _ACTIVE: dict[uuid.UUID, str] = {}
 _IMAGE_MIME = {"png": "image/png", "jpg": "image/jpeg"}
+# Gemini reads in flight per extraction job: files read ahead of the one being filed, and chunks of one file.
+READ_AHEAD = 3
+CHUNKS_AT_ONCE = 3
 
 
 def company_candidates(companies) -> list[CompanyCandidate]:
@@ -146,6 +150,42 @@ async def _chunks(stored_path: str, file_type: str) -> list[tuple[bytes, str, in
         return [(b, "application/pdf", s, e) for b, s, e in chunks]
     data = await loop.run_in_executor(None, Path(stored_path).read_bytes)
     return [(data, _IMAGE_MIME[file_type], 0, 0)]
+
+
+async def _read_chunk(file_id: uuid.UUID, data: bytes, mime: str, start0: int, end0: int, prompt: str,
+                      user_id: str) -> tuple[int, int, list | None]:
+    """(start page, page count, extracted documents or None) for one chunk."""
+    pages = end0 - start0 + 1
+    # Gemini occasionally replies with valid JSON but no documents for a whole
+    # chunk; retry once, then file a placeholder so those pages land in review.
+    for attempt in (1, 2):
+        raw = await aa_gemini.call_gemini_raw(data, mime, prompt, user_id)
+        extracted = parse_extraction(raw, page_offset=start0, chunk_pages=pages)
+        if extracted:
+            return start0, pages, extracted
+        logger.warning(
+            "accounting_empty_chunk file_id=%s pages=%d-%d attempt=%d",
+            file_id, start0 + 1, end0 + 1, attempt,
+        )
+    return start0, pages, None
+
+
+async def _read_file(file_id: uuid.UUID, stored_path: str, file_type: str, prompt: str,
+                     user_id: str) -> list[tuple[int, int, list | None]]:
+    """Every chunk of a file read by Gemini, at most ``CHUNKS_AT_ONCE`` at a time, in page order. No database."""
+    gate = asyncio.Semaphore(CHUNKS_AT_ONCE)
+
+    async def one(chunk: tuple[bytes, str, int, int]) -> tuple[int, int, list | None]:
+        async with gate:
+            return await _read_chunk(file_id, *chunk, prompt, user_id)
+
+    chunks = await _chunks(stored_path, file_type)
+    try:
+        async with asyncio.TaskGroup() as group:  # a failed chunk fails the file and cancels its other chunks
+            tasks = [group.create_task(one(c)) for c in chunks]
+    except ExceptionGroup as eg:
+        raise eg.exceptions[0] from None
+    return [t.result() for t in tasks]
 
 
 async def _claim_file(db, file_id: uuid.UUID, company_id: uuid.UUID, sha256: str, stored_path: str) -> bool:
@@ -282,70 +322,77 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
         upload.processed_files = 0
         await db.commit()
 
-        for file_id, company_id, stored_path, file_type, page_count, sha256 in jobs:
-            profile = profiles.get(company_id)
-            others = frozenset(t for cid, t in all_tins if cid != company_id)
-            if not await _claim_file(db, file_id, company_id, sha256, stored_path):
+        # Gemini reads up to READ_AHEAD files at once (it is the slow part); their rows are written one file at a
+        # time, in order, as each read finishes.
+        reading: deque[tuple[tuple, asyncio.Task | None]] = deque()
+        pending = iter(jobs)
+        try:
+            while True:
+                while len(reading) < READ_AHEAD and (job := next(pending, None)) is not None:
+                    file_id, company_id, stored_path, file_type, _, sha256 = job
+                    if not await _claim_file(db, file_id, company_id, sha256, stored_path):
+                        upload = await db.get(AAUpload, upload_id)
+                        upload.processed_files += 1
+                        await db.commit()
+                        continue
+                    prompt = prompts.get(company_id)
+                    task = asyncio.create_task(_read_file(file_id, stored_path, file_type, prompt, user_id)) if prompt else None
+                    reading.append((job, task))
+                if not reading:
+                    break
+                (file_id, company_id, stored_path, file_type, page_count, sha256), task = reading.popleft()
+                profile = profiles.get(company_id)
+                others = frozenset(t for cid, t in all_tins if cid != company_id)
+                new_seen = seen[company_id]
+                try:
+                    if profile is None:
+                        raise ValueError("company no longer exists")
+                    rows = []
+                    for start0, pages, extracted in await task:
+                        if extracted:
+                            rows += [classify_document(ext, profile, rules.get(company_id, {}), others) for ext in extracted]
+                        else:
+                            rows.append(empty_document_fields(pages, page_start=start0 + 1))
+                    if not rows:
+                        rows = [empty_document_fields(page_count)]
+                    if company_id in locks:
+                        for fields in rows:
+                            flag_locked(fields, *locks[company_id])
+                    new_seen = mark_duplicates(rows, seen[company_id])
+                    added = [AADocument(enterprise_id=enterprise_scope, company_id=company_id, file_id=file_id, **fields)
+                             for fields in rows]
+                    db.add_all(added)
+
+                    await db.flush()  # surface bad rows (e.g. out-of-range amounts) inside this file's try
+                    for doc in added:
+                        if doc.doc_type == "statement":
+                            await _store_statement(db, doc)
+                    f = await db.get(AAFile, file_id)
+                    if not f.pages_charged and enterprise_id is not None:
+                        ent = await db.get(User, enterprise_id)
+                        await charge_for_pages(db, ent, page_count)
+                        await increment_usage(db, enterprise_id, page_count)
+                        f.pages_charged = True
+                    f.status = "extracted"
+                    f.error_message = None
+                    filed = True
+                except Exception as e:  # file-level isolation: one bad file never fails the upload
+                    logger.exception("accounting_extract_failed file_id=%s", file_id)
+                    await db.rollback()
+                    f = await db.get(AAFile, file_id)
+                    f.status = "error"
+                    f.error_message = str(e)[:500]
+                    filed = False
                 upload = await db.get(AAUpload, upload_id)
                 upload.processed_files += 1
-                await db.commit()
-                continue
-            new_seen = seen[company_id]
-            try:
-                if profile is None:
-                    raise ValueError("company no longer exists")
-                rows = []
-                for data, mime, start0, end0 in await _chunks(stored_path, file_type):
-                    pages = end0 - start0 + 1
-                    # Gemini occasionally replies with valid JSON but no documents for a whole
-                    # chunk; retry once, then file a placeholder so those pages land in review.
-                    for attempt in (1, 2):
-                        raw = await aa_gemini.call_gemini_raw(data, mime, prompts[company_id], user_id)
-                        extracted = parse_extraction(raw, page_offset=start0, chunk_pages=pages)
-                        if extracted:
-                            break
-                        logger.warning(
-                            "accounting_empty_chunk file_id=%s pages=%d-%d attempt=%d",
-                            file_id, start0 + 1, end0 + 1, attempt,
-                        )
-                    if extracted:
-                        rows += [classify_document(ext, profile, rules.get(company_id, {}), others) for ext in extracted]
-                    else:
-                        rows.append(empty_document_fields(pages, page_start=start0 + 1))
-                if not rows:
-                    rows = [empty_document_fields(page_count)]
-                if company_id in locks:
-                    for fields in rows:
-                        flag_locked(fields, *locks[company_id])
-                new_seen = mark_duplicates(rows, seen[company_id])
-                added = [AADocument(enterprise_id=enterprise_scope, company_id=company_id, file_id=file_id, **fields)
-                         for fields in rows]
-                db.add_all(added)
+                await db.commit()  # nothing stays open while the next read is awaited
+                if filed:
+                    seen[company_id] = new_seen  # adopt keys only once this file's rows are committed
 
-                await db.flush()  # surface bad rows (e.g. out-of-range amounts) inside this file's try
-                for doc in added:
-                    if doc.doc_type == "statement":
-                        await _store_statement(db, doc)
-                f = await db.get(AAFile, file_id)
-                if not f.pages_charged and enterprise_id is not None:
-                    ent = await db.get(User, enterprise_id)
-                    await charge_for_pages(db, ent, page_count)
-                    await increment_usage(db, enterprise_id, page_count)
-                    f.pages_charged = True
-                f.status = "extracted"
-                f.error_message = None
-            except Exception as e:  # file-level isolation: one bad file never fails the upload
-                logger.exception("accounting_extract_failed file_id=%s", file_id)
-                await db.rollback()
-                f = await db.get(AAFile, file_id)
-                f.status = "error"
-                f.error_message = str(e)[:500]
-            upload = await db.get(AAUpload, upload_id)
-            upload.processed_files += 1
-            await db.commit()
-            f = await db.get(AAFile, file_id)
-            if f.status == "extracted":
-                seen[company_id] = new_seen  # adopt keys only once this file's rows are committed
+        finally:  # job cancelled (shutdown) or failed: stop the reads still in flight
+            for _, task in reading:
+                if task is not None:
+                    task.cancel()
 
         for company_id in company_ids:
             try:

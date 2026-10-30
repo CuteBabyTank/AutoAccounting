@@ -342,7 +342,7 @@ def _get_gemini_client() -> genai.Client:
 # Transient-error retry: Gemini occasionally drops TLS connections mid-response
 # under load (SSL: UNEXPECTED_EOF_WHILE_READING) and returns 5xx on overload.
 # Without retry, a single hiccup fails the whole chunk and the whole batch.
-_GEMINI_MAX_ATTEMPTS = 2
+_GEMINI_MAX_ATTEMPTS = 4  # "model is experiencing high demand" 503s usually clear within ~10 s
 _GEMINI_BASE_BACKOFF = 1.5  # seconds; attempt N waits ~base * 2^(N-1) + jitter
 
 _TRANSIENT_ERROR_HINTS = (

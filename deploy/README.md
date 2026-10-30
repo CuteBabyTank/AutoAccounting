@@ -119,8 +119,10 @@ and redeploy. An empty base URL turns it off ("not configured"); the `assistant`
 
 ## Operating notes
 
-- **Background jobs.** Extraction runs as an in-process task. With request-based CPU it advances while the upload
-  screen polls (every 2 s). A job killed by scale-in or a deploy is resumed on the next read of that upload
+- **Background jobs.** Extraction runs as an in-process task after the upload request returns, so the backend
+  keeps its CPU between requests (`--no-cpu-throttling`, instance-based billing while an instance is up; it still
+  scales to zero). With request-based CPU the job only advanced during the 2 s polls and a one-page receipt took
+  minutes. A job killed by scale-in or a deploy is resumed on the next read of that upload
   (`jobs.stale_action`: no progress for 30 min → resume; older than 24 h → failed, re-drop). On shutdown the
   backend dates its unfinished uploads back so they resume at once (`pipeline.release_running`).
 - **Upload compression.** Up to 3 PDFs compress at once (`compress.PDF_WORKERS`, 768 MB cap each), which is

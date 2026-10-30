@@ -283,8 +283,8 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   Per-person rate limit: 40 turns / 10 minutes. Search sends the model the best 10 hits across all record kinds
   (`tools.SEARCH_K`) with true per-kind and overall totals (counts above 1000 per kind are marked as at least 1000);
   sources are limited to 12; list results to 25 (filings 50), GL lines 30.
-- **Production (`deploy/README.md`):** Cloud Run `asia-southeast1` (`aa-backend` ≤ 1 instance, request-based CPU,
-  scale to zero; `aa-frontend`), Supabase via the 6543 pooler as `aa_app` (NOBYPASSRLS; never `postgres`, which
+- **Production (`deploy/README.md`):** Cloud Run `asia-southeast1` (`aa-backend` ≤ 1 instance, CPU always allocated so
+  background extraction isn't throttled, scale to zero; `aa-frontend`), Supabase via the 6543 pooler as `aa_app` (NOBYPASSRLS; never `postgres`, which
   bypasses RLS; Data API off), uploads in a versioned bucket mounted at `/data` = `ACCOUNTING_DIR`, nightly
   `aa-db-backup` job. `bash deploy/setup-gcp.sh` once; a push to `prod` deploys (Cloud Build trigger `aa-prod-deploy`), or `bash deploy/deploy.sh` for the local tree (settings in
   `deploy/config.sh`, secrets `AA_*` in Secret Manager). Upload jobs are in-process tasks: a dead one is resumed on

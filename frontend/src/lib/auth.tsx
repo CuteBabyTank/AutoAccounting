@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import api, { TOKEN_KEY } from "@/lib/api";
+import api, { AUTH_EXPIRED, TOKEN_KEY } from "@/lib/api";
 import type { User } from "@/types";
 import { HOMEPAGE } from "@/lib/roles";
 
@@ -27,6 +27,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const onExpired = () => {
+      setUser(null);
+      setToken(null);
+    };
+    window.addEventListener(AUTH_EXPIRED, onExpired);
     const stored = sessionStorage.getItem(TOKEN_KEY);
     if (stored) {
       setToken(stored);
@@ -41,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else {
       setLoading(false);
     }
+    return () => window.removeEventListener(AUTH_EXPIRED, onExpired);
   }, []);
 
   const googleLogin = async (credential: string, acceptPrivacy = false): Promise<User> => {

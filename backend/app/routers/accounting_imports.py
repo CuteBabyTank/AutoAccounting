@@ -37,7 +37,8 @@ from app.schemas.accounting_imports import (
     ImportResultOut, ImportUndoOut, JePreviewOut,
     OpeningItemOut, OpeningItemPatch, OpeningItemsOut, OpenItemPreviewOut, RowIssueOut, TbLineOut,
 )
-from app.services.accounting import audit
+from app.services.accounting import audit, deletion
+from app.services.accounting.assignment import lock_firm
 from app.services.accounting.books import bank
 from app.services.accounting.books.chart import Chart
 from app.services.accounting.books.loader import active_closes, ensure_chart, opening_items, touch_books
@@ -244,6 +245,7 @@ async def confirm_import(company_id: uuid.UUID, kind: ImportKind, file: UploadFi
                          user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     _require_manager(user)
     ent = scope_for(user)
+    await lock_firm(db, ent)
     company = await company_or_404(db, ent, company_id)
     await _lock_company(db, company)   # an import and an undo of the same company don't interleave
     built = await _build(db, company, kind, file, parse_options(options))
@@ -435,6 +437,7 @@ async def undo_import(batch_id: uuid.UUID, user: User = Depends(get_current_user
     if user.role not in MANAGER_ROLES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and managers can undo an import")
     ent = scope_for(user)
+    await lock_firm(db, ent)
     batch = await _batch_or_404(db, ent, batch_id)
     company = await company_or_404(db, ent, batch.company_id)
     await _lock_company(db, company)
@@ -640,6 +643,7 @@ async def patch_opening_item(item_id: uuid.UUID, body: OpeningItemPatch, user: U
     """Record (or clear) a payment of an opening item made in cash / by bank outside a matched statement line."""
     _require_manager(user)
     ent = scope_for(user)
+    await lock_firm(db, ent)
     row = await _item_or_404(db, ent, item_id)
     company = await company_or_404(db, ent, row.company_id)
     before = audit.snapshot(row, _ITEM_FIELDS)
@@ -669,20 +673,15 @@ async def delete_opening_item(item_id: uuid.UUID, user: User = Depends(get_curre
                               db: AsyncSession = Depends(get_db)):
     _require_manager(user)
     ent = scope_for(user)
+    await lock_firm(db, ent)
     row = await _item_or_404(db, ent, item_id)
     company = await company_or_404(db, ent, row.company_id)
-    confirmed = (await db.execute(select(AABankLine.id).where(
-        AABankLine.enterprise_id == ent, AABankLine.company_id == company.id, AABankLine.match_kind == "document",
-        AABankLine.matched_ref == str(row.id), AABankLine.match_status == "confirmed", bank.live_line()).limit(1)
-    )).first()
-    if confirmed:
-        raise HTTPException(status.HTTP_409_CONFLICT, "A confirmed bank line pays this item; reject that match on the "
-                                                      "Bank page first")
+    affected_lines = await deletion.protect_opening_item(db, company, row)
     row.deleted_at = datetime.now(timezone.utc)
     audit.record(db, label=_item_label(row), ent=ent, company_id=company.id, user=user, entity="opening_item",
                  entity_id=row.id, action="delete", before=audit.snapshot(row, _ITEM_FIELDS), after=None)
     touch_books(company)
     await db.flush()
-    await bank.rematch(db, company)
+    await bank.rematch(db, company, line_ids={l.id for l in affected_lines})
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

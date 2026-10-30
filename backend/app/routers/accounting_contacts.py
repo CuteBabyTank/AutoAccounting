@@ -178,6 +178,7 @@ async def _contact_out(db: AsyncSession, company: AACompany, row: AAContact, sub
 
     account, atc = await _supplier_defaults(db, company.id, row.tin)
     auto = await supplier_automatic(db, company, row.tin) if row.role in ("supplier", "both") else None
+    recovered = _recovered(sub)
     return ContactOut(
         archived_at=row.archived_at,
         id=row.id, key=row.key, role=row.role, tin=row.tin, registered_name=row.registered_name,
@@ -191,7 +192,7 @@ async def _contact_out(db: AsyncSession, company: AACompany, row: AAContact, sub
         receivable=c2(sum((i.open for i in items if i.doc.kind == "ar"), ZERO)),
         payable=c2(sum((i.open for i in items if i.doc.kind == "ap"), ZERO)),
         documents=[_doc_out(d, open_by_id) for d in mine], payments=payments,
-        open_items=[_item_out(i, _recovered(sub)) for i in items], cwt_2307s=cwt, certificates=certificates,
+        open_items=[_item_out(i, recovered) for i in items], cwt_2307s=cwt, certificates=certificates,
         outgoing_2307s=sorted(outgoing, key=lambda o: o.doc_date, reverse=True),
     )
 

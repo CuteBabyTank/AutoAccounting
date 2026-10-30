@@ -57,7 +57,7 @@ export default function MoveDocumentDialog({ doc, onClose, onMoved }: Props) {
   /** The folder / quarter changes, as a document update (applied after the company move, if any). */
   const patch = useMemo<DocumentPatch>(() => {
     const p: DocumentPatch = {};
-    if (folder !== AUTO && folder !== doc.category) p.category = folder;
+    if (folder !== AUTO && (otherCompany || folder !== doc.category)) p.category = folder;
     if (byDate) {
       if (doc.period_locked && !otherCompany) Object.assign(p, { period_year: null, period_quarter: null });
     } else if (otherCompany || !doc.period_locked || yearNum !== doc.period_year || Number(quarter) !== doc.period_quarter) {

@@ -7,6 +7,7 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000
 export const seg = (value: string | number): string => encodeURIComponent(value);
 
 export const TOKEN_KEY = "autoaccounting_token";
+export const AUTH_EXPIRED = "aa:auth-expired";
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,
@@ -56,6 +57,7 @@ api.interceptors.response.use(
     }
     if (error.response?.status === 401 && typeof window !== "undefined") {
       sessionStorage.removeItem(TOKEN_KEY);
+      window.dispatchEvent(new Event(AUTH_EXPIRED));
       // Don't hard-redirect here; AuthGate handles routing.
     }
     return Promise.reject(error);

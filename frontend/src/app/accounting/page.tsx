@@ -166,9 +166,14 @@ export default function AccountingPage() {
 
   const loadCompanies = useCallback(async () => setCompanies(await accountingApi.listCompanies()), []);
   const loadTree = useCallback(async () => { setTree(await accountingApi.tree()); setTreeLoaded(true); }, []);
+  const folderRequest = useRef(0);
+  const selectedFolder = useRef<FolderRef | null>(null);
   const loadFolder = useCallback(async (ref: FolderRef | null) => {
+    if (ref !== selectedFolder.current) return;
+    const request = ++folderRequest.current;
     // The Annual, Books and ATC databank nodes have no document folder of their own.
-    setFolder(ref && ref.quarter !== 0 && !ref.view ? await accountingApi.folder(ref.companyId, ref.year, ref.quarter) : null);
+    const next = ref && ref.quarter !== 0 && !ref.view ? await accountingApi.folder(ref.companyId, ref.year, ref.quarter) : null;
+    if (request === folderRequest.current && ref === selectedFolder.current) setFolder(next);
   }, []);
 
   useEffect(() => {
@@ -192,8 +197,11 @@ export default function AccountingPage() {
   }, []);
 
   useEffect(() => {
+    selectedFolder.current = selected;
+    setFolder(null);
     setCategory(null);
     loadFolder(selected).catch((e) => setError(apiErrorMessage(e, "Couldn't open the folder")));
+    return () => { folderRequest.current += 1; };
   }, [selected, loadFolder]);
 
   // Poll while the server is working on the active upload.
@@ -330,7 +338,7 @@ export default function AccountingPage() {
   };
 
   const refreshAfterDocChange = () => {
-    loadFolder(selected).catch(() => undefined);
+    loadFolder(selectedFolder.current).catch(() => undefined);
     loadTree().catch(() => undefined);
     setPeriodRefresh((n) => n + 1);
   };
@@ -470,6 +478,7 @@ export default function AccountingPage() {
             {!offView && (<>
             {folder && folder.year !== null && folder.quarter !== null && (
               <PeriodPanel
+                key={`${folder.company.id}-${folder.year}-${folder.quarter}`}
                 companyId={folder.company.id}
                 year={folder.year}
                 quarter={folder.quarter}
@@ -480,6 +489,7 @@ export default function AccountingPage() {
             )}
             {selected?.quarter === 0 && selected.year !== null && (
               <AnnualPanel
+                key={`${selected.companyId}-${selected.year}`}
                 companyId={selected.companyId}
                 companyName={tree.find((c) => c.id === selected.companyId)?.registered_name ?? ""}
                 year={selected.year}

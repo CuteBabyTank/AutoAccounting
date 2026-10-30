@@ -24,6 +24,7 @@ from app.schemas.accounting import manila_today
 from app.schemas.accounting_books import JournalEntryOut
 from app.schemas.accounting_contacts import OpenItemOut
 from app.services.accounting import audit
+from app.services.accounting.assignment import lock_firm
 from app.services.accounting.books.chart import locked_message
 from app.services.accounting.books.loader import active_closes, ensure_chart, touch_books
 from app.services.accounting.books.subledger import load_subledger
@@ -94,6 +95,7 @@ async def write_off(company_id: uuid.UUID, body: WriteOffIn, user: User = Depend
     if user.role not in MANAGER_ROLES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and managers can write off invoices")
     ent = scope_for(user)
+    await lock_firm(db, ent)  # payment edits and month close use this lock too
     company = await company_or_404(db, ent, company_id)
     # one write-off per company at a time: two at once would both see the same invoices open
     await db.execute(select(AACompany.id).where(AACompany.id == company.id, AACompany.enterprise_id == ent)

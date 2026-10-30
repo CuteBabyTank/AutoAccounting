@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type KeyboardEvent } from "react";
-import { casperFraction, clampCasper, defaultCasper, restoreCasper, type CasperPoint, type CasperViewport } from "./casper-position";
+import { casperFraction, clampCasper, defaultCasper, restoreCasper, snapCasper, type CasperPoint, type CasperViewport } from "./casper-position";
 
 const POSITION_KEY = "aa:casper:pos";
 const viewport = (): CasperViewport => ({
@@ -9,6 +9,8 @@ const viewport = (): CasperViewport => ({
   height: window.innerHeight,
   // Leave the phone's navigation / safe area reachable, even after a drag.
   bottom: window.innerWidth < 768 ? 80 : 8,
+  // On desktop the sidebar sits in the page's flow; Casper's left side starts after it (phones slide it over).
+  left: window.innerWidth >= 768 ? Math.max(0, document.querySelector("aside.aa-rail-panel")?.getBoundingClientRect().right ?? 0) : 0,
 });
 
 export default function useDraggable(onMove: () => void) {
@@ -22,7 +24,8 @@ export default function useDraggable(onMove: () => void) {
 
   const move = useCallback((point: CasperPoint, persist = false) => {
     const view = viewport();
-    const next = { point: clampCasper(point, view), view };
+    // Free while dragging; once dropped it settles against the nearer side.
+    const next = { point: persist ? snapCasper(point, view) : clampCasper(point, view), view };
     current.current = next;
     fraction.current = casperFraction(next.point, view);
     setLayout(next);
@@ -46,7 +49,14 @@ export default function useDraggable(onMove: () => void) {
     };
     resize();
     window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
+    // Expanding / collapsing the sidebar moves the left side Casper rests on.
+    const sidebar = document.querySelector("aside.aa-rail-panel");
+    const observer = sidebar && typeof ResizeObserver !== "undefined" ? new ResizeObserver(resize) : null;
+    if (sidebar) observer?.observe(sidebar);
+    return () => {
+      window.removeEventListener("resize", resize);
+      observer?.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -112,8 +122,10 @@ export default function useDraggable(onMove: () => void) {
         // A previous drag must never suppress keyboard activation.
         if (e.key === "Enter" || e.key === " ") suppressClick.current = false;
         if (!e.altKey || !current.current) return;
+        // Left / right switch sides; up / down slide along the side.
+        const across = current.current.view.width;
         const delta: Record<string, CasperPoint> = {
-          ArrowLeft: { x: -16, y: 0 }, ArrowRight: { x: 16, y: 0 },
+          ArrowLeft: { x: -across, y: 0 }, ArrowRight: { x: across, y: 0 },
           ArrowUp: { x: 0, y: -16 }, ArrowDown: { x: 0, y: 16 },
         };
         const step = delta[e.key];

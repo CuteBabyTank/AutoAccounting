@@ -2,7 +2,13 @@ export const CASPER_SIZE = 72;
 const MARGIN = 8;
 
 export interface CasperPoint { x: number; y: number }
-export interface CasperViewport { width: number; height: number; bottom: number }
+export interface CasperViewport {
+  width: number;
+  height: number;
+  bottom: number;
+  /** Where the page starts on the left (the desktop sidebar's right edge); 0 when nothing is there. */
+  left?: number;
+}
 
 export function clampCasper(point: CasperPoint, view: CasperViewport): CasperPoint {
   return {
@@ -11,8 +17,19 @@ export function clampCasper(point: CasperPoint, view: CasperViewport): CasperPoi
   };
 }
 
+const edgeGap = (view: CasperViewport) => (view.width < 768 ? 20 : 24);
+
+/** Casper rests against a side: the nearer of the left (past the sidebar) and right edges, at the same height. */
+export function snapCasper(point: CasperPoint, view: CasperViewport): CasperPoint {
+  const gap = edgeGap(view);
+  const left = (view.left ?? 0) + gap;
+  const right = view.width - CASPER_SIZE - gap;
+  const middle = ((view.left ?? 0) + view.width) / 2;
+  return clampCasper({ x: point.x + CASPER_SIZE / 2 < middle ? left : right, y: point.y }, view);
+}
+
 export function defaultCasper(view: CasperViewport): CasperPoint {
-  const gap = view.width < 768 ? 20 : 24;
+  const gap = edgeGap(view);
   return clampCasper({ x: view.width - CASPER_SIZE - gap, y: view.height - CASPER_SIZE - Math.max(gap, view.bottom) }, view);
 }
 
@@ -28,7 +45,8 @@ export function restoreCasper(value: unknown, view: CasperViewport): CasperPoint
     || typeof value.x !== "number" || typeof value.y !== "number"
     || !Number.isFinite(value.x) || !Number.isFinite(value.y)
     || value.x < 0 || value.x > 1 || value.y < 0 || value.y > 1) return defaultCasper(view);
-  return clampCasper({
+  // Positions saved before Casper kept to the sides (anywhere on the page) snap to the nearer side.
+  return snapCasper({
     x: MARGIN + value.x * Math.max(0, view.width - CASPER_SIZE - MARGIN * 2),
     y: MARGIN + value.y * Math.max(0, view.height - CASPER_SIZE - view.bottom - MARGIN),
   }, view);

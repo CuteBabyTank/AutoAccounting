@@ -4,8 +4,10 @@ import { useState } from "react";
 import { ArrowLeft, FolderSimple } from "@phosphor-icons/react";
 import Hint from "@/components/guide/Hint";
 import { accountingApi } from "@/lib/accounting-api";
-import { CATEGORY_LABELS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, counterpartyName, formatPeso } from "@/lib/accounting-format";
+import { CATEGORY_LABELS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, counterpartyName, formatPeso, reasonName } from "@/lib/accounting-format";
 import type { AADocument, Folder } from "@/types/accounting";
+import QuickPicks from "@/components/QuickPicks";
+import { PRESETS } from "@/lib/quick-picks";
 
 const TILES = ["sales", "purchases", "expenses", "payroll", "2307", "support", "unsorted", "review"] as const;
 
@@ -18,16 +20,6 @@ interface Props {
   /** After a bulk resolve in the review queue: reload the folder and tree. */
   onBulkResolved?: () => void;
 }
-
-const SHORT_REASON: Record<string, string> = {
-  low_confidence: "Low confidence", missing_date: "No date", missing_amount: "No amount", unsorted: "Unsorted",
-  not_addressed_to_client: "Not addressed to client", seller_not_vat_registered: "Seller not VAT", not_an_invoice: "Not an invoice",
-  vat_math_mismatch: "VAT not 12%", amounts_dont_add_up: "Amounts don't add up", possible_duplicate: "Possible duplicate",
-  other_company_tin: "Other company's TIN", nothing_extracted: "Nothing read", possible_payment: "Possible payment",
-  supplier_rule_mismatch: "Supplier rule mismatch", tendered_less_than_total: "Tendered short", ewt_expected: "EWT expected",
-  payment_source_unknown: "Payment source unknown", duplicate_invoice_number: "Duplicate number", personal_purchase: "Personal",
-  account_locked: "Locked account", receipt_incomplete: "Invalid receipt", needs_review: "Needs review",
-};
 
 const DUPLICATE = new Set(["possible_duplicate", "duplicate_invoice_number"]);
 
@@ -144,7 +136,7 @@ export default function FileGrid({ folder, category, onCategory, onOpen, onEditC
                 }}
                 className={`rounded-full border px-2.5 py-0.5 ${filter === r ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
               >
-                {SHORT_REASON[r] ?? r} · {n}
+                {reasonName(r)} · {n}
               </button>
             ))}
           </div>
@@ -165,6 +157,7 @@ export default function FileGrid({ folder, category, onCategory, onOpen, onEditC
                 value={why}
                 onChange={(e) => setWhy(e.target.value)}
               />
+              <QuickPicks kind="bulk-reason" presets={PRESETS.bulk} value={why} onPick={setWhy} className="order-last w-full" />
               <button
                 className="rounded-lg bg-[var(--accent)] px-3 py-1 font-medium text-white disabled:opacity-60"
                 disabled={busy || chosen.length === 0 || why.trim().length < 3}
@@ -241,7 +234,7 @@ export default function FileGrid({ folder, category, onCategory, onOpen, onEditC
                               ? "bg-[var(--badge-red-bg)] text-[var(--badge-red-text)]"
                               : "border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"}`}
                           >
-                            {SHORT_REASON[r] ?? REASON_LABELS[r] ?? r}
+                            {reasonName(r)}
                           </button>
                         ))}
                       </div>

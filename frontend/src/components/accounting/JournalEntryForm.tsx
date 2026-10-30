@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import AmountInput from "@/components/AmountInput";
+import QuickPicks from "@/components/QuickPicks";
+import { PRESETS } from "@/lib/quick-picks";
 import { Plus, Trash } from "@phosphor-icons/react";
 import type { Account, JournalEntryInput, JournalLine } from "@/types/accounting";
 
@@ -39,6 +41,15 @@ export default function JournalEntryForm({ accounts, initial, busy, onCancel, on
   // Locked accounts take no new lines; a line already on one (posted before the lock) keeps it.
   const active = accounts.filter((a) => a.active && (!a.locked || initial.lines.some((l) => l.account_code === a.code)));
   const opening = entry.kind === "opening";
+  // "Balance it": put the difference on the first line with no amount yet (else a new line).
+  const gap = debit - credit;
+  const balanceLine = lines.findIndex((l) => !l.debit && !l.credit);
+  const balance = () => {
+    const amount = (Math.abs(gap) / 100).toFixed(2);
+    const side: Partial<JournalLine> = gap > 0 ? { credit: amount, debit: "" } : { debit: amount, credit: "" };
+    if (balanceLine >= 0) setLine(balanceLine, side);
+    else setEntry((e) => ({ ...e, lines: [...lines, { ...BLANK, ...side }] }));
+  };
 
   return (
     <div className="rounded-lg border border-[var(--border)] p-3">
@@ -55,6 +66,11 @@ export default function JournalEntryForm({ accounts, initial, busy, onCancel, on
         )}
         <input className={INPUT} placeholder="Reference" maxLength={60} value={entry.reference} onChange={(e) => setEntry({ ...entry, reference: e.target.value })} />
         <input className={INPUT} placeholder="Particulars" maxLength={255} value={entry.particulars} onChange={(e) => setEntry({ ...entry, particulars: e.target.value })} />
+        {!opening && (
+          <div className="col-span-2 md:col-span-4">
+            <QuickPicks kind="je-particulars" presets={PRESETS.particulars} value={entry.particulars} onPick={(p) => setEntry({ ...entry, particulars: p })} className="" />
+          </div>
+        )}
         {!opening && (
           <label className="col-span-2 flex items-center gap-2 text-sm text-[var(--text-primary)] md:col-span-4">
             <input
@@ -106,6 +122,15 @@ export default function JournalEntryForm({ accounts, initial, busy, onCancel, on
           Debits ₱{(debit / 100).toLocaleString("en-PH", { minimumFractionDigits: 2 })} · Credits ₱{(credit / 100).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
           {problem && `: ${problem}`}
         </span>
+        {gap !== 0 && used.length >= 1 && (
+          <button
+            className="rounded-full border border-dashed border-[var(--accent)] px-2 py-0.5 text-xs text-[var(--accent)]"
+            title="Put the difference on the next empty line"
+            onClick={balance}
+          >
+            Balance it: {gap > 0 ? "credit" : "debit"} ₱{(Math.abs(gap) / 100).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+          </button>
+        )}
         <span className="ml-auto flex gap-2">
           <button className="rounded-lg border border-[var(--border)] px-3 py-1.5" onClick={onCancel}>Cancel</button>
           <button

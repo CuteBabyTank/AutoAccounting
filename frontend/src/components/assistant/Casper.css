@@ -1,4 +1,6 @@
 .aa-casper-anchor { position: fixed; z-index: 55; width: 72px; height: 72px; }
+/* Glides to its side after a drop; follows the pointer exactly while dragging. */
+.aa-casper-anchor[data-dragging="false"] { transition: left 240ms cubic-bezier(0.2, 0.8, 0.2, 1), top 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .aa-casper-launcher { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .aa-casper-anchor .aa-casper-launcher[data-dragging="true"] {
   cursor: grabbing;
@@ -53,4 +55,5 @@
   .aa-casper-launcher, .aa-casper-launcher:hover, .aa-casper-anchor .aa-casper-launcher[data-dragging="true"],
   .aa-casper-lift, .aa-casper-launcher[data-dragging="true"] .aa-casper-lift { transform: none; transition: none; animation: none; }
   .aa-casper-bubble, .aa-casper-bubble[data-leaving="true"], .aa-casper-options { animation: none; transition: none; }
+  .aa-casper-anchor[data-dragging="false"] { transition: none; }
 }

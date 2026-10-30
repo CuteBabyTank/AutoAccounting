@@ -7,8 +7,10 @@ import AtcPicker from "@/components/accounting/AtcPicker";
 import AuditTrail, { formatWhen } from "@/components/accounting/AuditTrail";
 import DuplicateCompare from "@/components/accounting/DuplicateCompare";
 import AmountInput from "@/components/AmountInput";
+import QuickPicks from "@/components/QuickPicks";
 import MoveDocumentDialog from "@/components/accounting/MoveDocumentDialog";
 import { accountingApi } from "@/lib/accounting-api";
+import { PRESETS } from "@/lib/quick-picks";
 import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, formatPeso, reasonDetail, formatTin, tinBranch } from "@/lib/accounting-format";
 import type { AADocument, Account, AuditEvent, DocumentPatch, DuplicatePair, PaymentLinks } from "@/types/accounting";
 import PageViewer from "@/components/accounting/PageViewer";
@@ -525,6 +527,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
               placeholder="e.g. Client confirmed this is their delivery receipt"
               onChange={(e) => setReason(e.target.value)}
             />
+            <QuickPicks kind="review-reason" presets={PRESETS.review} value={reason} onPick={setReason} />
           </div>
         )}
         <div className={`${needsReview && !override ? "mt-3" : "mt-5"} flex flex-wrap gap-2`}>
@@ -591,6 +594,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
               placeholder="e.g. Owner's personal purchase"
               onChange={(e) => setReason(e.target.value)}
             />
+            <QuickPicks kind="exclude-reason" presets={PRESETS.exclude} value={reason} onPick={setReason} />
             <div className="mt-2 flex gap-2">
               <button
                 className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"

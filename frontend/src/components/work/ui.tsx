@@ -61,10 +61,7 @@ export function dueText(daysLeft: number): string {
   return `${late} day${late === 1 ? "" : "s"} late`;
 }
 
-export function reasonName(reason: string): string {
-  const text = reason.replace(/_/g, " ");
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
+export { reasonName } from "@/lib/accounting-format";
 
 export function todayIso(): string {
   const now = new Date();

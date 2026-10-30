@@ -8,6 +8,8 @@ import { apiErrorMessage, formatAmount } from "@/lib/accounting-format";
 import { PRESETS, presetRange, type PresetKey } from "@/lib/report-periods";
 import { BTN, BTN_PRIMARY, Chip, INPUT } from "@/components/work/ui";
 import type { Account, ReclassifyList, ReclassifyPreview } from "@/types/accounting";
+import QuickPicks from "@/components/QuickPicks";
+import { PRESETS as PICKS } from "@/lib/quick-picks";
 
 interface Props {
   companyId: string;
@@ -248,6 +250,7 @@ export default function ReclassifyPanel({ companyId, companyName, fiscalYearEndM
             <input className={`${INPUT} w-72`} placeholder="Reason (kept in the audit log)" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
             <button className={BTN_PRIMARY} disabled={busy || reason.trim().length < 3} onClick={() => run(true)}>Reclassify {preview.count}</button>
             <button className={BTN} onClick={() => setPreview(null)}>Cancel</button>
+            <QuickPicks kind="reclassify-reason" presets={PICKS.reclassify} value={reason} onPick={setReason} className="w-full" />
           </div>
         </div>
       )}

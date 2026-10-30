@@ -6,6 +6,8 @@ import { apiErrorMessage } from "@/lib/accounting-format";
 import { useFilePreview } from "@/components/accounting/PdfPreview";
 import { FeatureOff, useFeatures } from "@/lib/features";
 import type { BooksYear } from "@/types/accounting";
+import QuickPicks from "@/components/QuickPicks";
+import { PRESETS } from "@/lib/quick-picks";
 
 interface Props {
   companyId: string;
@@ -32,6 +34,8 @@ export default function BookMonths({ companyId, year, canManage: canManageBooks,
   // A month whose bank statement isn't reconciled can still close, with a reason for the audit log.
   const [bankBlock, setBankBlock] = useState<{ month: string; message: string } | null>(null);
   const [overrideReason, setOverrideReason] = useState("");
+  // Months before the books started have nothing to show; folded away unless asked for.
+  const [showBefore, setShowBefore] = useState(false);
   const file = useFilePreview();
 
   const load = useCallback(() => accountingApi.booksYear(companyId, year).then(setData), [companyId, year]);
@@ -101,7 +105,7 @@ export default function BookMonths({ companyId, year, canManage: canManageBooks,
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)]">
-            {data.months.map((m) => (
+            {data.months.filter((m) => showBefore || m.status !== "before_books").map((m) => (
               <tr key={m.start}>
                 <td className="py-1.5 pr-3 text-[var(--text-primary)]">{monthName(m.start)}</td>
                 <td className="py-1.5 pr-3 text-[var(--text-secondary)]">
@@ -132,6 +136,7 @@ export default function BookMonths({ companyId, year, canManage: canManageBooks,
                           value={overrideReason}
                           onChange={(e) => setOverrideReason(e.target.value)}
                         />
+                        <QuickPicks kind="close-reason" presets={PRESETS.close} value={overrideReason} onPick={setOverrideReason} className="order-last w-full" />
                         <button className={BTN} disabled={Boolean(busy) || overrideReason.trim().length < 5}
                           onClick={() => run("close", () => accountingApi.closeBooksMonth(companyId, m.start, overrideReason.trim()), m.start)}>
                           Close anyway
@@ -153,6 +158,7 @@ export default function BookMonths({ companyId, year, canManage: canManageBooks,
                           value={reopenReason}
                           onChange={(e) => setReopenReason(e.target.value)}
                         />
+                        <QuickPicks kind="reopen-reason" presets={PRESETS.reopen} value={reopenReason} onPick={setReopenReason} className="order-last w-full" />
                         <button className={BTN} disabled={Boolean(busy)}
                           onClick={() => run("reopen", () => accountingApi.reopenBooksMonth(companyId, reopenReason.trim()))}>Confirm reopen</button>
                         <button className={BTN} onClick={() => setConfirmReopen(false)}>Cancel</button>
@@ -165,6 +171,11 @@ export default function BookMonths({ companyId, year, canManage: canManageBooks,
           </tbody>
         </table>
       </div>
+      {data.months.some((m) => m.status === "before_books") && (
+        <button className="mt-1 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]" onClick={() => setShowBefore((v) => !v)}>
+          {showBefore ? "Hide months before the books started" : `Show ${data.months.filter((m) => m.status === "before_books").length} months before the books started`}
+        </button>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {data.bound ? (
           data.bound_books.map((b) => (

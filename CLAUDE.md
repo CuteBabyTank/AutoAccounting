@@ -267,7 +267,8 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   Feature switch `assistant`. Casper is the assistant mascot (`components/assistant/CasperLauncher.tsx`,
   `CasperBubble.tsx`, `casper-lines.ts`, `casper-position.ts`, `Casper.css`). UI:
   `components/assistant/AssistantDock.tsx`, mounted in the AuthGate shell beside
-  `<main>` (it pushes the page over at md+, a sheet on phones; launcher bottom-right, Ctrl/Cmd-J), `ThinkingTrail.tsx`
+  `<main>` (it pushes the page over at md+, a sheet on phones; launcher bottom-right, Ctrl/Cmd-J; a dragged launcher
+  snaps to the nearer side edge, the left one past the sidebar, via `casper-position.snapCasper`), `ThinkingTrail.tsx`
   (live steps from `thought` / `action` / `observation` events, folded to "Ran N lookups" after) and `AnswerText.tsx`;
   stream client + `GET /assistant/info` (model name) in `lib/assistant-api.ts`. Small-model safety nets in `loop.run`:
   a firm question answered from history alone is looked up again; a part of the question a tool clearly owns

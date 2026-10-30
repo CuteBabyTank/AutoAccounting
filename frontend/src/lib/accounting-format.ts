@@ -60,6 +60,24 @@ export const REASON_LABELS: Record<string, string> = {
 };
 
 /** Reasons shown as a note only: they never put a document in the review queue or block a month close. */
+/** Short names for review reasons (chips, health check); REASON_LABELS has the full explanation. */
+export const REASON_NAMES: Record<string, string> = {
+  low_confidence: "Low confidence", missing_date: "No date", missing_amount: "No amount", unsorted: "Unsorted",
+  not_addressed_to_client: "Not addressed to client", seller_not_vat_registered: "Seller not VAT", not_an_invoice: "Not an invoice",
+  vat_math_mismatch: "VAT not 12%", amounts_dont_add_up: "Amounts don't add up", possible_duplicate: "Possible duplicate",
+  other_company_tin: "Other company's TIN", nothing_extracted: "Nothing read", possible_payment: "Possible payment",
+  supplier_rule_mismatch: "Supplier rule mismatch", tendered_less_than_total: "Tendered short", ewt_expected: "EWT expected",
+  payment_source_unknown: "Payment source unknown", duplicate_invoice_number: "Duplicate number", personal_purchase: "Personal",
+  account_locked: "Locked account", receipt_incomplete: "Invalid receipt", needs_review: "Needs review",
+  payment_unverified: "Payment unverified",
+};
+
+export function reasonName(reason: string): string {
+  if (REASON_NAMES[reason]) return REASON_NAMES[reason];
+  const text = reason.replace(/_/g, " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export const SOFT_REASONS = new Set(["payment_unverified"]);
 
 /** The extra detail a reason carries (suggested ATC, recomputed VAT, cash tendered), or "". */

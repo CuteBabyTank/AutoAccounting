@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "@phosphor-icons/react";
+import QuickPicks from "@/components/QuickPicks";
 import TaskHistory from "@/components/work/TaskHistory";
 import { workApi } from "@/lib/work-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
+import { PRESETS } from "@/lib/quick-picks";
 import type { Person, Task, TaskInput } from "@/types/work";
 import { BTN, BTN_PRIMARY, INPUT } from "@/components/work/ui";
 
@@ -20,6 +22,25 @@ interface Props {
 }
 
 const LABEL = "block text-xs font-medium text-[var(--text-secondary)] mb-1";
+const SHORTCUT = "rounded-full border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] aria-pressed:border-[var(--accent)] aria-pressed:text-[var(--accent)]";
+
+/** Local calendar date as YYYY-MM-DD (toISOString would shift to UTC). */
+function isoDay(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dueShortcuts(): [string, string][] {
+  const today = new Date();
+  const at = (days: number) => isoDay(new Date(today.getFullYear(), today.getMonth(), today.getDate() + days));
+  const friday = (5 - today.getDay() + 7) % 7 || 7;
+  return [
+    ["Today", at(0)],
+    ["Tomorrow", at(1)],
+    ["Friday", at(friday)],
+    ["In a week", at(7)],
+    ["Month end", isoDay(new Date(today.getFullYear(), today.getMonth() + 1, 0))],
+  ];
+}
 
 /** Add or edit a task: what to do, for whom, by when, about which client and period. */
 export default function TaskForm({ task, defaults, companies, people, onClose, onSaved }: Props) {
@@ -89,6 +110,7 @@ export default function TaskForm({ task, defaults, companies, people, onClose, o
               value={form.title}
               onChange={(e) => set("title", e.target.value)}
             />
+            {!task && <QuickPicks kind="task-title" presets={PRESETS.task} value={form.title} onPick={(t) => set("title", t)} />}
           </div>
           <div>
             <label className={LABEL} htmlFor="task-notes">Notes</label>
@@ -105,6 +127,13 @@ export default function TaskForm({ task, defaults, companies, people, onClose, o
             <div>
               <label className={LABEL} htmlFor="task-due">Due</label>
               <input id="task-due" type="date" className={`${INPUT} w-full`} value={form.due_date ?? ""} onChange={(e) => set("due_date", e.target.value || null)} />
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {dueShortcuts().map(([label, day]) => (
+                  <button key={label} type="button" className={SHORTCUT} aria-pressed={form.due_date === day} onClick={() => set("due_date", day)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div>
               <label className={LABEL} htmlFor="task-priority">Priority</label>

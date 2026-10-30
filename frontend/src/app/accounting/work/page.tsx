@@ -323,7 +323,8 @@ export default function WorkBoardPage() {
                               value={c.status_override}
                               onChange={(e) => update(c, { status_override: e.target.value as WorkItemInput["status_override"] })}
                             >
-                              <option value="">Automatic ({STATUS_META[c.auto_status].label.toLowerCase()})</option>
+                              {/* The chip beside it already names the status; the select only says who sets it. */}
+                              <option value="">Auto</option>
                               {STATUS_ORDER.filter((s) => s !== "filed").map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
                             </select>
                           )}

@@ -1,5 +1,6 @@
 """The firm assistant: one chat turn as a server-sent event stream (read-only; see services/accounting/assistant)."""
 
+import asyncio
 import json
 import logging
 from typing import Literal
@@ -39,6 +40,26 @@ def _sse(event: dict) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
 
 
+_pending_writes: set[asyncio.Task] = set()  # strong references until each shielded write finishes
+
+
+async def _save_usage(ent, user: User, totals: dict) -> None:
+    """Add one turn to today's counters; a failed write logs and never breaks the reply."""
+    day = usage.today()  # A turn spanning midnight belongs to the day it finishes.
+    usage.platform.add(totals, day)
+    async with async_session() as db:
+        try:
+            await bind_session_user(db, str(user.id))
+            await usage.record(db, ent, user.id, day, totals)
+            await db.commit()
+        except Exception:
+            logger.exception("assistant_usage_write_failed user=%s firm=%s", user.id, ent)
+            try:
+                await db.rollback()
+            except Exception:
+                logger.exception("assistant_usage_rollback_failed user=%s", user.id)
+
+
 @router.get("/assistant/info")
 async def assistant_info(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict:
     """What the chat shows in its composer: the model answering, and whether it runs on this server's machine."""
@@ -76,27 +97,30 @@ async def assistant_chat(body: ChatIn, user: User = Depends(get_current_user), d
     question = body.question.strip()
     history = [m.model_dump() for m in body.history]
 
+    meter = {"prompt": 0, "completion": 0, "cached": 0, "calls": 0}  # loop.run adds every model call as it happens
+
     async def stream():
-        # Its own session: the stream outlives the request's dependencies. RLS binds to the person, as everywhere.
-        async with async_session() as db:
-            await bind_session_user(db, str(user.id))
-            ctx = tools.Ctx(db=db, user=user, ent=ent)
-            async for event in loop.run(ctx, question, history):
-                if (event["type"] in {"final", "clarify"}
-                        or event["type"] == "error" and event.get("usage", {}).get("calls")):
-                    totals = event["usage"]
-                    day = usage.today()  # A turn spanning midnight belongs to the day it finishes.
-                    usage.platform.add(totals, day)
-                    try:
-                        await usage.record(db, ent, user.id, day, totals)
-                        await db.commit()
-                    except Exception:
-                        logger.exception("assistant_usage_write_failed user=%s firm=%s", user.id, ent)
-                        try:
-                            await db.rollback()
-                        except Exception:
-                            logger.exception("assistant_usage_rollback_failed user=%s", user.id)
-                yield _sse(event)
+        saved = False
+        try:
+            # Its own session: the stream outlives the request's dependencies. RLS binds to the person, as everywhere.
+            async with async_session() as db:
+                await bind_session_user(db, str(user.id))
+                ctx = tools.Ctx(db=db, user=user, ent=ent)
+                async for event in loop.run(ctx, question, history, meter=meter):
+                    if event["type"] in {"final", "clarify", "error"}:
+                        meter.update(event.get("usage") or {})
+                        if event["type"] != "error" or meter["calls"]:
+                            await _save_usage(ent, user, dict(meter))
+                        saved = True
+                    yield _sse(event)
+        finally:
+            if not saved and meter["calls"]:
+                # The person left mid-turn: the calls already made still count. Shielded so the write
+                # finishes even though this stream is being cancelled.
+                task = asyncio.create_task(_save_usage(ent, user, dict(meter)))
+                _pending_writes.add(task)
+                task.add_done_callback(_pending_writes.discard)
+                await asyncio.shield(task)
 
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

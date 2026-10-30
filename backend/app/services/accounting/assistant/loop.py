@@ -515,9 +515,10 @@ def cap_answer(answer: str, limit: int | None = None) -> str:
 
 
 async def run(ctx: tools.Ctx, question: str, history: list[dict] | None,
-              generate: Generate = llm.chat) -> AsyncIterator[dict]:
+              generate: Generate = llm.chat, meter: dict | None = None) -> AsyncIterator[dict]:
     started = time.monotonic()
-    usage = {"prompt": 0, "completion": 0, "cached": 0, "calls": 0}
+    # The caller's meter, when given, sees each call as it happens (a turn cut off mid-way still counts).
+    usage = meter if meter is not None else {"prompt": 0, "completion": 0, "cached": 0, "calls": 0}
     terminal = {}
 
     async def counted(contents, declarations, choice):

@@ -374,7 +374,7 @@ async def test_stream_persists_usage_under_rls_without_breaking_reply(monkeypatc
     db, user = UsageDB(fail_write=fail_write), employee()
     monkeypatch.setattr(usage, "platform", usage.PlatformUsage())
     monkeypatch.setattr(router, "async_session", lambda: db)
-    async def run(*args):
+    async def run(*args, **kwargs):
         yield {"type": "start"}
         yield {"type": kind, "usage": {"prompt": 100, "completion": 10, "cached": 90, "calls": 2}}
     monkeypatch.setattr(loop, "run", run)
@@ -514,3 +514,24 @@ async def test_truncated_tool_arguments_keep_invalid_json_path(monkeypatch):
     observations = [e for e in events if e["type"] == "observation"]
     assert observations[0]["ok"] is False and "Invalid JSON" in observations[0]["summary"]
     assert events[-1]["type"] == "final" and not events[-1]["answer"].endswith("…")
+
+
+async def test_usage_is_saved_when_the_person_leaves_mid_turn(monkeypatch):
+    from sqlalchemy.dialects import postgresql
+    from app.routers import accounting_assistant as router
+    from app.services.accounting.assistant import usage
+    db, user = UsageDB(), employee()
+    monkeypatch.setattr(usage, "platform", usage.PlatformUsage())
+    monkeypatch.setattr(router, "async_session", lambda: db)
+    async def run(*args, meter, **kwargs):
+        meter.update(prompt=500, completion=40, cached=0, calls=2)  # two model calls already paid for
+        yield {"type": "start"}
+        yield {"type": "action", "tool": "filings"}
+    monkeypatch.setattr(loop, "run", run)
+    response = await router.assistant_chat(router.ChatIn(question="Hello"), user=user, db=UsageDB())
+    frames = response.body_iterator
+    await frames.__anext__()
+    await frames.aclose()  # the browser closed the stream before the answer
+    params = db.statements[-1].compile(dialect=postgresql.dialect()).params
+    assert params["calls"] == 2 and params["prompt_tokens"] == 500 and params["turns"] == 1
+    assert db.commits == 1 and usage.platform.tokens == 540

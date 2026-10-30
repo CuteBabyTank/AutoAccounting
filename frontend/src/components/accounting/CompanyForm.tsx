@@ -37,6 +37,12 @@ const EMPTY: CompanyInput = {
 };
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+// Who signs the books' sworn declaration, by taxpayer type ("I, <name>, <position> of <company>…").
+const SIGNER: Record<CompanyInput["taxpayer_type"], { nameLabel: string; titles: string[] }> = {
+  corporation: { nameLabel: "Authorized officer", titles: ["President", "Treasurer", "Corporate Secretary", "General Manager", "Chief Financial Officer"] },
+  partnership: { nameLabel: "Authorized partner", titles: ["Managing Partner", "General Partner", "Partner"] },
+  individual: { nameLabel: "Taxpayer (signs the books)", titles: ["Proprietor", "Owner"] },
+};
 const INPUT = "w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]";
 const LABEL = "block text-xs font-medium text-[var(--text-secondary)] mb-1";
 
@@ -307,12 +313,34 @@ export default function CompanyForm({ initial, companyId, onClose, onSaved }: Pr
                 </span>
               </div>
               <div>
-                <label className={LABEL}>Signatory (sworn declaration)</label>
-                <input className={INPUT} maxLength={120} value={form.books_signatory} onChange={(e) => set("books_signatory", e.target.value)} />
+                <label className={LABEL}>{SIGNER[form.taxpayer_type].nameLabel}</label>
+                <input
+                  className={INPUT}
+                  maxLength={120}
+                  value={form.books_signatory}
+                  placeholder={form.owner_names[0] ? `e.g. ${form.owner_names[0]}` : "Full name, e.g. Maria L. Santos"}
+                  onChange={(e) => set("books_signatory", e.target.value)}
+                />
+                <span className="mt-0.5 block text-[11px] text-[var(--text-secondary)]">
+                  Signs the sworn declaration when the year&apos;s books close. Blank leaves a line to sign by hand.
+                </span>
               </div>
               <div>
-                <label className={LABEL}>Signatory title</label>
-                <input className={INPUT} maxLength={60} value={form.books_signatory_title} onChange={(e) => set("books_signatory_title", e.target.value)} />
+                <label className={LABEL}>Position</label>
+                <input
+                  className={INPUT}
+                  maxLength={60}
+                  list="aa-signatory-titles"
+                  value={form.books_signatory_title}
+                  placeholder={`e.g. ${SIGNER[form.taxpayer_type].titles[0]}`}
+                  onChange={(e) => set("books_signatory_title", e.target.value)}
+                />
+                <datalist id="aa-signatory-titles">
+                  {SIGNER[form.taxpayer_type].titles.map((t) => <option key={t} value={t} />)}
+                </datalist>
+                <span className="mt-0.5 block text-[11px] text-[var(--text-secondary)]">
+                  Pick one or type your own. Printed under the name.
+                </span>
               </div>
             </div>
           </fieldset>

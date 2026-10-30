@@ -16,6 +16,7 @@ from app import startup_migrations
 from app.body_limit import BodySizeLimitMiddleware
 from app.config import settings, validate_secrets_at_startup
 from app.database import DB_POOLER, engine
+from app.edge import client_ip, origin_allowed
 from app.logging_config import setup_logging
 from app.routers import accounting, admin, auth, features, team
 from app.services.accounting import pipeline
@@ -110,11 +111,9 @@ async def add_security_headers(request: Request, call_next) -> Response:
 
 
 def _extract_client_ip(request: Request) -> str:
-    """Extract client IP, respecting X-Forwarded-For behind a reverse proxy."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    """The caller's IP: Cloudflare's CF-Connecting-IP when the origin secret proves it, else the last
+    X-Forwarded-For entry (the one Cloud Run appends; earlier entries are client-supplied)."""
+    return client_ip(request.headers, request.client.host if request.client else None, settings.origin_secret)
 
 
 # User-Agent strings that indicate automated tooling / bots
@@ -140,6 +139,11 @@ async def abuse_protection_middleware(request: Request, call_next) -> Response:
 
     ip = _extract_client_ip(request)
     request_id = str(_uuid.uuid4())[:8]
+
+    # --- Origin lock: with ORIGIN_SECRET set, only traffic through Cloudflare reaches the API ---
+    if not origin_allowed(request.url.path, request.headers, settings.origin_secret):
+        logger.warning("blocked reason=bypassed_edge ip=%s path=%s rid=%s", ip, request.url.path, request_id)
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})
 
     # --- Bot detection: block requests with no User-Agent ---
     ua = request.headers.get("user-agent", "")

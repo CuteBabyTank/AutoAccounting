@@ -77,6 +77,10 @@ class RateLimiter:
             return max(0, self._max - len(recent))
 
 
+# Sign-in: per IP, 20 attempts per 5 minutes. Enough for a whole office behind one NAT signing in at once;
+# Google verifies the credential, so this only slows token replay and floods of the user-creating path.
+login_limiter = RateLimiter(max_attempts=20, window_seconds=300)
+
 # Expensive ops: file upload, 20 batches per 10 minutes per user
 upload_limiter = RateLimiter(max_attempts=20, window_seconds=600)
 

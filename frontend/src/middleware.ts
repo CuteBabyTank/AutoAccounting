@@ -16,7 +16,25 @@ function apiOrigin(): string {
   }
 }
 
+// Shared with Cloudflare, which adds it as X-AA-Origin. When set, a request without it never came through
+// Cloudflare (someone calling the run.app URL directly) and is refused. Read at runtime, never shipped to the browser.
+function fromEdge(request: NextRequest): boolean {
+  const secret = process.env.ORIGIN_SECRET ?? "";
+  if (!secret) return true;
+  const sent = request.headers.get("x-aa-origin") ?? "";
+  if (sent.length !== secret.length) return false;
+  let diff = 0;
+  for (let i = 0; i < secret.length; i++) diff |= sent.charCodeAt(i) ^ secret.charCodeAt(i);
+  return diff === 0;
+}
+
 export function middleware(request: NextRequest) {
+  if (!fromEdge(request)) return new NextResponse("Forbidden", { status: 403 });
+  // Prefetches still pass the origin check above, but don't need a nonce.
+  if (request.headers.has("next-router-prefetch") || request.headers.get("purpose") === "prefetch") {
+    return NextResponse.next();
+  }
+
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
 
   const csp = [
@@ -50,13 +68,8 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     {
-      // Run on document requests; skip static assets and prefetches so the
-      // nonce isn't wasted on cacheable responses.
+      // Everything but static assets (prefetches return early, without a nonce).
       source: "/((?!_next/static|_next/image|favicon.ico).*)",
-      missing: [
-        { type: "header", key: "next-router-prefetch" },
-        { type: "header", key: "purpose", value: "prefetch" },
-      ],
     },
   ],
 };

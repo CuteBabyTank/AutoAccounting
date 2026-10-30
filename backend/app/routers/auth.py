@@ -1,10 +1,12 @@
 """Auth routes: Google SSO + profile."""
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.security import login_limiter
 from app.config import settings
 from app.dependencies import get_db, get_current_user
+from app.edge import client_ip
 from app.models.user import User
 from app.schemas.auth import DevLoginRequest, GoogleAuthRequest, TokenResponse, UpdateMeRequest, UserResponse
 from app.services.avatar_service import MAX_UPLOAD_BYTES, make_avatar
@@ -26,8 +28,15 @@ def _clean_nickname(value: str | None) -> str | None:
     return cleaned or None
 
 
+def _throttle_login(http: Request) -> None:
+    ip = client_ip(http.headers, http.client.host if http.client else None, settings.origin_secret)
+    if not login_limiter.check_and_record(ip):
+        raise HTTPException(429, "Too many sign-in attempts. Please wait a few minutes.", headers={"Retry-After": "300"})
+
+
 @router.post("/google", response_model=TokenResponse)
-async def auth_google(request: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
+async def auth_google(request: GoogleAuthRequest, http: Request, db: AsyncSession = Depends(get_db)):
+    _throttle_login(http)
     user, token = await google_login(db, request.credential, settings.google_client_id, request.accept_privacy)
     return TokenResponse(token=token, user=UserResponse(**await _response(db, user)))
 

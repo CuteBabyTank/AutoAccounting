@@ -6,6 +6,8 @@ New databases get these columns from the models via create_all; existing ones ge
 
 def column_statements() -> list[str]:
     return [
+        "ALTER TABLE aa_firm_settings ADD COLUMN IF NOT EXISTS assistant_writes TEXT NOT NULL DEFAULT 'managers'",
+        "ALTER TABLE aa_documents ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE aa_companies ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
         "ALTER TABLE aa_assets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ",
         "ALTER TABLE aa_employees ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ",
@@ -16,6 +18,7 @@ def column_statements() -> list[str]:
         "ALTER TABLE aa_work_items ADD COLUMN IF NOT EXISTS assigned_auto BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE aa_firm_settings ADD COLUMN IF NOT EXISTS auto_assign BOOLEAN NOT NULL DEFAULT true",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar BYTEA",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS access JSONB",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_accepted_at TIMESTAMPTZ",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_policy_version VARCHAR(20)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ",

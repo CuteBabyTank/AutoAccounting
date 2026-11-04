@@ -5,6 +5,7 @@ conversation or a tool result of this turn. Unsupported figures are reported wit
 """
 
 import re
+from datetime import date
 from dataclasses import dataclass
 
 from app.config import settings
@@ -145,7 +146,7 @@ def tool_talk(answer: str) -> str | None:
     return m.group(0) if m else None
 
 
-_TOOL_NAMES = ("list_companies", "get_document", "company_health", "quarter_returns", "tax_reference", "filings",
+_TOOL_NAMES = ("my_work", "list_companies", "get_document", "company_health", "quarter_returns", "tax_reference", "filings",
                "search", "report", "aging")
 _ARG_TOOL = {"overdue_only": "filings", "within_days": "filings", "past_days": "filings"}
 
@@ -158,6 +159,8 @@ def tool_named(talk: str) -> str | None:
 
 # Parts of a question that only one tool can answer: (words in the question, the tool).
 _NEEDS = (
+    (re.compile(r"\b(?:my (?:tasks?|work|to-?do|plate|day)|what (?:do|should) i (?:need to )?do|to-?do list|"
+                r"needs? to be done|on my plate)\b", re.I), "my_work"),
     (re.compile(r"\b(?:overdue|late filings?|past due|due (?:soon|this|next|in)|deadlines?|what'?s due|filings?)\b", re.I),
      "filings"),
     (re.compile(r"\b(?:waiting for review|to review|review queue|needs? review|need attention)\b", re.I),
@@ -167,7 +170,8 @@ _NEEDS = (
 
 def missing_tools(question: str, used: list[str]) -> list[str]:
     """Tools a part of the question clearly needs that haven't run this turn (two-part questions often lose a part)."""
-    return [tool for words, tool in _NEEDS if words.search(question or "") and tool not in used]
+    covered = set(used) | ({"filings"} if "my_work" in used else set())  # my_work includes the person's filings
+    return [tool for words, tool in _NEEDS if words.search(question or "") and tool not in covered]
 
 
 _OVERDUE = re.compile(r"\b(?:overdue|late|past due)\b", re.I)
@@ -177,6 +181,8 @@ def default_args(tool: str, question: str) -> dict:
     """Arguments for a lookup the server runs itself: firm-wide, overdue or the next 30 days."""
     if tool == "filings":
         return {"overdue_only": True} if _OVERDUE.search(question or "") else {"within_days": 30}
+    if tool == "my_work":
+        return {"within_days": 1} if re.search(r"\btoday\b", question or "", re.I) else {}
     return {}
 
 
@@ -367,3 +373,39 @@ def trim_history(history: list[dict] | None) -> list[Turn]:
     while kept and kept[0].role == "assistant":  # start with the person's message
         kept.pop(0)
     return kept
+
+
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_RELATIVE_DAY = re.compile(r"\b(?:(today)|(tomorrow)|(this|next)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b",
+                           re.I)
+
+
+def relative_due(question: str, today: date) -> date | None:
+    """The one due date a request names in words ("tomorrow", "this Friday", "next Friday"), else None.
+    Weeks run Monday to Sunday: "this Friday" is this week's, "next Friday" the following week's."""
+    from datetime import timedelta
+
+    found = {m.group(0).lower(): m for m in _RELATIVE_DAY.finditer(question or "")}
+    if len(found) != 1:
+        return None  # none, or several dates in one request: leave it to the model
+    m = next(iter(found.values()))
+    if m.group(1):
+        return today
+    if m.group(2):
+        return today + timedelta(days=1)
+    monday = today - timedelta(days=today.weekday())
+    target = monday + timedelta(days=_WEEKDAYS.index(m.group(4).lower()))
+    return target + timedelta(days=7) if m.group(3).lower() == "next" else target
+
+
+def fix_due_date(name: str, args: dict, question: str, today) -> dict:
+    """A proposal's due date as the person worded it, when the model resolved the words differently."""
+    due = relative_due(question, today)
+    if due is None or not name.startswith("propose_"):
+        return args
+    if "due_date" in args:
+        return {**args, "due_date": due.isoformat()}
+    changes = args.get("changes")
+    if isinstance(changes, dict) and "due_date" in changes:
+        return {**args, "changes": {**changes, "due_date": due.isoformat()}}
+    return args

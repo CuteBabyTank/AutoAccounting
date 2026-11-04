@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db
 from app.models.feature_toggle import FeatureToggle, FirmFeatureOverride
 from app.models.user import User, UserRole
+from app.services import access
 
 logger = logging.getLogger("admin")
 
@@ -34,6 +35,7 @@ FEATURES: tuple[tuple[str, str, str, str], ...] = (
     ("upload", "Uploads", "Documents", "Dropping files and Gemini extraction"),
     ("search", "Search", "Documents", "Global search (/ or Cmd-K)"),
     ("assistant", "Assistant", "Tools", "The AI assistant chat (read-only questions about clients, books and filings)"),
+    ("assistant_write", "Assistant changes", "Tools", "Casper single-record proposals, confirmation and undo"),
     ("notifications", "Notifications", "Documents", "The notification bell"),
     ("filing", "Quarterly returns", "Filing", "Generate, edit, download and mark filed (2550-Q, 1601-EQ…)"),
     ("annual", "Annual returns", "Filing", "Annual return folder (1701, 1702-RT)"),
@@ -71,6 +73,7 @@ ROUTES: tuple[tuple[frozenset[str] | None, re.Pattern[str], str], ...] = tuple(
         (None, rf"^{_A}/(work|tasks|checklist-templates)(/|$)", "work"),
         (None, rf"^{_A}/notifications(/|$)", "notifications"),
         (None, rf"^{_A}/search$", "search"),
+        (None, rf"^{_A}/assistant/actions(/|$)", "assistant_write"),
         (None, rf"^{_A}/assistant(/|$)", "assistant"),
         (None, rf"^{_A}/companies/{_ID}/books/(close|reopen)$", "close"),
         (None, rf"^{_A}/companies/{_ID}/(journal-entries|books)(/|$)", "books"),
@@ -151,10 +154,21 @@ async def load_state(db: AsyncSession) -> tuple[dict[str, bool], dict[uuid.UUID,
     return toggles, overrides
 
 
-async def effective_for(db: AsyncSession, user: User) -> dict[str, bool]:
+async def firm_effective_for(db: AsyncSession, user: User) -> dict[str, bool]:
+    """The firm's switches (platform maintenance), before the person's own access."""
     toggles, overrides = await load_state(db)
     firm = firm_of(user)
     return resolve(toggles, overrides.get(firm, {}) if firm else {})
+
+
+async def effective_for(db: AsyncSession, user: User) -> dict[str, bool]:
+    """What this person can use: the firm's switches narrowed by their access on the Team page."""
+    return access.apply(await firm_effective_for(db, user), user.access, user.role.value)
+
+
+def no_access_message(key: str) -> str:
+    return f"You don't have access to {LABELS.get(key, key)}. Ask your firm owner if you need it."
+
 
 
 def off_message(key: str) -> str:
@@ -172,6 +186,14 @@ async def feature_gate(
     key = feature_for_route(request.method, request.url.path)
     if key is None:
         return
-    if not (await effective_for(db, user))[key]:
+    firm_on = await firm_effective_for(db, user)
+    if key == "assistant_write" and not firm_on["assistant"]:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=off_message("assistant"))
+    if not firm_on[key]:
         logger.info("feature_blocked key=%s user=%s path=%s", key, user.id, request.url.path)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=off_message(key))
+    # assistant_write routes (confirm / undo / list) are gated per action by the person's Casper level instead.
+    personal = "assistant" if key == "assistant_write" else key
+    if access.blocked_personally(personal, firm_on, user.access, user.role.value):
+        logger.info("access_blocked key=%s user=%s path=%s", personal, user.id, request.url.path)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=no_access_message(personal))

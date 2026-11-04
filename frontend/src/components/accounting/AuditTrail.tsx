@@ -34,6 +34,7 @@ export const ENTITY_LABELS: Record<string, string> = {
 };
 
 const ACTION_LABELS: Record<string, string> = {
+  access: "Changed access",
   create: "Created",
   assign: "Assigned",
   reclassify: "Reclassified",

@@ -47,7 +47,8 @@ async def firm_settings(db: AsyncSession, ent: uuid.UUID):
     from app.models.accounting import AAFirmSettings
 
     row = (await db.execute(select(AAFirmSettings).where(AAFirmSettings.enterprise_id == ent))).scalar_one_or_none()
-    return row or AAFirmSettings(enterprise_id=ent, approve_before_close=False, deadline_days=7, auto_assign=True)
+    return row or AAFirmSettings(enterprise_id=ent, approve_before_close=False, deadline_days=7, auto_assign=True,
+                                 assistant_writes="managers")
 
 
 async def require_filing_rights(db: AsyncSession, user: User, ent: uuid.UUID) -> None:

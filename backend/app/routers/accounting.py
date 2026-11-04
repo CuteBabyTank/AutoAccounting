@@ -709,6 +709,7 @@ async def retry_upload(
 # --- Tree, folders, documents --------------------------------------------------
 
 _PLAIN_FIELDS = (
+    "notes",
     "category", "account", "doc_number", "doc_date", "seller_name", "seller_tin", "seller_branch", "seller_address",
     "buyer_name", "buyer_tin", "buyer_branch", "gross_amount", "vatable_amount", "vat_amount", "exempt_amount",
     "zero_rated_amount", "withholding_amount", "vat_treatment", "reviewed", "excluded", "ewt_atc",
@@ -1056,9 +1057,9 @@ async def patch_document(
                  action=audit.document_action(old, new), before=old, after=new, reason=body.reason)
 
     applied = 0
-    if sent & {"category", "account", "ewt_atc", "gl_account_code"}:
+    if not audit.casper_reason.get() and sent & {"category", "account", "ewt_atc", "gl_account_code"}:
         await _learn_supplier_rule(db, doc, learn_atc="ewt_atc" in sent, learn_gl="gl_account_code" in sent)
-    if sent & {"category", "account"}:
+    if not audit.casper_reason.get() and sent & {"category", "account"}:
         applied = await _apply_rule_to_supplier_documents(db, doc, user)
 
     if sent & {"doc_date", "gross_amount", "withholding_amount", "seller_tin", "buyer_tin", "seller_name",

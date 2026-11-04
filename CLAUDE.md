@@ -223,8 +223,15 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   printed ("000") live in `seller_branch` / `buyer_branch` (extraction: `Party.printed_branch`; forms still pad via
   `normalize_tin`). The panel shows / edits the full TIN (`formatTin(tin, branch)`). Documents read before
   2026-10-20: `python -m app.services.accounting.books.tin_branches [--dry-run]`.
-- **Assistant** (`routers/accounting_assistant.py`, `services/accounting/assistant/`): read-only firm chat at
-  `POST /api/accounting/assistant/chat`, SSE events `start/action/observation/clarify/final/error`.
+- **Assistant** (`routers/accounting_assistant.py`, `services/accounting/assistant/`): firm chat at
+  `POST /api/accounting/assistant/chat`, SSE events `start/action/observation/proposal/clarify/final/error`.
+  Write mode (`ChatIn.write`, default off) requires `assistant_write` and the owner's `assistant_writes` setting
+  (`off|managers|everyone`, default `managers`). Six tools only propose one record; the same person confirms within
+  15 minutes under firm/action locks and Manila daily caps (40 changes/person, 10 deletes/person, 30 deletes/firm).
+  Confirm/undo call the screen handlers in a savepoint-bound session and tag audits `Casper (confirmed by <name>)`;
+  Casper skips supplier-rule propagation and silent task auto-assignment to keep the card exact. Undo lasts 7 days,
+  refuses changed records/retained history/re-uploaded files, restores deleted tasks with the same id/full row,
+  and lazily purges expired task restore data; policy is in `assistant/action_policy.py`.
   Defaults to native Ollama `POST /api/chat` (`stream=false`, `think=false`, `num_ctx=16384`, `num_predict=1024`,
   temperature 0, keep alive 30m) on `http://host.docker.internal:11434`, model `qwen3:4b-instruct`.
   Pull it on the host with `ollama pull qwen3:4b-instruct`. Docker's host gateway is configured. No Gemini key/quota dependency;
@@ -289,6 +296,27 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   Per-person rate limit: 40 turns / 10 minutes. Search sends the model the best 10 hits across all record kinds
   (`tools.SEARCH_K`) with true per-kind and overall totals (counts above 1000 per kind are marked as at least 1000);
   sources are limited to 12; list results to 25 (filings 50), GL lines 30.
+- **Casper page awareness:** the accounting page publishes the open company (`lib/page-context.ts`
+  `setPageCompany`). Asking without naming a company (not firm-wide, not a general BIR question:
+  `companyQuestion`) shows "Is this about <company>?" (Yes / No, all companies / Another company) before any model
+  call; "Yes" is remembered per chat (chip above the composer) and sends `company_id`, which the chat route accepts
+  only for the firm's live companies (`tools.Ctx.focus`: `resolve_company` defaults to it, the prompt gets a FOCUS
+  line). Starting suggestions differ for read and write mode and use the open company's name.
+- **Casper to-dos and dates:** `my_work` (tools.py) = the person's open tasks + assigned filings, split overdue /
+  today / next N days (`everyone` for managers); `guard._NEEDS` routes "what do I need to do / my tasks" to it. The
+  prompt's date line carries the weekday and this/next week's dates (`prompt.calendar`), and `guard.fix_due_date`
+  overwrites a proposal's due date with the one the person worded ("tomorrow", "this/next Friday"; weeks Mon to Sun).
+- **Casper's capability list:** "What else can I do?" (under the suggestions, or the ? in the dock header) opens
+  `components/assistant/CasperHelp.tsx`, a static list of what Casper reads and (with write mode) changes, with
+  examples that drop into the composer. Keep it in step when a tool is added or removed.
+- **Per-person access** (`services/access.py`, Team page → Access → `components/team/AccessPanel.tsx`):
+  `users.access = {"off": [feature keys], "assistant": off|read|write}`; the owner sets anyone's, a manager sets
+  employees' only (`PUT /api/team/members/{id}/access`, audited as `team_member` / `access`). `features.effective_for`
+  narrows the firm's switches by it, so `GET /api/features` hides those areas and `feature_gate` answers 403 ("ask
+  your firm owner"; maintenance stays 503). Casper's read/write tools check the same areas (`tools.TOOL_AREAS`; add
+  a new tool there), and the person's Casper level beats the firm's `assistant_writes` default (the firm's "off"
+  and the platform switch still win). Owners and the platform admin are never limited. A new feature that people
+  should be able to refuse goes in `access.PERSONAL_KEYS` and `team._ACCESS_HELP`.
 - **Production (`deploy/README.md`):** Cloud Run `asia-southeast1` (`aa-backend` ≤ 1 instance, CPU always allocated so
   background extraction isn't throttled, scale to zero; `aa-frontend`), Supabase via the 6543 pooler as `aa_app` (NOBYPASSRLS; never `postgres`, which
   bypasses RLS; Data API off), uploads in a versioned bucket mounted at `/data` = `ACCOUNTING_DIR`, nightly

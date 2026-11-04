@@ -100,7 +100,7 @@ def test_prompt_static_prefix_and_date_at_end():
     from app.services.accounting.assistant.prompt import system_instruction
     one = system_instruction(date(2026, 10, 30))
     two = system_instruction(date(2026, 10, 31))
-    assert one.endswith("Today: 2026-10-30 (Asia/Manila).")
+    assert "Today: 2026-10-30, Friday." in one and one.endswith("(Asia/Manila).")
     assert one.rsplit("Today:", 1)[0] == two.rsplit("Today:", 1)[0]
 
 
@@ -327,12 +327,17 @@ def employee():
 
 
 @pytest.mark.parametrize("role,firm_visible", [("employee", False), ("manager", True), ("enterprise", True)])
-async def test_info_usage_visibility(role, firm_visible):
+async def test_info_usage_visibility(role, firm_visible, monkeypatch):
     from app.models.user import UserRole
     from app.routers import accounting_assistant as router
     user = employee()
     user.role = UserRole(role)
+    async def write_permission(db, person):
+        return {"allowed": person.role in {UserRole.MANAGER, UserRole.ENTERPRISE},
+                "reason": "" if person.role in {UserRole.MANAGER, UserRole.ENTERPRISE} else "Managers only"}
+    monkeypatch.setattr(router.actions, "permission", write_permission)
     result = await router.assistant_info(user=user, db=UsageDB(800, 120))
+    assert result["write"]["allowed"] == firm_visible
     assert result["usage"]["user"]["prompt_tokens"] == 120
     assert ("firm" in result["usage"]) == firm_visible
     if firm_visible:

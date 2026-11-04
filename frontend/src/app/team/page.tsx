@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { UserPlus } from "@phosphor-icons/react";
+import { ShieldCheck, UserPlus } from "@phosphor-icons/react";
+import AccessPanel from "@/components/team/AccessPanel";
 import { useAuth } from "@/lib/auth";
 import Hint from "@/components/guide/Hint";
 import ChecklistTemplates from "@/components/work/ChecklistTemplates";
@@ -30,6 +31,7 @@ export default function TeamPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [showAudit, setShowAudit] = useState(false);
+  const [accessFor, setAccessFor] = useState<Member | null>(null);
   const { on } = useFeatures();
   const guide = useGuide("team");
 
@@ -154,6 +156,9 @@ export default function TeamPage() {
                   Role <Hint>Employees upload and review documents. Managers can also set up clients and add or deactivate staff. Deactivated members keep their account but can&apos;t sign in.</Hint>
                 </th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">
+                  Access <Hint>Choose which areas each person can use and what Casper may do for them. Anything turned off disappears from their screens. The firm owner always has full access.</Hint>
+                </th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -166,6 +171,22 @@ export default function TeamPage() {
                   </td>
                   <td className="px-4 py-3">{roleLabel(m.role)}</td>
                   <td className="px-4 py-3">{m.is_active ? "Active" : "Deactivated"}</td>
+                  <td className="px-4 py-3">
+                    {m.can_edit_access ? (
+                      <button
+                        type="button"
+                        onClick={() => setAccessFor(m)}
+                        className="group inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--text-primary)] hover:border-[var(--accent)]"
+                        title="Change what they can use"
+                      >
+                        <ShieldCheck size={13} className="text-[var(--accent)]" />
+                        {m.access_summary || "Full access"}
+                        <span className="text-[var(--accent)] group-hover:underline">Change</span>
+                      </button>
+                    ) : (
+                      <span className="text-xs text-[var(--text-secondary)]">{m.access_summary || "Full access"}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     {canEdit(m) && (
                       <div className="flex flex-wrap justify-end gap-3 text-xs">
@@ -200,7 +221,7 @@ export default function TeamPage() {
               ))}
               {members.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-[var(--text-secondary)]">
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-[var(--text-secondary)]">
                     Just you so far. Ask a colleague to sign in with Google once, then add their email above.
                   </td>
                 </tr>
@@ -209,6 +230,13 @@ export default function TeamPage() {
           </table>
         </div>
       </div>
+      {accessFor && (
+        <AccessPanel
+          member={accessFor}
+          onClose={() => setAccessFor(null)}
+          onSaved={(saved) => setMembers((list) => list.map((x) => (x.id === saved.id ? saved : x)))}
+        />
+      )}
     </div>
   );
 }

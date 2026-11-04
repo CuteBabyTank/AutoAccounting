@@ -25,7 +25,7 @@ export default function FirmSettingsCard() {
       .catch((e) => setError(apiErrorMessage(e, "Couldn't load the firm settings")));
   }, []);
 
-  async function save(next: Partial<Pick<FirmSettings, "organization_name" | "approve_before_close" | "deadline_days" | "auto_assign">>) {
+  async function save(next: Partial<Pick<FirmSettings, "organization_name" | "approve_before_close" | "deadline_days" | "auto_assign" | "assistant_writes">>) {
     setBusy(true);
     setError("");
     try {
@@ -92,7 +92,26 @@ export default function FirmSettingsCard() {
         />
         <span className="text-[var(--text-secondary)]">days before they&apos;re due</span>
       </div>
-      {!settings.can_edit && <p className="mt-2 text-xs text-[var(--text-secondary)]">Only the firm owner can change filing approval and deadline reminders.</p>}
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-[var(--text-primary)]">
+        <label htmlFor="assistant-writes">Casper can make changes for</label>
+        <select
+          id="assistant-writes"
+          className={INPUT}
+          disabled={locked}
+          value={settings.assistant_writes ?? "managers"}
+          onChange={(e) => save({ assistant_writes: e.target.value as FirmSettings["assistant_writes"] })}
+        >
+          <option value="off">Nobody (read-only)</option>
+          <option value="managers">Managers and the owner</option>
+          <option value="everyone">Everyone at the firm</option>
+        </select>
+        <Hint align="right">
+          With write mode on, Casper can set up and update tasks, assign filings, fix a document&apos;s account or
+          period, and delete a task or document. Each change waits for the person&apos;s confirm, is in the audit log, and
+          can be undone or restored for 7 days. It can never touch companies, people, settings, filing or closing.
+        </Hint>
+      </div>
+      {!settings.can_edit && <p className="mt-2 text-xs text-[var(--text-secondary)]">Only the firm owner can change filing approval, deadline reminders and Casper&apos;s changes.</p>}
       {error && <p className="mt-2 text-sm text-[var(--alert-error-text)]">{error}</p>}
     </div>
   );

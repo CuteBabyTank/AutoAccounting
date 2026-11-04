@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { Account, AdminFeatures, BudgetOperation, FirmUsage, Member, UserRole } from "@/types";
+import type { AccessArea, Account, AdminFeatures, BudgetOperation, FirmUsage, Member, MemberAccess, UserRole } from "@/types";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -76,6 +76,9 @@ export const teamApi = {
   remove: (id: string) => api.delete(`/team/members/${seg(id)}`).then(() => undefined),
   promote: (id: string) => api.post<Member>(`/team/members/${seg(id)}/promote-manager`).then((r) => r.data),
   demote: (id: string) => api.post<Member>(`/team/members/${seg(id)}/demote`).then((r) => r.data),
+  accessCatalog: () => api.get<AccessArea[]>("/team/access-catalog").then((r) => r.data),
+  setAccess: (id: string, access: MemberAccess) =>
+    api.put<Member>(`/team/members/${seg(id)}/access`, access).then((r) => r.data),
 };
 
 /** Platform admin. */

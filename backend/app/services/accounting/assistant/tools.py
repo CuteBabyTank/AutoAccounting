@@ -1,8 +1,8 @@
-"""The assistant's tools: read-only, firm-scoped wrappers over the routes and loaders the screens already use.
+"""Firm-scoped read tools and gated proposal-only write tools.
 
 Each tool is ``async (ctx, **args) -> Result``. A tool reuses the GET handler or loader behind the matching screen
 (search, reports, aging, health, work board, quarter folder), so the assistant sees exactly what the person would.
-Nothing here writes firm data (some loaders sync contacts on read, as the screens do). Errors a person could fix
+Write tools persist proposals, never execute changes. Some read loaders sync contacts as the screens do. Errors a person could fix
 come back as ``{"error": ...}`` for the model to read, never as an exception.
 """
 
@@ -41,6 +41,10 @@ class Ctx:
     db: AsyncSession
     user: User
     ent: uuid.UUID
+    write: bool = False
+    proposals: int = 0
+    # The company the person has open and confirmed the question is about (checked to be this firm's).
+    focus: "AACompany | None" = None
 
 
 @dataclass
@@ -82,7 +86,10 @@ def _uuid(value) -> uuid.UUID | None:
 
 
 async def resolve_company(ctx: Ctx, ref: str | None) -> AACompany:
-    """A company by id, else by name / alias (a single match), else the firm's only company."""
+    """A company by id, else by name / alias (a single match), else the company the person confirmed they're
+    asking about, else the firm's only company."""
+    if not ref and getattr(ctx, "focus", None) is not None:
+        return ctx.focus
     if ref and (cid := _uuid(ref)):
         try:
             return await company_or_404(ctx.db, ctx.ent, cid)
@@ -362,11 +369,52 @@ async def filings(ctx: Ctx, company: str | None = None, start: str | None = None
     return Result({"window": {"start": out.start, "end": out.end}, "today": out.today, "count": len(cards),
                    "overdue_count": overdue, "only_mine": bool(mine),
                    "filings": [{"company": c.company_name, "company_id": str(c.company_id), "form": c.form_label,
+                                "form_key": c.form, "fiscal_year": c.year, "quarter": c.quarter,
                                 "period": c.period_label, "due": c.due_date, "status": c.status,
                                 "overdue": c.overdue, "days_left": c.days_left, "filed_on": c.filed_on,
                                 "assignee": c.assignee_name, "documents_in_period": c.documents,
                                 "reviews_in_period": c.open_reviews} for c in cards[:MAX_LIST * 2]],
                    "truncated": len(cards) > MAX_LIST * 2})
+
+
+# ---- my_work ------------------------------------------------------------------------------------------------------
+
+async def my_work(ctx: Ctx, within_days: int = 7, company: str | None = None, everyone: bool = False) -> Result:
+    """The person's to-do list: open tasks and filings assigned to them, overdue / due today / due soon.
+    ``everyone`` = the whole firm's (owners and managers only)."""
+    from app.routers.accounting_scope import MANAGER_ROLES
+    from app.routers.accounting_tasks import list_tasks
+
+    within_days = max(1, min(int(within_days or 7), 60))
+    everyone = bool(everyone) and ctx.user.role in MANAGER_ROLES
+    c = await resolve_company(ctx, company) if company else None
+    rows = await _http(list_tasks(company_id=c.id if c else None, document_id=None,
+                                  assignee=None if everyone else "me", status_filter="open",
+                                  user=ctx.user, db=ctx.db))
+    today = manila_today()
+    horizon = today + timedelta(days=within_days)
+
+    def task(t) -> dict:
+        out = {"title": t.title, "company": t.company_name or None, "due": t.due_date, "priority": t.priority,
+               "status": t.status}
+        if everyone:
+            out["assignee"] = t.assignee_name or "Nobody"
+        return out
+
+    dated = [t for t in rows if t.due_date]
+    tasks = {"overdue": [task(t) for t in dated if t.due_date < today][:MAX_LIST],
+             "due_today": [task(t) for t in dated if t.due_date == today][:MAX_LIST],
+             "due_soon": [task(t) for t in dated if today < t.due_date <= horizon][:MAX_LIST],
+             "later_count": sum(1 for t in dated if t.due_date > horizon),
+             "no_due_date": [task(t) for t in rows if not t.due_date][:10]}
+    company_ref = str(c.id) if c else None
+    soon = (await filings(ctx, company_ref, within_days=within_days, mine=not everyone)).data.get("filings", [])
+    late = (await filings(ctx, company_ref, overdue_only=True, mine=not everyone)).data.get("filings", [])
+    open_soon = [f for f in soon if not f.get("filed_on") and not f.get("overdue")]
+    return Result({"today": today, "next_days": within_days, "whose": "everyone's" if everyone else "the person's own",
+                   "company": c.registered_name if c else "all companies",
+                   "tasks": tasks,
+                   "filings": {"overdue": late[:MAX_LIST], "due_soon": open_soon[:MAX_LIST]}})
 
 
 # ---- quarter_returns ----------------------------------------------------------------------------------------------
@@ -556,6 +604,11 @@ TOOLS: tuple[Tool, ...] = (
                   "overdue_only": {"type": "boolean", "description": "Overdue filings (any due date in the past "
                                                                      "year); use for 'what is overdue / late'"}}),
          filings),
+    Tool("my_work", "The person's to-do list: their open tasks and the filings assigned to them, split into overdue, "
+         "due today and due in the next N days (default 7). Use for 'what do I need to do', 'my tasks', 'what's on "
+         "my plate today/this week'. everyone=true for the whole team's (managers asking about the firm).",
+         _schema({"within_days": {"type": "integer", "minimum": 1, "maximum": 60},
+                  "company": _COMPANY, "everyone": {"type": "boolean"}}), my_work),
     Tool("quarter_returns", "A company's BIR returns for a month or fiscal quarter: each form with the month or "
          "quarter it covers, why the company files it, due date, filed or not, and the figures of the latest "
          "generated version (VAT payable, EWT, percentage tax, income tax). Use period for this/last month or "
@@ -571,12 +624,23 @@ TOOLS: tuple[Tool, ...] = (
                                                              "(rent, professional fee)"}}, ("query",)),
          tax_reference),
 )
-BY_NAME: dict[str, Tool] = {t.name: t for t in TOOLS}
+
+
+# The area each tool reads or changes: a tool is unavailable when that area is off for the person (Team page access)
+# or for the firm (maintenance), exactly like the screen it mirrors.
+TOOL_AREAS: dict[str, str] = {
+    "search": "search", "get_document": "documents", "report": "reports", "aging": "subledgers",
+    "filings": "work", "my_work": "work", "quarter_returns": "filing",
+    "propose_create_task": "work", "propose_update_task": "work", "propose_delete_task": "work",
+    "propose_update_document": "documents", "propose_delete_document": "documents", "propose_assign_filing": "work",
+}
 
 
 async def call(ctx: Ctx, name: str, args: dict) -> Result:
     """Run one tool; a ToolError or a bad argument becomes ``{"error": ...}``."""
-    tool = BY_NAME.get(name)
+    tool = BY_NAME.get(name) or WRITE_BY_NAME.get(name)
+    if name in WRITE_BY_NAME and not getattr(ctx, "write", False):
+        return Result({"error": "Write mode is off"})
     if tool is None:
         return Result({"error": f"Unknown tool {name}"})
     allowed = set(tool.parameters["properties"])
@@ -585,6 +649,12 @@ async def call(ctx: Ctx, name: str, args: dict) -> Result:
         inspect.signature(tool.run).bind(ctx, **kwargs)
         if scope_for(ctx.user) != ctx.ent:
             raise ToolError("Firm context is not available.")
+        area = TOOL_AREAS.get(name)
+        if area:
+            from app.services import features
+            if not (await features.effective_for(ctx.db, ctx.user)).get(area, True):
+                raise ToolError(f"This person doesn't have access to {features.LABELS.get(area, area)}, so you can't "
+                                "look it up or change it for them. Say so and suggest asking the firm owner.")
         from app.services.accounting.assistant.scope import firm_reads, filter_sources
         with firm_reads(ctx.db, ctx.ent):
             result = await tool.run(ctx, **kwargs)
@@ -598,7 +668,13 @@ async def call(ctx: Ctx, name: str, args: dict) -> Result:
                         groups.append({**group, "items": items})
                 result.data = {**result.data, "groups": groups}
             return result
-    except ToolError as exc:
+    except HTTPException as exc:
+        if name in WRITE_BY_NAME:
+            await ctx.db.rollback()
+        return Result({"error": str(exc.detail)})
+    except (ToolError, ValueError) as exc:
+        if name in WRITE_BY_NAME:
+            await ctx.db.rollback()
         return Result({"error": str(exc)})
     except TypeError as exc:  # a required argument missing
         return Result({"error": f"Bad arguments: {exc}"})
@@ -606,3 +682,99 @@ async def call(ctx: Ctx, name: str, args: dict) -> Result:
 
 def as_json(data: dict) -> dict:
     return jsonable(data)
+
+
+# Write tools persist proposals only. Confirmation is a separate, authenticated HTTP request.
+async def _propose(ctx: Ctx, kind: str, **kwargs) -> Result:
+    from app.services.accounting.assistant import actions
+    try:
+        action = await actions.propose(ctx, kind, **kwargs)
+    except Exception:
+        # Resolution/retention can acquire locks. Release them before another model call on an error.
+        await ctx.db.rollback()
+        raise
+    return Result({"proposal": action.model_dump(mode="json")})
+
+
+def proposal_view(data: dict) -> dict:
+    """What the model reads back about a proposal: what was prepared and that it is NOT done yet."""
+    p = data["proposal"]
+    return {"prepared_change": p["summary"],
+            "details": {d["label"]: d["value"] for d in p.get("details", [])},
+            "state": "NOT DONE YET. A card with Confirm and Cancel buttons is shown to the person under your answer.",
+            "say": "Tell the person you've prepared this change and it happens only when they press Confirm. Never "
+                   "say it is done, created or already exists. Don't look anything else up."}
+
+
+async def propose_create_task(ctx: Ctx, title: str, company: str | None = None, notes: str = "",
+                              due_date: str | None = None, priority: str = "normal",
+                              document_id: str | None = None, assignee: str | None = None) -> Result:
+    return await _propose(ctx, "create_task", company=company, assignee=assignee,
+                          changes=dict(title=title, notes=notes, due_date=due_date, priority=priority,
+                                       document_id=document_id))
+
+
+async def propose_update_task(ctx: Ctx, task: str, changes: dict, company: str | None = None) -> Result:
+    return await _propose(ctx, "update_task", target=task, changes=changes, company=company)
+
+
+async def propose_delete_task(ctx: Ctx, task: str, company: str | None = None) -> Result:
+    return await _propose(ctx, "delete_task", target=task, company=company)
+
+
+async def propose_update_document(ctx: Ctx, document: str, changes: dict, company: str | None = None) -> Result:
+    return await _propose(ctx, "update_document", target=document, changes=changes, company=company)
+
+
+async def propose_delete_document(ctx: Ctx, document: str, company: str | None = None) -> Result:
+    return await _propose(ctx, "delete_document", target=document, company=company)
+
+
+async def propose_assign_filing(ctx: Ctx, company: str, year: int, quarter: int, form: str,
+                                assignee: str | None = None, status: str | None = None) -> Result:
+    return await _propose(ctx, "assign_filing", company=company, year=year, quarter=quarter, form=form,
+                          assignee=assignee, changes={"status": status} if status is not None else {})
+
+
+_STRING = {"type": "string"}
+_NULL_STRING = {"type": ["string", "null"]}
+_TASK_CHANGES = _schema({"title": _STRING, "notes": _STRING, "due_date": _NULL_STRING,
+    "priority": {"type": "string", "enum": ["low", "normal", "high"]},
+    "status": {"type": "string", "enum": ["open", "in_progress", "done"]},
+    "assignee_id": {"type": ["string", "null"], "description": "Name, id, me, or null to unassign"}})
+_DOC_CHANGES = _schema({"gl_account_code": _STRING, "category": _STRING,
+    "period_year": {"type": ["integer", "null"]}, "period_quarter": {"type": ["integer", "null"]},
+    "notes": _STRING})
+_TASK_CHANGES["additionalProperties"] = False
+_DOC_CHANGES["additionalProperties"] = False
+WRITE_TOOLS: tuple[Tool, ...] = (
+    Tool("propose_create_task", "Propose ONE task, never create it directly. Person must press Confirm. "
+         "Resolve the company; due_date YYYY-MM-DD using today's Manila date. Assignee name or me.",
+         _schema({"title": _STRING, "company": _COMPANY, "notes": _STRING, "due_date": _NULL_STRING,
+                  "priority": {"type": "string", "enum": ["low", "normal", "high"]},
+                  "document_id": _STRING, "assignee": _STRING}, ("title",)), propose_create_task),
+    Tool("propose_update_task", "Propose editing ONE task. Find it with search; task is id or exact title. "
+         "Only supplied changes apply; assignee_id accepts name, me or null. Person must press Confirm.",
+         _schema({"task": _STRING, "company": _COMPANY, "changes": _TASK_CHANGES}, ("task", "changes")),
+         propose_update_task),
+    Tool("propose_delete_task", "Propose deleting ONE task. Search first; task is id or title. "
+         "Can be restored for 7 days; person must press Confirm.",
+         _schema({"task": _STRING, "company": _COMPANY}, ("task",)), propose_delete_task),
+    Tool("propose_update_document", "Propose editing ONE document's account/category/period/notes only. "
+         "Find its id with search. Send period_year and period_quarter together. Person must press Confirm.",
+         _schema({"document": _STRING, "company": _COMPANY, "changes": _DOC_CHANGES},
+                 ("document", "changes")), propose_update_document),
+    Tool("propose_delete_document", "Propose deleting ONE document (managers/owner only). Search first. "
+         "Can be restored for 7 days; person must press Confirm.",
+         _schema({"document": _STRING, "company": _COMPANY}, ("document",)), propose_delete_document),
+    Tool("propose_assign_filing", "Propose ONE board filing's assignee/status only, never mark filed. "
+         "Call filings first and copy that filing's company_id, form_key, fiscal_year (as year) and quarter exactly; "
+         "monthly returns have keys like 1601C-M1 (first month of the quarter). "
+         "Assignee is a name or me; empty string unassigns. Person must press Confirm.",
+         _schema({"company": _COMPANY, "year": {"type": "integer"}, "quarter": {"type": "integer"},
+                  "form": _STRING, "assignee": _STRING,
+                  "status": {"type": "string", "enum": ["", "no_docs", "docs_in", "needs_review", "generated"]}},
+                 ("company", "year", "quarter", "form")), propose_assign_filing),
+)
+BY_NAME: dict[str, Tool] = {t.name: t for t in TOOLS}
+WRITE_BY_NAME = {t.name: t for t in WRITE_TOOLS}

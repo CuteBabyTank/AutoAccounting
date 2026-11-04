@@ -40,6 +40,7 @@ import { teamApi } from "@/lib/api";
 import { useGuide } from "@/lib/guides";
 import { apiErrorMessage } from "@/lib/accounting-format";
 import { useAuth } from "@/lib/auth";
+import { setPageCompany } from "@/lib/page-context";
 import { FeatureOff, useFeatures, type FeatureKey } from "@/lib/features";
 import type {
   AADocument,
@@ -251,6 +252,14 @@ export default function AccountingPage() {
   };
 
   const preferredTarget = picker !== "auto" ? picker : selected?.companyId ?? null;
+  // Tell Casper which company is open, so it can ask "Is this about …?" instead of guessing.
+  const openCompanyId = selected?.companyId ?? null;
+  const openCompanyName = (openCompanyId && (tree.find((c) => c.id === openCompanyId)?.registered_name
+    ?? companies.find((c) => c.id === openCompanyId)?.registered_name)) || "";
+  useEffect(() => {
+    setPageCompany(openCompanyId && openCompanyName ? { id: openCompanyId, name: openCompanyName } : null);
+  }, [openCompanyId, openCompanyName]);
+  useEffect(() => () => setPageCompany(null), []);
   const target = companies.some((c) => c.id === preferredTarget) ? preferredTarget : null;
   const targetName = companies.find((c) => c.id === target)?.registered_name;
 

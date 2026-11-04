@@ -17,6 +17,8 @@ export interface FirmSettings {
   auto_assign: boolean;
   can_auto_assign: boolean;
   can_file: boolean;
+  /** Who may let Casper make changes (each one still needs their Confirm). */
+  assistant_writes: "off" | "managers" | "everyone";
 }
 
 export interface WorkCard {

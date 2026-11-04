@@ -46,6 +46,13 @@ STEP_LABELS = {
     "report": "Checking the books", "aging": "Checking outstanding balances",
     "company_health": "Checking what needs attention", "filings": "Checking upcoming filings",
     "quarter_returns": "Checking the quarter's returns", "tax_reference": "Checking the BIR notes",
+    "my_work": "Checking your to-do list",
+    "propose_create_task": "Preparing a task for you to confirm",
+    "propose_update_task": "Preparing a task change for you to confirm",
+    "propose_delete_task": "Preparing a delete for you to confirm",
+    "propose_update_document": "Preparing a document change for you to confirm",
+    "propose_delete_document": "Preparing a delete for you to confirm",
+    "propose_assign_filing": "Preparing a filing change for you to confirm",
 }
 NO_FIGURE = ("I couldn't find that figure in the firm's books or documents, so I won't guess it. Tell me the company "
              "and period and I'll look it up.")
@@ -159,9 +166,10 @@ async def _needs_clarification(ctx: tools.Ctx, answer: str, used: list[str], cov
     return True
 
 
-def declarations() -> list[dict]:
+def declarations(write: bool = False) -> list[dict]:
+    offered = tools.TOOLS + (tools.WRITE_TOOLS if write else ())
     return [{"type": "function", "function": {
-        "name": t.name, "description": t.description, "parameters": t.parameters}} for t in tools.TOOLS]
+        "name": t.name, "description": t.description, "parameters": t.parameters}} for t in offered]
 
 
 def shrink_lists(data: dict) -> str:
@@ -222,6 +230,8 @@ def summarize(name: str, data: dict) -> str:
     """One short line for the chat's step list."""
     if "error" in data:
         return str(data["error"])[:200]
+    if name in tools.WRITE_BY_NAME:
+        return "Proposed; press Confirm"
     if name == "list_companies":
         return f"{len(data.get('companies', []))} companies"
     if name == "search":
@@ -245,6 +255,11 @@ def summarize(name: str, data: dict) -> str:
         return f"{data.get('company_name')} · {data.get('issues', 0)} issue(s)"
     if name == "filings":
         return f"{data.get('count', 0)} filing(s)"
+    if name == "my_work":
+        t, f = data.get("tasks", {}), data.get("filings", {})
+        late = len(t.get("overdue", [])) + len(f.get("overdue", []))
+        now = len(t.get("due_today", [])) + len(t.get("due_soon", [])) + len(f.get("due_soon", []))
+        return f"{late} overdue, {now} due in the next {data.get('next_days')} day(s)"
     if name == "quarter_returns":
         return f"{data.get('name')} · {data.get('period')}"
     if name == "tax_reference":
@@ -288,6 +303,7 @@ def truncated_answer(answer: str, limit: int | None = None) -> str:
 
 async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, generate: Generate = llm.chat) -> AsyncIterator[dict]:
     started = time.monotonic()
+    write = getattr(ctx, "write", False)
     stopped_early = False
     before_nudge: str | None = None  # the answer that named a tool, kept in case the extra round finds nothing
     used_at_nudge = 0
@@ -297,7 +313,14 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
     nudged_fresh = False
     turns = guard.trim_history(history)
     topic = guard.topic(question, turns)  # a reply to "which company?" carries the question it answers
-    contents = [{"role": "system", "content": system_instruction(manila_today())}]
+    system = system_instruction(manila_today(), write=write)
+    focus = getattr(ctx, "focus", None)
+    if focus is not None:
+        # The person has this company open and said yes when asked if the question is about it.
+        system += (f"\n\nFOCUS: The person confirmed this question is about {focus.registered_name} "
+                   f"(company id {focus.id}). Use that company for every lookup or change unless they name "
+                   "another; don't ask which company.")
+    contents = [{"role": "system", "content": system}]
     contents += history_contents(turns) + [{"role": "user", "content": question}]
     observed: list[str] = []
     sources: list[dict] = []
@@ -317,7 +340,7 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                 resp, forced = {"content": "", "tool_calls": forced}, []
             else:
                 trim_context(tool_context, repeated)
-                resp = await generate(contents, declarations(), "auto")
+                resp = await generate(contents, declarations(write=write), "auto")
             calls = resp.get("tool_calls") or []
             if not calls:
                 answer_truncated = bool(resp.get("truncated"))
@@ -360,7 +383,9 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                     answer = guard.drop_tool_talk(before_nudge)
                     answer_truncated = nudge_truncated
                     break
-                missing = guard.missing_tools(topic, used) if used else []
+                # A write turn's job is the proposal; don't wander off to look up other things.
+                proposing = any(u.startswith("propose_") for u in used)
+                missing = guard.missing_tools(topic, used) if used and not proposing else []
                 if missing and before_nudge is None and _step + 2 < MAX_STEPS \
                         and remaining >= 1.5 * settings.assistant_llm_timeout_seconds:
                     # A small model often answers half of a two-part question: look the other half up for it.
@@ -445,6 +470,7 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                     yield {"type": "observation", "tool": name, "ok": True, "summary": "Same as before"}
                 else:
                     try:
+                        args = guard.fix_due_date(name, args, question, manila_today())
                         result = await tools.call(ctx, name, args)
                     except Exception as exc:  # a bug or a DB error: keep the turn alive, the session usable
                         logger.exception("assistant_tool_failed tool=%s", name)
@@ -453,7 +479,7 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                                                         "or tell the person it isn't available right now."})
                     data = tools.as_json(result.data)
                     coverage.add(name, args, result)
-                    text = observation(data)
+                    text = observation(tools.proposal_view(data) if "proposal" in data else data)
                     seen[key] = text
                     summary = summarize(name, data)
                     first_result = True
@@ -463,6 +489,8 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
                             sources.append(tools.as_json(s))
                     yield {"type": "observation", "tool": name, "ok": "error" not in data,
                            "summary": summary}
+                    if "proposal" in data:
+                        yield {"type": "proposal", "action": data["proposal"]}
                 observed.append(seen[key] if not invalid else text)
                 message = {"role": "tool", "tool_call_id": call["id"], "content": text}
                 contents.append(message)
@@ -476,7 +504,7 @@ async def _run(ctx: tools.Ctx, question: str, history: list[dict] | None, genera
             contents.append({"role": "user", "content": "Stop looking up data. Answer briefly from the results so far; "
                              "say that you stopped early."})
             trim_context(tool_context, repeated)
-            resp = await generate(contents, declarations(), "none")
+            resp = await generate(contents, declarations(write=write), "none")
             if not resp.get("tool_calls"):
                 answer = llm.strip_think(resp.get("content") or "")
                 answer_truncated = bool(resp.get("truncated"))

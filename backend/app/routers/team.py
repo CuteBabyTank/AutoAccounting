@@ -8,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import EnterpriseContext, get_db, get_enterprise_context, require_enterprise_owner
 from app.models.user import User, UserRole
-from app.schemas.auth import AddMemberRequest, FirmUsageResponse, MemberResponse, UpdateMemberRequest
+from app.schemas.auth import AddMemberRequest, FirmUsageResponse, MemberAccess, MemberResponse, UpdateMemberRequest
+from app.services import access as access_rules
+from app.services import features
 from app.services.usage_service import get_effective_rate_config, get_usage_stats
 from app.services.accounting import audit
 
@@ -19,7 +21,8 @@ _MEMBER_ROLES = (UserRole.EMPLOYEE, UserRole.MANAGER)
 _AUDIT_FIELDS = ("email", "role", "enterprise_id", "is_active")
 
 
-def _member_response(member: User) -> MemberResponse:
+def _member_response(member: User, caller: User | None = None) -> MemberResponse:
+    access = access_rules.clean(member.access)
     return MemberResponse(
         id=str(member.id),
         email=member.email,
@@ -27,6 +30,9 @@ def _member_response(member: User) -> MemberResponse:
         role=member.role.value,
         is_active=member.is_active,
         created_at=member.created_at,
+        access=MemberAccess(**access),
+        access_summary=access_rules.summary(access, features.LABELS),
+        can_edit_access=caller is not None and access_rules.can_manage(caller.role.value, member.role.value),
     )
 
 
@@ -68,7 +74,7 @@ async def list_members(
         .where(User.enterprise_id == ctx.enterprise.id, User.role.in_(_MEMBER_ROLES))
         .order_by(User.created_at.desc())
     )).scalars().all()
-    return [_member_response(m) for m in members]
+    return [_member_response(m, ctx.caller) for m in members]
 
 
 @router.post("/members", response_model=MemberResponse, status_code=status.HTTP_201_CREATED)
@@ -120,6 +126,64 @@ async def update_member(
     await db.commit()
     await db.refresh(member)
     return _member_response(member)
+
+
+@router.get("/access-catalog")
+async def access_catalog(ctx: EnterpriseContext = Depends(get_enterprise_context)) -> list[dict]:
+    """The areas a person can be given or refused, grouped as on the Platform admin's switches."""
+    return [{"key": k, "label": label, "group": group, "description": _ACCESS_HELP.get(k, desc)}
+            for k, label, group, desc in features.FEATURES if k in access_rules.PERSONAL_KEYS]
+
+
+# Plainer wording for firm owners than the platform admin's maintenance descriptions.
+_ACCESS_HELP = {
+    "documents": "See and edit client documents in company folders",
+    "upload": "Drop new receipts, invoices and statements to be read",
+    "search": "Search everything with / or Ctrl K",
+    "notifications": "The notification bell",
+    "work": "The work board, tasks and checklists",
+    "companies": "Add and edit client companies",
+    "team": "See the Team page (only managers can change it)",
+    "filing": "Generate, edit and download quarterly returns, and mark them filed",
+    "annual": "Annual income tax returns",
+    "employees": "Client employees, alphalist and 2316s",
+    "books": "Journals, ledgers and the chart of accounts",
+    "close": "Close and reopen months",
+    "recurring": "Recurring journal entries",
+    "bank": "Bank statements, matching and reconciliation",
+    "subledgers": "Customers, suppliers, A/R and A/P, write-offs and 2307s",
+    "reports": "P&L, balance sheet and other live reports",
+    "reclassify": "Move many postings to another account at once",
+    "imports": "Import opening balances, open items and journals",
+    "atc": "Supplier and account ATC defaults",
+    "audit": "The audit log of who changed what",
+}
+
+
+@router.put("/members/{member_id}/access", response_model=MemberResponse)
+async def set_member_access(
+    member_id: uuid.UUID,
+    req: MemberAccess,
+    db: AsyncSession = Depends(get_db),
+    ctx: EnterpriseContext = Depends(get_enterprise_context),
+):
+    """What one person can use. The owner sets anyone's; a manager sets employees' only. Audited."""
+    member = await _member_or_404(db, ctx.enterprise.id, member_id)
+    if not access_rules.can_manage(ctx.caller.role.value, member.role.value):
+        raise HTTPException(status_code=403, detail="Only the firm owner can change a manager's access")
+    unknown = set(req.off) - set(access_rules.PERSONAL_KEYS)
+    if unknown:
+        raise HTTPException(status_code=400, detail="Unknown area: " + ", ".join(sorted(unknown)))
+    before = access_rules.clean(member.access)
+    after = access_rules.clean(req.model_dump())
+    if before != after:
+        member.access = after
+        audit.record(db, ent=ctx.enterprise.id, company_id=None, user=ctx.caller, entity="team_member",
+                     entity_id=member.id, action="access", before={"access": before}, after={"access": after},
+                     label=member.email)
+        await db.commit()
+        await db.refresh(member)
+    return _member_response(member, ctx.caller)
 
 
 @router.delete("/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)

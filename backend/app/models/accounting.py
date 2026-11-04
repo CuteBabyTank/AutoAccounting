@@ -214,6 +214,7 @@ class AADocument(Base):
     needs_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     review_reasons: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     # Per-reason details shown with the reason: {"ewt_expected": {"atc": "WC010", "amount": "1500.00"}, …}
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     review_notes: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     excluded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -762,6 +763,7 @@ class AAFirmSettings(Base):
     # Only owners and managers may mark returns filed (closing a month is already theirs).
     approve_before_close: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     auto_assign: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    assistant_writes: Mapped[str] = mapped_column(Text, nullable=False, default="managers", server_default="managers")
     deadline_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)   # notify this many days ahead
     updated_at: Mapped[datetime] = _updated()
 
@@ -922,3 +924,37 @@ class AAAssistantUsage(Base):
     completion_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     cached_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     updated_at: Mapped[datetime] = _updated()
+
+
+class AAAssistantAction(Base):
+    """Immutable resolved proposal; only a person's confirmation can apply it."""
+
+    __tablename__ = "aa_assistant_actions"
+    __table_args__ = (
+        Index("ix_aa_assistant_actions_firm_created", "enterprise_id", "created_at"),
+        Index("ix_aa_assistant_actions_firm_applied", "enterprise_id", "applied_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_companies.id", ondelete="CASCADE"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    args: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    details: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    destructive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="proposed")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    undo_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = _created()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    undo_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    undone_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

@@ -5,6 +5,9 @@ request's session, so it commits (or rolls back) with the change it describes. O
 kept. Any router that mutates firm data should call ``record``; see CLAUDE.md.
 """
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+
 import enum
 import uuid
 from collections.abc import Iterable
@@ -13,6 +16,18 @@ from decimal import Decimal
 from typing import Any
 
 from app.models.accounting import AAAuditEvent
+
+casper_reason: ContextVar[str] = ContextVar("casper_audit_reason", default="")
+
+
+@contextmanager
+def casper_context(name: str):
+    token = casper_reason.set(f"Casper (confirmed by {name})")
+    try:
+        yield
+    finally:
+        casper_reason.reset(token)
+
 
 ENTITIES = frozenset({
     "company", "document", "account", "journal_entry", "books_month", "period", "output", "asset", "employee",
@@ -74,7 +89,7 @@ def record(db, *, ent: uuid.UUID, company_id: uuid.UUID | None, user, entity: st
         user_label=(getattr(user, "email", "") or "")[:255], entity=entity,
         entity_id=str(entity_id if entity_id is not None else "")[:64], label=(label or "")[:200],
         action=action[:30],
-        before=old, after=new, reason=(reason or "").strip()[:REASON_MAX],
+        before=old, after=new, reason=(reason or casper_reason.get()).strip()[:REASON_MAX],
     )
     db.add(event)
     return event

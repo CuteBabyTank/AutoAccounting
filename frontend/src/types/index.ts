@@ -23,6 +23,25 @@ export interface Member {
   role: UserRole;
   is_active: boolean;
   created_at: string;
+  /** What this person can use (Team page); empty = full access, no level = the firm's Casper default. */
+  access?: MemberAccess;
+  access_summary?: string;
+  can_edit_access?: boolean;
+}
+
+export type AssistantLevel = "off" | "read" | "write";
+
+export interface MemberAccess {
+  off: string[];
+  assistant?: AssistantLevel | null;
+}
+
+/** One area a firm owner can turn on or off for a person. */
+export interface AccessArea {
+  key: string;
+  label: string;
+  group: string;
+  description: string;
 }
 
 export interface FirmUsage {

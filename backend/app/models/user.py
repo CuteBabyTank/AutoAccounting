@@ -45,6 +45,8 @@ class User(Base):
     avatar: Mapped[bytes | None] = deferred(mapped_column(LargeBinary, nullable=True), raiseload=True)
 
     # Usage caps
+    # Per-person access set on the Team page: {"off": [feature keys], "assistant": off|read|write}.
+    access: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     usage_cap: Mapped[int | None] = mapped_column(Integer, nullable=True)
     global_usage_cap: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

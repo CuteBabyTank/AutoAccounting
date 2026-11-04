@@ -288,6 +288,7 @@ class DocumentOut(BaseModel):
     confidence: float
     needs_review: bool
     review_reasons: list[str]
+    notes: str = ""
     review_notes: dict = Field(default_factory=dict)
     reviewed: bool
     excluded: bool
@@ -319,6 +320,7 @@ class NotDuplicateIn(BaseModel):
 
 
 class DocumentPatch(BaseModel):
+    notes: str | None = Field(default=None, max_length=4000)
     model_config = ConfigDict(extra="forbid")
 
     category: Category | None = None

@@ -51,6 +51,12 @@ class UpdateMemberRequest(BaseModel):
     is_active: Optional[bool] = None
 
 
+class MemberAccess(BaseModel):
+    """Areas turned off for this person, and Casper's level (None = the firm default)."""
+    off: list[str] = Field(default_factory=list, max_length=40)
+    assistant: Optional[str] = Field(default=None, pattern="^(off|read|write)$")
+
+
 class MemberResponse(BaseModel):
     id: str
     email: str
@@ -58,6 +64,9 @@ class MemberResponse(BaseModel):
     role: str
     is_active: bool
     created_at: datetime
+    access: MemberAccess = Field(default_factory=MemberAccess)
+    access_summary: str = "Full access"
+    can_edit_access: bool = False
 
 
 class FirmUsageResponse(BaseModel):

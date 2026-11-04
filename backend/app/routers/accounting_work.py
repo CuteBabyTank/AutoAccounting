@@ -54,7 +54,7 @@ async def work_people(user: User = Depends(get_current_user), db: AsyncSession =
 
 def _settings_out(row: AAFirmSettings, user: User, organization_name: str = "") -> FirmSettingsOut:
     return FirmSettingsOut(
-        organization_name=organization_name,
+        organization_name=organization_name, assistant_writes=row.assistant_writes or "managers",
         auto_assign=row.auto_assign, can_auto_assign=user.role in MANAGER_ROLES,
         approve_before_close=row.approve_before_close, deadline_days=row.deadline_days,
         can_edit=user.role in OWNER_ROLES, can_file=may_file(user.role, row.approve_before_close))
@@ -75,9 +75,9 @@ async def put_firm_settings(body: FirmSettingsIn, user: User = Depends(get_curre
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only managers and the firm owner can change firm settings")
     sent = body.model_fields_set
     if user.role not in OWNER_ROLES and sent - {"auto_assign"}:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the firm owner can change approval and deadline settings")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the firm owner can change approval, deadline and assistant settings")
     await lock_firm(db, ent)
-    fields = ("approve_before_close", "deadline_days", "auto_assign")
+    fields = ("approve_before_close", "deadline_days", "auto_assign", "assistant_writes")
     await db.execute(pg_insert(AAFirmSettings).values(id=uuid.uuid4(), enterprise_id=ent).on_conflict_do_nothing(
         index_elements=["enterprise_id"]))
     row = (await db.execute(select(AAFirmSettings).where(AAFirmSettings.enterprise_id == ent))).scalar_one()

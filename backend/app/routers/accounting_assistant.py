@@ -3,20 +3,24 @@
 import asyncio
 import json
 import logging
+import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.security import RateLimiter
 from app.config import settings
 from app.database import async_session
 from app.dependencies import bind_session_user, get_current_user, get_db
+from app.models.accounting import AACompany
 from app.models.user import User
 from app.routers.accounting_scope import MANAGER_ROLES, scope_for
-from app.services.accounting.assistant import loop, tools, usage
+from app.services.accounting.assistant import actions, loop, tools, usage
+from app.schemas.accounting_assistant import ActionOut
 
 logger = logging.getLogger("assistant")
 router = APIRouter()
@@ -33,7 +37,10 @@ class HistoryMessage(BaseModel):
 
 class ChatIn(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
+    write: bool = False
     history: list[HistoryMessage] = Field(default_factory=list, max_length=60)
+    # The company open on screen, sent only after the person confirmed the question is about it.
+    company_id: uuid.UUID | None = None
 
 
 def _sse(event: dict) -> str:
@@ -69,7 +76,7 @@ async def assistant_info(user: User = Depends(get_current_user), db: AsyncSessio
     if user.role not in MANAGER_ROLES:
         totals.pop("firm")
     base = settings.assistant_llm_base_url.strip()
-    return {"day": day, "usage": totals,
+    return {"day": day, "usage": totals, "write": await actions.permission(db, user),
             "caps": {"firm": settings.assistant_firm_daily_tokens, "user": settings.assistant_user_daily_tokens},
             "model": settings.assistant_llm_model, "provider": settings.assistant_llm_provider,
             "ready": bool(base), "local": any(h in base for h in ("localhost", "127.0.0.1", "host.docker.internal"))}
@@ -105,7 +112,14 @@ async def assistant_chat(body: ChatIn, user: User = Depends(get_current_user), d
             # Its own session: the stream outlives the request's dependencies. RLS binds to the person, as everywhere.
             async with async_session() as db:
                 await bind_session_user(db, str(user.id))
-                ctx = tools.Ctx(db=db, user=user, ent=ent)
+                ctx = tools.Ctx(db=db, user=user, ent=ent,
+                                write=body.write and (await actions.permission(db, user))["allowed"])
+                if body.company_id is not None:
+                    # Only this firm's live companies; anything else is quietly ignored (same as no company).
+                    focus = (await db.execute(select(AACompany).where(
+                        AACompany.id == body.company_id, AACompany.enterprise_id == ent,
+                        AACompany.archived_at.is_(None)))).scalar_one_or_none()
+                    ctx.focus = focus
                 async for event in loop.run(ctx, question, history, meter=meter):
                     if event["type"] in {"final", "clarify", "error"}:
                         meter.update(event.get("usage") or {})
@@ -124,3 +138,26 @@ async def assistant_chat(body: ChatIn, user: User = Depends(get_current_user), d
 
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.post("/assistant/actions/{action_id}/confirm", response_model=ActionOut)
+async def confirm_action(action_id: uuid.UUID, user: User = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)):
+    return await actions.confirm(db, user, action_id)
+
+
+@router.post("/assistant/actions/{action_id}/cancel", response_model=ActionOut)
+async def cancel_action(action_id: uuid.UUID, user: User = Depends(get_current_user),
+                        db: AsyncSession = Depends(get_db)):
+    return await actions.cancel(db, user, action_id)
+
+
+@router.post("/assistant/actions/{action_id}/undo", response_model=ActionOut)
+async def undo_action(action_id: uuid.UUID, user: User = Depends(get_current_user),
+                      db: AsyncSession = Depends(get_db)):
+    return await actions.undo(db, user, action_id)
+
+
+@router.get("/assistant/actions", response_model=list[ActionOut])
+async def list_actions(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await actions.list_actions(db, user)

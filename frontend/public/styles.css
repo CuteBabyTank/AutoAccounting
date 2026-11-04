@@ -511,3 +511,22 @@ main, .footer { position: relative; z-index: 1; }
 .faq-item summary:focus-visible { outline: 2px solid var(--emerald); outline-offset: 2px; border-radius: 14px; }
 .faq-item p { padding: 0 22px 20px; font-size: 15.5px; color: var(--ink-2); line-height: 1.6; max-width: 62em; }
 @media (prefers-reduced-motion: reduce) { .faq-item summary::after { transition: none; } }
+
+/* ───────── Sign-in pop-up (the /login page in a same-site frame) ───────── */
+.auth-modal {
+  border: 0; padding: 0; background: transparent; overflow: visible;
+  width: min(448px, calc(100vw - 24px)); max-height: calc(100dvh - 24px);
+}
+.auth-modal::backdrop { background: rgba(15, 23, 42, .45); backdrop-filter: blur(3px); }
+.auth-modal[open] { animation: auth-in .28s var(--ease); }
+.auth-modal[open]::backdrop { animation: auth-fade .28s ease; }
+.auth-modal iframe {
+  display: block; width: 100%; height: 540px; max-height: calc(100dvh - 24px);
+  border: 0; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-lg);
+}
+@keyframes auth-in { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes auth-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .auth-modal[open], .auth-modal[open]::backdrop { animation: none; }
+}
+html.auth-open { overflow: hidden; }

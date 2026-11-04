@@ -10,11 +10,12 @@ import requests
 from fastapi import HTTPException
 from google.oauth2 import id_token
 from google.auth.transport.requests import Request as GoogleRequest
-from sqlalchemy import inspect as sa_inspect, select
+from sqlalchemy import func, inspect as sa_inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import create_access_token
 from app.config import settings
+from app.models.auth_token import AuthToken
 from app.models.user import User, UserRole
 
 logger = logging.getLogger("auth.audit")
@@ -89,7 +90,7 @@ async def google_login(
             logger.warning("google_login_failed reason=missing_or_unverified_email")
             raise HTTPException(status_code=401, detail="Invalid Google token")
 
-        result = await db.execute(select(User).where(User.email == email))
+        result = await db.execute(select(User).where(func.lower(User.email) == email.lower()))
         user = result.scalar_one_or_none()
 
         if not user:
@@ -98,7 +99,7 @@ async def google_login(
                 # and sends the same token back.
                 logger.info("google_registration_needs_consent")
                 raise HTTPException(status_code=428, detail=CONSENT_REQUIRED)
-            user = User(email=email, role=UserRole.UNVERIFIED)
+            user = User(email=email, role=UserRole.UNVERIFIED, email_verified_at=datetime.now(timezone.utc))
             _record_consent(user)
             db.add(user)
             await db.commit()
@@ -109,6 +110,18 @@ async def google_login(
             if not user.is_active:
                 logger.warning("google_login_failed reason=deactivated user_id=%s email=%s", user.id, email)
                 raise _AccountDeactivated()
+            if user.email_verified_at is None:
+                # Someone signed up with this email and a password but never proved they own it. Google just did
+                # prove it: the inbox owner takes the account, and that unproven password stops working.
+                user.email_verified_at = datetime.now(timezone.utc)
+                user.password_hash = None
+                user.password_changed_at = datetime.now(timezone.utc)
+                # Any sign-up link still out there (and the password waiting on it) stops working.
+                await db.execute(update(AuthToken).where(AuthToken.user_id == user.id, AuthToken.used_at.is_(None))
+                                 .values(used_at=user.password_changed_at, pending_password_hash=None))
+                await db.commit()
+                await db.refresh(user)
+                logger.warning("google_login_claimed_unverified_account user_id=%s", user.id)
             changed = _changed_documents(user)
             if changed:
                 if not accept_privacy:

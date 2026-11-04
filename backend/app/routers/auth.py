@@ -1,16 +1,19 @@
 """Auth routes: Google SSO + profile."""
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.security import login_limiter
+from app.auth.security import email_send_limiter, login_limiter
 from app.config import settings
 from app.dependencies import get_db, get_current_user
 from app.edge import client_ip
 from app.models.user import User
-from app.schemas.auth import DevLoginRequest, GoogleAuthRequest, TokenResponse, UpdateMeRequest, UserResponse
+from app.schemas.auth import (DevLoginRequest, EmailRequest, GoogleAuthRequest, PasswordLoginRequest, RegisterRequest,
+                              ResetPasswordRequest, TokenRequest, TokenResponse, UpdateMeRequest, UserResponse)
+from app.services import email_service, password_auth
 from app.services.avatar_service import MAX_UPLOAD_BYTES, make_avatar
-from app.services.auth_service import dev_login, dev_login_enabled, google_login, user_to_response
+from app.services.auth_service import _record_consent, dev_login, dev_login_enabled, google_login, user_to_response
 from app.services.usage_service import get_enterprise_for_user, get_usage_stats
 
 router = APIRouter()
@@ -42,9 +45,68 @@ async def auth_google(request: GoogleAuthRequest, http: Request, db: AsyncSessio
 
 
 @router.get("/config")
-async def auth_config():
+async def auth_config(db: AsyncSession = Depends(get_db)):
     """Tells the login page which sign-in to show."""
-    return {"dev_login": dev_login_enabled()}
+    signup = email_service.ready()
+    # The email + password form only shows once someone could have a password (email set up, or one exists).
+    has_passwords = signup or (await db.execute(select(User.id).where(User.password_hash.is_not(None)).limit(1))
+                               ).first() is not None
+    return {"dev_login": dev_login_enabled(), "password_login": has_passwords,
+            # Sign-up and "forgot password" need email to prove the inbox; hidden until a provider is set.
+            "password_signup": signup}
+
+
+def _throttle_email(email: str) -> bool:
+    """False once this address has had its emails for the hour (the answer stays the same; nothing is sent)."""
+    return email_send_limiter.check_and_record(password_auth.normalize_email(email))
+
+
+@router.post("/password/login", response_model=TokenResponse)
+async def auth_password_login(request: PasswordLoginRequest, http: Request, db: AsyncSession = Depends(get_db)):
+    _throttle_login(http)
+    user, token = await password_auth.login(db, request.email, request.password)
+    return TokenResponse(token=token, user=UserResponse(**await _response(db, user)))
+
+
+@router.post("/password/register", status_code=202)
+async def auth_password_register(request: RegisterRequest, http: Request, db: AsyncSession = Depends(get_db)):
+    password_auth.require_email()
+    _throttle_login(http)
+    if _throttle_email(request.email):
+        await password_auth.register(db, request.email, request.password, request.accept_privacy, _record_consent)
+    return {"detail": password_auth.CHECK_EMAIL}
+
+
+@router.post("/password/verify", response_model=TokenResponse)
+async def auth_password_verify(request: TokenRequest, http: Request, db: AsyncSession = Depends(get_db)):
+    _throttle_login(http)
+    user, token = await password_auth.verify_email(db, request.token)
+    return TokenResponse(token=token, user=UserResponse(**await _response(db, user)))
+
+
+@router.post("/password/resend", status_code=202)
+async def auth_password_resend(request: EmailRequest, http: Request, db: AsyncSession = Depends(get_db)):
+    password_auth.require_email()
+    _throttle_login(http)
+    if _throttle_email(request.email):
+        await password_auth.resend_verification(db, request.email)
+    return {"detail": password_auth.CHECK_EMAIL}
+
+
+@router.post("/password/forgot", status_code=202)
+async def auth_password_forgot(request: EmailRequest, http: Request, db: AsyncSession = Depends(get_db)):
+    password_auth.require_email()
+    _throttle_login(http)
+    if _throttle_email(request.email):
+        await password_auth.forgot_password(db, request.email)
+    return {"detail": password_auth.CHECK_EMAIL}
+
+
+@router.post("/password/reset", response_model=TokenResponse)
+async def auth_password_reset(request: ResetPasswordRequest, http: Request, db: AsyncSession = Depends(get_db)):
+    _throttle_login(http)
+    user, token = await password_auth.reset_password(db, request.token, request.password)
+    return TokenResponse(token=token, user=UserResponse(**await _response(db, user)))
 
 
 @router.post("/dev-login", response_model=TokenResponse)

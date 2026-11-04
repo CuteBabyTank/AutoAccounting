@@ -4,6 +4,14 @@ New databases get these columns from the models via create_all; existing ones ge
 """
 
 
+def backfill_statements() -> list[str]:
+    """Idempotent data fixes run after the columns exist (each touches only rows still needing it)."""
+    return [
+        # Every account from before passwords existed signed in with Google, which verified its email.
+        "UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL AND password_hash IS NULL",
+    ]
+
+
 def column_statements() -> list[str]:
     return [
         "ALTER TABLE aa_firm_settings ADD COLUMN IF NOT EXISTS assistant_writes TEXT NOT NULL DEFAULT 'managers'",
@@ -19,6 +27,12 @@ def column_statements() -> list[str]:
         "ALTER TABLE aa_firm_settings ADD COLUMN IF NOT EXISTS auto_assign BOOLEAN NOT NULL DEFAULT true",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar BYTEA",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS access JSONB",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)",
+        "ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS pending_password_hash VARCHAR(255)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMPTZ",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_logins INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_accepted_at TIMESTAMPTZ",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_policy_version VARCHAR(20)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ",

@@ -1,12 +1,12 @@
 # AutoAccounting: Claude Code Guide
 
-AI back office for Philippine accounting firms: drop client receipts/invoices/2307s/payroll → Gemini extracts and sorts them into a per-firm company databank, filed Company → Year → Quarter → BIR returns (2550-Q, 2551-Q, 1701-Q/1702-Q, 0619-E, 1601-EQ/C, annual 1701/1701-A/1702-RT, 1604-C alphalist + 2316s, outgoing 2307s) as filled PDFs + versioned XLSX, and BIR loose-leaf books of accounts (journals, GL, TB, closing entries, financial statements, month close). Multi-tenant: `admin` = platform owner, `enterprise` = firm owner, `manager`, `employee`, `unverified`. Auth is **Google SSO only**.
+AI back office for Philippine accounting firms: drop client receipts/invoices/2307s/payroll → Gemini extracts and sorts them into a per-firm company databank, filed Company → Year → Quarter → BIR returns (2550-Q, 2551-Q, 1701-Q/1702-Q, 0619-E, 1601-EQ/C, annual 1701/1701-A/1702-RT, 1604-C alphalist + 2316s, outgoing 2307s) as filled PDFs + versioned XLSX, and BIR loose-leaf books of accounts (journals, GL, TB, closing entries, financial statements, month close). Multi-tenant: `admin` = platform owner, `enterprise` = firm owner, `manager`, `employee`, `unverified`. Auth is **Google SSO or email + password** (Argon2id).
 
 Extracted from the SnagStock repo's `AutoAccounting` branch (2026-10-15). The branch there is kept as history; this repo is now the source of truth.
 
 ## Repo layout
 
-The **static marketing site** lives in `frontend/public/` (`index.html`, `styles.css`, `app.js`, `assets/`; product notes in root `PRODUCT.md`): plain HTML/CSS/JS with no build step. `next.config.ts` serves it at `/` (a rewrite; the old `/homepage` redirects there permanently), so it is the app's default page. Every AutoAccounting logo and sign-out lead to `/` (`HOMEPAGE` in `lib/roles.ts`; use a plain `<a>`, not `next/link`, since it isn't a Next route). "Log in" goes to `/login`; the "Book a demo" CTAs open an email to the contact address (no booking tool yet). Copy rule: no subheads under section headings; if one is unavoidable, one sentence. SEO: the site URL is written into `index.html` (canonical, Open Graph, JSON-LD), `robots.txt`, `sitemap.xml` and `llms.txt` in `public/`; change all of them together when the domain changes, and keep the FAQ JSON-LD in step with the visible FAQ. Signed-in app pages are `noindex` (root `layout.tsx` metadata). Changes to `next.config.ts` need `docker compose restart frontend`.
+The **static marketing site** lives in `frontend/public/` (`index.html`, `styles.css`, `app.js`, `assets/`; product notes in root `PRODUCT.md`): plain HTML/CSS/JS with no build step. `next.config.ts` serves it at `/` (a rewrite; the old `/homepage` redirects there permanently), so it is the app's default page. Every AutoAccounting logo and sign-out lead to `/` (`HOMEPAGE` in `lib/roles.ts`; use a plain `<a>`, not `next/link`, since it isn't a Next route). "Log in" / "Sign up now" open `/login?embed=1` in a `<dialog>` pop-up over the homepage (`public/app.js`; the links still go to `/login` without JS or in a new tab); the "Book a demo" CTAs open an email to the contact address (no booking tool yet). Copy rule: no subheads under section headings; if one is unavoidable, one sentence. SEO: the site URL is written into `index.html` (canonical, Open Graph, JSON-LD), `robots.txt`, `sitemap.xml` and `llms.txt` in `public/`; change all of them together when the domain changes, and keep the FAQ JSON-LD in step with the visible FAQ. Signed-in app pages are `noindex` (root `layout.tsx` metadata). Changes to `next.config.ts` need `docker compose restart frontend`.
 
 ```
 backend/app/
@@ -87,7 +87,7 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
 `ASSISTANT_FIRM_DAILY_TOKENS` (3000000), `ASSISTANT_USER_DAILY_TOKENS` (600000),
 `ASSISTANT_PLATFORM_DAILY_TOKENS` (20000000 per instance; all caps reset at Manila midnight, 0 disables),
 `ASSISTANT_HISTORY_TURNS` (12 messages), `ASSISTANT_HISTORY_CHARS` (800 per message),
-`ASSISTANT_HISTORY_BUDGET_CHARS` (4000 total), `ASSISTANT_ANSWER_CHARS` (4000, truncated with `…`), `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB` (50), `MAX_BATCH_SIZE` (200), `BOOTSTRAP_ADMIN_EMAIL`, `ENABLE_DEV_LOGIN`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+`ASSISTANT_HISTORY_BUDGET_CHARS` (4000 total), `EMAIL_PROVIDER` ("" off, "console" dev), `EMAIL_FROM`, `ASSISTANT_ANSWER_CHARS` (4000, truncated with `…`), `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB` (50), `MAX_BATCH_SIZE` (200), `BOOTSTRAP_ADMIN_EMAIL`, `ENABLE_DEV_LOGIN`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
 Multipart bodies are capped at the smaller of the configured batch capacity and 256 MiB, plus 64 KiB per file and
 1 MiB for headers/fields. JSON bodies are capped at 25 MiB; limits count received bytes regardless of Content-Length.
@@ -324,6 +324,20 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   `deploy/config.sh`, secrets `AA_*` in Secret Manager). Upload jobs are in-process tasks: a dead one is resumed on
   the next read of its upload (`jobs.stale_action`, `pipeline.resume`; failed after 24 h) and shutdown dates running
   ones back (`pipeline.release_running`). Keep anything new that runs after a response resumable the same way.
+- **Email + password** (`services/password_auth.py`, `passwords.py`, `email_service.py`, routes `/api/auth/password/*`):
+  Argon2id (argon2-cffi defaults, NFKC, hashed off the event loop, rehash on sign-in); NIST rules (10 to 128 chars,
+  no composition rules, common list, not the email). Sign-up / forgot / resend always answer "check your email" (no
+  account enumeration) and are rate-limited per IP and per address (3 emails / hour). Unverified accounts can't sign
+  in, and team `add_member` refuses them. A sign-up's password waits on its verify link
+  (`auth_tokens.pending_password_hash`) and is applied only when that link is opened on a still-unverified account;
+  signing up again never touches it (the inbox gets a choose-a-password link instead), and Google sign-in on an
+  unverified account takes it over and cancels pending links (pre-hijack defence). Email links: random 256-bit token, only its SHA-256 in `auth_tokens`, single
+  use, verify 24 h / reset 30 min, a new link cancels older ones. 10 wrong passwords lock 15 min. A reset sets
+  `users.password_changed_at` and `_get_active_user` rejects tokens issued before it (signed out everywhere).
+  `EMAIL_PROVIDER` "" (prod default) hides sign-up / forgot and the password form until an account has a password;
+  "console" (dev) logs the links. Add a real provider in `email_service.send`. Links open `/login?verify=` /
+  `?reset=`, which strip the token from the URL. Only `/login` may be framed, and only same-origin (middleware sets
+  `frame-ancestors 'self'` + `X-Frame-Options: SAMEORIGIN` there, DENY elsewhere).
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.
 - **Frontend token** lives in `sessionStorage` (`autoaccounting_token`). The axios interceptor attaches it, and on 401 it is cleared and AuthGate redirects.
 

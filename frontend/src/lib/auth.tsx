@@ -13,6 +13,8 @@ interface AuthState {
   googleLogin: (credential: string, acceptPrivacy?: boolean) => Promise<User>;
   /** Development-only sign-in; no email signs in as the platform admin. */
   devLogin: (email?: string) => Promise<User>;
+  /** Any sign-in route that answers {token, user}: email + password, an emailed verify / reset link. */
+  signInWith: (path: string, body: object) => Promise<User>;
   logout: () => void;
   updateNickname: (nickname: string | null) => Promise<User>;
   /** Set your own profile picture (JPG / PNG under 5 MB; the server shrinks it). */
@@ -65,6 +67,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return res.data.user;
   };
 
+  const signInWith = async (path: string, body: object): Promise<User> => {
+    const res = await api.post(path, body);
+    sessionStorage.setItem(TOKEN_KEY, res.data.token);
+    setToken(res.data.token);
+    setUser(res.data.user);
+    return res.data.user;
+  };
+
   const logout = () => {
     sessionStorage.removeItem(TOKEN_KEY);
     setToken(null);
@@ -87,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, googleLogin, devLogin, logout, updateNickname, uploadAvatar }}>
+    <AuthContext.Provider value={{ user, token, loading, googleLogin, devLogin, signInWith, logout, updateNickname, uploadAvatar }}>
       {children}
     </AuthContext.Provider>
   );

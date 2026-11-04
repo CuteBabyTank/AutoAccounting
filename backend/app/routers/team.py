@@ -3,7 +3,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import EnterpriseContext, get_db, get_enterprise_context, require_enterprise_owner
@@ -84,11 +84,16 @@ async def add_member(
     ctx: EnterpriseContext = Depends(get_enterprise_context),
 ):
     """Attach an existing UNVERIFIED signup to this firm as an employee."""
-    target = (await db.execute(select(User).where(User.email == req.email))).scalar_one_or_none()
+    target = (await db.execute(select(User).where(func.lower(User.email) == req.email.strip().lower()))).scalar_one_or_none()
     if target is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No account found with that email. Ask them to sign in with Google first.",
+        )
+    if target.email_verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That person hasn't confirmed their email yet. Ask them to open the link we sent, then add them.",
         )
     if target.role != UserRole.UNVERIFIED:
         raise HTTPException(

@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # Security: CORS
     # Accepts a single origin or a comma-separated list of origins.
     frontend_url: str = "http://localhost:3000"
+    # Verification / reset emails: "" = off (password sign-up and reset hidden), "console" = log them (dev only).
+    email_provider: str = ""
+    email_from: str = "AutoAccounting <no-reply@autoaccounting.ph>"
 
     @property
     def allowed_origins(self) -> list[str]:

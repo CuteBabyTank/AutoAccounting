@@ -11,6 +11,88 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, reduceMotion ? ms * 0.6 : ms));
   const SPEED = reduceMotion ? 0.4 : 1;
 
+  /* ───────── Sign in / sign up pop-up ─────────
+     The links still go to /login (no JS, new tab, middle click). A plain click opens /login?embed=1 in a native
+     <dialog> over the page: Esc closes it, focus stays inside, and the framed page reports its height and asks to
+     close by postMessage (same origin only). Signing in moves the whole tab into the app. */
+  let authDialog = null;
+  let authFrame = null;
+  let authMode = "";
+  const closeAuth = () => { if (authDialog && authDialog.open) authDialog.close(); };
+  const openAuth = (mode) => {
+    if (!authDialog) {
+      authDialog = document.createElement("dialog");
+      authDialog.className = "auth-modal";
+      authDialog.setAttribute("aria-label", "Sign in to AutoAccounting");
+      authFrame = document.createElement("iframe");
+      authFrame.title = "Sign in to AutoAccounting";
+      authFrame.setAttribute("allow", "identity-credentials-get");  // Google sign-in (FedCM) inside the frame
+      authDialog.appendChild(authFrame);
+      document.body.appendChild(authDialog);
+      authDialog.addEventListener("close", () => document.documentElement.classList.toggle("auth-open", false));
+      authDialog.addEventListener("click", (e) => { if (e.target === authDialog) closeAuth(); });  // the backdrop
+      window.addEventListener("message", (e) => {
+        if (e.origin !== window.location.origin || e.source !== authFrame.contentWindow) return;
+        const msg = e.data || {};
+        if (msg.type === "aa-login-height" && msg.height > 0) authFrame.style.height = `${Math.ceil(msg.height)}px`;
+        if (msg.type === "aa-login-close") closeAuth();
+      });
+    }
+    if (mode !== authMode) {
+      authMode = mode;
+      authFrame.src = `/login?embed=1${mode === "signup" ? "&mode=signup" : ""}`;
+    }
+    document.documentElement.classList.add("auth-open");
+    authDialog.showModal();
+    authFrame.focus();
+  };
+  /* ───────── Signed in? Then "Sign out" + "Go to dashboard" ─────────
+     The app keeps its session token in this tab's sessionStorage (same origin). Only a token that hasn't expired
+     counts; the server still checks it when the app opens. */
+  const TOKEN_KEY = "autoaccounting_token";
+  const signedIn = () => {
+    try {
+      const token = sessionStorage.getItem(TOKEN_KEY);
+      if (!token) return false;
+      const part = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      const { exp } = JSON.parse(atob(part.padEnd(part.length + ((4 - (part.length % 4)) % 4), "=")));
+      return typeof exp === "number" && exp * 1000 > Date.now();
+    } catch {
+      return false;
+    }
+  };
+  const navCta = $("[data-nav-cta]");
+  const navCtaDefault = navCta && { href: navCta.getAttribute("href"), text: navCta.textContent };
+  const authLinks = $$("a[data-auth='signin']");
+  const renderAuth = () => {
+    const inside = signedIn();
+    authLinks.forEach((a) => {
+      a.textContent = inside ? "Sign out" : "Log in";
+      a.dataset.signout = inside ? "1" : "";
+    });
+    if (navCta) {
+      navCta.setAttribute("href", inside ? "/accounting" : navCtaDefault.href);
+      navCta.textContent = inside ? "Go to dashboard" : navCtaDefault.text;
+    }
+  };
+  renderAuth();
+  window.addEventListener("pageshow", renderAuth);  // back from the app (bfcache) after signing in or out
+  authLinks.forEach((a) => a.addEventListener("click", (e) => {
+    if (!a.dataset.signout) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();  // don't open the sign-in pop-up
+    try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked */ }
+    renderAuth();
+  }));
+
+  $$("a[data-auth]").forEach((a) => a.addEventListener("click", (e) => {
+    if (a.dataset.signout) return;
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (typeof HTMLDialogElement !== "function") return;  // very old browser: just follow the link
+    e.preventDefault();
+    openAuth(a.dataset.auth);
+  }));
+
   /* ───────── Nav shadow on scroll ───────── */
   const navWrap = $(".nav-wrap");
   const onScroll = () => navWrap.classList.toggle("scrolled", window.scrollY > 12);

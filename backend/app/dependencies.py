@@ -82,6 +82,10 @@ async def _get_active_user(db: AsyncSession, payload: dict) -> User:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated",
         )
+    # A password change or reset signs out every session issued before it (to the second, as ``iat`` is).
+    changed = user.password_changed_at
+    if changed is not None and int(payload.get("iat") or 0) < int(changed.timestamp()):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     return user
 
 

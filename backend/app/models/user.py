@@ -45,6 +45,14 @@ class User(Base):
     avatar: Mapped[bytes | None] = deferred(mapped_column(LargeBinary, nullable=True), raiseload=True)
 
     # Usage caps
+    # Email + password sign-in (Argon2id hash; None = Google only). The email counts as verified once Google
+    # vouches for it or the person opens a link we sent; unverified accounts can't sign in or join a firm.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Sessions issued before this are rejected (a password change or reset signs out everywhere).
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_logins: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Per-person access set on the Team page: {"off": [feature keys], "assistant": off|read|write}.
     access: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     usage_cap: Mapped[int | None] = mapped_column(Integer, nullable=True)

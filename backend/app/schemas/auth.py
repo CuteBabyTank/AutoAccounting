@@ -11,6 +11,30 @@ class GoogleAuthRequest(BaseModel):
     accept_privacy: bool = False
 
 
+class PasswordLoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=256)
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=256)
+    accept_privacy: bool = False
+
+
+class EmailRequest(BaseModel):
+    email: EmailStr
+
+
+class TokenRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+    password: str = Field(min_length=1, max_length=256)
+
+
 class DevLoginRequest(BaseModel):
     # Omitted: sign in as the platform admin (created on a fresh database).
     email: Optional[EmailStr] = None

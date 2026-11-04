@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 """First Google sign-in only creates an account once the person accepts the terms of service and privacy policy."""
 
 import asyncio
@@ -78,7 +79,8 @@ def test_new_person_who_agrees_is_registered_with_the_policy_version():
 
 def _existing(version: str | None, terms: str | None = auth_service.TERMS_VERSION) -> User:
     return User(id=uuid.uuid4(), email="new.person@example.com", role=UserRole.EMPLOYEE, is_active=True,
-                privacy_policy_version=version, terms_version=terms)
+                privacy_policy_version=version, terms_version=terms,
+                email_verified_at=datetime(2026, 1, 1, tzinfo=timezone.utc))  # a Google account: verified
 
 
 def test_existing_account_on_the_current_policy_is_not_asked_again():
@@ -132,3 +134,16 @@ def test_deactivated_account_is_refused_before_any_consent_step():
     with pytest.raises(HTTPException) as exc:
         _login(_Session(existing), accept=False)
     assert exc.value.status_code == 403
+
+
+def test_google_sign_in_claims_an_unverified_password_account():
+    """Someone signed up with this email and a password but never opened the link. The real owner signs in with
+    Google: the account becomes theirs and the stranger's password stops working."""
+    existing = _existing(auth_service.PRIVACY_POLICY_VERSION)
+    existing.email_verified_at = None
+    existing.password_hash = "$argon2id$v=19$m=65536,t=3,p=4$stranger"
+    db = _Session(existing)
+    user, token = _login(db, accept=False)
+    assert user is existing and token
+    assert user.password_hash is None
+    assert user.email_verified_at is not None and user.password_changed_at is not None

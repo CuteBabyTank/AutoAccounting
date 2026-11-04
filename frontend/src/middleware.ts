@@ -36,6 +36,8 @@ export function middleware(request: NextRequest) {
   }
 
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  // Only the sign-in page may be framed, and only by this site (the homepage's sign-in pop-up).
+  const framable = request.nextUrl.pathname === "/login";
 
   const csp = [
     "default-src 'self'",
@@ -49,7 +51,7 @@ export function middleware(request: NextRequest) {
     "font-src 'self' data: https://fonts.gstatic.com",
     `connect-src 'self' blob: https://accounts.google.com/ ${apiOrigin()}`,
     "worker-src 'self' blob:",
-    "frame-ancestors 'none'",
+    framable ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
   ].join("; ");
@@ -62,6 +64,7 @@ export function middleware(request: NextRequest) {
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", csp);
+  response.headers.set("X-Frame-Options", framable ? "SAMEORIGIN" : "DENY");
   return response;
 }
 

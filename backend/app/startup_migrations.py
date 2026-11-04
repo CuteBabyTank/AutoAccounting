@@ -11,8 +11,8 @@ from sqlalchemy import text
 async def _ensure_accounting_rls(conn) -> None:
     """Additive aa_* columns, then row-level security (idempotent; tables exist after create_all)."""
     from app.services.accounting.rls import rls_statements
-    from app.services.accounting.schema import column_statements
-    for statement in column_statements() + rls_statements():
+    from app.services.accounting.schema import backfill_statements, column_statements
+    for statement in column_statements() + backfill_statements() + rls_statements():
         await conn.execute(text(statement))
 
 

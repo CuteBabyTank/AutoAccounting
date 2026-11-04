@@ -475,6 +475,18 @@ async def apply(db: AsyncSession, action: AAAssistantAction, user: User) -> tupl
                        'bank_line_ids': [str(line.id) for line in bank_lines]}
 
 
+# The area each action kind changes; a person without that area (Team page access, or maintenance) can't confirm,
+# undo or see it, exactly as on the screen it belongs to.
+KIND_AREAS = {'create_task': 'work', 'update_task': 'work', 'delete_task': 'work', 'assign_filing': 'work',
+              'update_document': 'documents', 'delete_document': 'documents'}
+
+
+async def require_area(db: AsyncSession, user: User, kind: str) -> None:
+    area = KIND_AREAS.get(kind)
+    if area and not (await features.effective_for(db, user)).get(area, True):
+        raise HTTPException(403, features.no_access_message(area))
+
+
 async def confirm(db: AsyncSession, user: User, action_id: uuid.UUID) -> ActionOut:
     action = await get_action(db, user, action_id, own=True)
     now = datetime.now(timezone.utc)
@@ -482,6 +494,7 @@ async def confirm(db: AsyncSession, user: User, action_id: uuid.UUID) -> ActionO
         action.status = 'expired'
         await db.commit()
     policy.check_confirm(action.status, action.expires_at, now)
+    await require_area(db, user, action.kind)
     await check_caps(db, action.enterprise_id, user.id, action.kind, now)
     try:
         async with db.begin_nested():
@@ -624,6 +637,7 @@ async def undo(db: AsyncSession, user: User, action_id: uuid.UUID) -> ActionOut:
     action = await get_action(db, user, action_id)
     policy.check_undo(action.status, action.undo_until, datetime.now(timezone.utc))
     await require_write(db, user)
+    await require_area(db, user, action.kind)
     try:
         async with db.begin_nested():
             async with route_session(db, user) as child:
@@ -653,4 +667,6 @@ async def list_actions(db: AsyncSession, user: User) -> list[ActionOut]:
     rows = (await db.execute(query.order_by(a.created_at.desc()))).scalars().all()
     await db.commit()
     allowed = (await permission(db, user))['allowed']
-    return [await action_out(db, row, user, allowed) for row in rows]
+    areas = await features.effective_for(db, user)
+    visible = [r for r in rows if areas.get(KIND_AREAS.get(r.kind, ''), True)]  # nothing from areas they can't use
+    return [await action_out(db, row, user, allowed) for row in visible]

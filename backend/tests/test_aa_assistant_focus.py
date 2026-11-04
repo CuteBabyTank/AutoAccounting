@@ -54,3 +54,20 @@ def test_filing_labels_read_like_the_board():
     # Fiscal year 2027 ending June: Q1 = July to September 2026.
     assert filing_label("1601C-M1", 2027, 1, fye_month=6) == "1601-C for July 2026"
     assert filing_label("1601C-M3", 2027, 2, fye_month=6) == "1601-C for December 2026"
+
+
+async def test_confirm_and_undo_need_the_area_the_change_belongs_to(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    from app.services import features
+    from app.services.accounting.assistant import actions
+
+    async def no_documents(db, user):
+        return {"documents": False, "work": True}
+    monkeypatch.setattr(features, "effective_for", no_documents)
+    user = SimpleNamespace(id=uuid.uuid4())
+    with pytest.raises(HTTPException) as exc:
+        await actions.require_area(None, user, "delete_document")
+    assert exc.value.status_code == 403
+    await actions.require_area(None, user, "create_task")  # work is on: fine
+    assert set(actions.KIND_AREAS) == set(actions.REGISTRY)  # every action kind has an area

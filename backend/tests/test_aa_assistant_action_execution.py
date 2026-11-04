@@ -198,6 +198,7 @@ async def test_confirm_applies_once_and_sets_seven_day_undo(monkeypatch):
     monkeypatch.setattr(actions, 'get_action', get_action)
     monkeypatch.setattr(actions, 'check_caps', noop)
     monkeypatch.setattr(actions, 'require_write', noop)
+    monkeypatch.setattr(actions, 'require_area', noop)
     monkeypatch.setattr(actions, 'route_session', child)
     monkeypatch.setattr(actions, 'apply', apply)
     monkeypatch.setattr(actions, 'action_out', out)
@@ -243,6 +244,7 @@ async def test_confirm_preserves_route_failure_status_and_records_failed(monkeyp
     monkeypatch.setattr(actions, 'get_action', get_action)
     monkeypatch.setattr(actions, 'check_caps', noop)
     monkeypatch.setattr(actions, 'require_write', noop)
+    monkeypatch.setattr(actions, 'require_area', noop)
     monkeypatch.setattr(actions, 'route_session', child)
     monkeypatch.setattr(actions, 'apply', apply)
     monkeypatch.setattr(actions, 'person_name', lambda person: 'Ana')
@@ -290,6 +292,7 @@ async def test_a_filing_proposal_can_never_mark_filed(monkeypatch):
     async def company(*args):
         return SimpleNamespace(id=uuid.uuid4())
     monkeypatch.setattr(actions, 'require_write', allowed)
+    monkeypatch.setattr(actions, 'require_area', allowed)
     monkeypatch.setattr(actions, 'check_caps', allowed)
     monkeypatch.setattr(actions, 'resolve_company', company)
     with pytest.raises(tools.ToolError, match='never filed'):

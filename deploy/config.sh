@@ -26,7 +26,7 @@ BOOTSTRAP_ADMIN_EMAIL="matthewfrasersim@gmail.com"
 GEMINI_MODEL="gemini-3.8-flash"
 GEMINI_THINKING_LEVEL="low"
 
-# Assistant on hosted Qwen (DashScope key in AA_ASSISTANT_LLM_API_KEY). An empty base URL turns it off
+# Assistant on hosted Qwen via OpenRouter (OpenRouter key in AA_ASSISTANT_LLM_API_KEY). An empty base URL turns it off
 # (503 "not configured"); the "assistant" switch on Platform admin hides it.
-ASSISTANT_LLM_BASE_URL="https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-ASSISTANT_LLM_MODEL="qwen3.8-flash"
+ASSISTANT_LLM_BASE_URL="https://openrouter.ai/api/v1"
+ASSISTANT_LLM_MODEL="qwen/qwen3.7-flash"

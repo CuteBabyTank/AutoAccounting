@@ -124,6 +124,8 @@ async def _chat(messages: list[dict], tools: list[dict], tool_choice: str) -> di
                 host.startswith("dashscope-") and host.endswith(".aliyuncs.com")):
             # Raw HTTP: extra_body fields belong directly in the JSON body.
             payload["enable_thinking"] = False
+        elif not settings.assistant_llm_think and host == "openrouter.ai":
+            payload["reasoning"] = {"enabled": False}
     headers = {}
     if settings.assistant_llm_api_key:
         headers["Authorization"] = f"Bearer {settings.assistant_llm_api_key}"

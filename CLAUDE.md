@@ -231,8 +231,9 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   document extraction still uses Gemini. Empty base URL gives 503. Settings/defaults are in the env list above and
   `.env.example`; recreate backend after env changes. Hosted Qwen switch: `ASSISTANT_LLM_PROVIDER=openai`,
   `ASSISTANT_LLM_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1`, `ASSISTANT_LLM_MODEL=qwen3.8-flash`,
-  `ASSISTANT_LLM_API_KEY=<DashScope key>`. Hosted requests use `max_tokens`; only DashScope receives
-  `enable_thinking=false`. Native replies get synthetic tool ids; tool messages use `tool_name`.
+  `ASSISTANT_LLM_API_KEY=<DashScope key>`. Hosted requests use `max_tokens`; DashScope receives
+  `enable_thinking=false`, OpenRouter `reasoning.enabled=false`. Prod uses OpenRouter
+  (`https://openrouter.ai/api/v1`, `qwen/qwen3.7-flash`, key in `AA_ASSISTANT_LLM_API_KEY`). Native replies get synthetic tool ids; tool messages use `tool_name`.
   Up to two retries for connect errors / 429 / 5xx, respecting Retry-After (seconds/date) or jittered 1.5s/3s
   backoff within the call budget; no read-timeout retry. Exhausted 429s ask the person to try again; DashScope
   `data_inspection_failed` gets a rephrasing message without retry. Per-call timeout 90s, connect 5s, whole turn 180s

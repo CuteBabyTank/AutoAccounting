@@ -92,6 +92,16 @@ class Settings(BaseSettings):
     # not a thinking budget).
     accounting_gemini_model: str = "gemini-3.8-flash"
     accounting_gemini_thinking_level: str = "low"
+    # Who reads documents: "gemini" or "qwen" (OpenAI-compatible, OpenRouter by default; vision model required).
+    # The Qwen reader reuses the assistant's base URL / key unless its own are set.
+    accounting_reader: str = "gemini"
+    accounting_reader_model: str = "qwen/qwen3.7-flash"
+    accounting_reader_base_url: str = ""
+    accounting_reader_api_key: str = ""
+    accounting_reader_max_output_tokens: int = 16384
+    accounting_reader_timeout_seconds: float = 180
+    accounting_reader_pages_per_chunk: int = 2  # Qwen only: pages per call
+    accounting_reader_parallel: int = 8  # Qwen only: calls in flight per file
     # Firm assistant only: native Ollama locally, OpenAI-compatible hosted Qwen later.
     assistant_llm_provider: Literal["ollama", "openai"] = "ollama"
     assistant_llm_base_url: str = "http://host.docker.internal:11434"

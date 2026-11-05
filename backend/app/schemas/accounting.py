@@ -139,7 +139,7 @@ class UploadFileOut(BaseModel):
 class UploadGroupOut(BaseModel):
     key: str
     company: CompanyBrief | None
-    level: Literal["certain", "likely", "unknown", "unreadable"]
+    level: Literal["certain", "likely", "unknown", "unreadable", "reader_down"]
     detected_name: str
     detected_tin: str
     detected_address: str

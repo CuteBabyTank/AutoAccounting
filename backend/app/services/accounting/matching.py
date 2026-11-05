@@ -72,6 +72,7 @@ class FileDetection:
     buyer: Party
     match: MatchResult
     failed: bool = False  # the detection call itself failed: nothing is known about the parties
+    reader_down: bool = False  # it failed because the reading service was unavailable (quota, outage), not the file
 
 
 @dataclass
@@ -116,6 +117,8 @@ def suggest_groups(files: list[FileDetection]) -> list[UploadGroup]:
             group = groups.setdefault(key, UploadGroup(key, f.match.company_id, f.match.level, party))
             if f.match.level == "likely":
                 group.level = "likely"
+        elif f.reader_down:  # the reader never looked at it: say so, don't blame the file
+            group = groups.setdefault("reader_down", UploadGroup("reader_down", None, "reader_down", Party()))
         elif f.failed or not (_party_key(f.seller) or _party_key(f.buyer)):  # nothing read: nobody to match
             group = groups.setdefault("unreadable", UploadGroup("unreadable", None, "unreadable", Party()))
         else:
@@ -124,7 +127,8 @@ def suggest_groups(files: list[FileDetection]) -> list[UploadGroup]:
             key = f"new:{pk}"
             group = groups.setdefault(key, UploadGroup(key, None, "unknown", client))
         group.file_ids.append(f.file_id)
-    return sorted(groups.values(), key=lambda g: (g.company_id is None, g.level == "unreadable", -len(g.file_ids)))
+    return sorted(groups.values(), key=lambda g: (g.company_id is None, g.level in ("unreadable", "reader_down"),
+                                                  -len(g.file_ids)))
 
 
 def detection_json(detection: Detection, match: MatchResult) -> dict:
@@ -159,4 +163,4 @@ def file_detection_from_json(file_id: str, data: dict) -> FileDetection:
         score = 0.0
     match = MatchResult(company_id, level if company_id else "unknown", score, m.get("side"))
     return FileDetection(file_id, _party_from_json(data.get("seller")), _party_from_json(data.get("buyer")), match,
-                         failed="error" in data)
+                         failed="error" in data, reader_down=bool(data.get("reader_down")))

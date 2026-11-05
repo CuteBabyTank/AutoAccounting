@@ -14,7 +14,10 @@ interface Props {
   canManage: boolean;
   onCompanyCreated: (company: Company) => void;
   onConfirm: (assignments: ConfirmAssignment[]) => Promise<void>;
+  /** "Decide later": keep the drop waiting (the page shows a reminder). */
   onClose: () => void;
+  /** The ×: cancel this drop. Nothing is filed and it stops asking; the files can be dropped again. */
+  onDismiss: () => void;
 }
 
 const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-50";
@@ -33,7 +36,7 @@ function initialDecisions(groups: UploadGroup[], companies: Company[]): Record<s
   return out;
 }
 
-export default function UploadReviewDialog({ upload, companies, canManage, onCompanyCreated, onConfirm, onClose }: Props) {
+export default function UploadReviewDialog({ upload, companies, canManage, onCompanyCreated, onConfirm, onClose, onDismiss }: Props) {
   const [decisions, setDecisions] = useState<Record<string, Decision>>(() => initialDecisions(upload.groups, companies));
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -95,7 +98,7 @@ export default function UploadReviewDialog({ upload, companies, canManage, onCom
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-6">
         <div className="mb-1 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-[var(--text-primary)]">Which company are these for?</h2>
-          <button onClick={onClose} className="rounded p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]" aria-label="Close">
+          <button onClick={onDismiss} title="Cancel this drop (nothing is filed)" className="rounded p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]" aria-label="Cancel this drop">
             <X size={18} />
           </button>
         </div>
@@ -111,7 +114,13 @@ export default function UploadReviewDialog({ upload, companies, canManage, onCom
             const count = g.file_ids.filter((id) => !excluded.has(id)).length;
             return (
               <div key={g.key} className="rounded-xl border border-[var(--border)] p-4">
-                {g.level === "unreadable" ? (
+                {g.level === "reader_down" ? (
+                  <p className="text-sm text-[var(--text-primary)]">
+                    Our document reader is unavailable right now, so {count === 1 ? "this file wasn't" : `these ${count} files weren't`}{" "}
+                    read. Nothing is wrong with {count === 1 ? "it" : "them"}. Skip {count === 1 ? "it" : "them"} and drop{" "}
+                    {count === 1 ? "it" : "them"} again in a little while, or choose the company yourself.
+                  </p>
+                ) : g.level === "unreadable" ? (
                   <p className="text-sm text-[var(--text-primary)]">
                     We couldn&apos;t read a company name or TIN from {count === 1 ? "this file" : `these ${count} files`}.
                     Choose the company {count === 1 ? "it belongs" : "they belong"} to, or skip{" "}
@@ -148,7 +157,7 @@ export default function UploadReviewDialog({ upload, companies, canManage, onCom
                     title={canManage ? undefined : "Ask an owner or manager to add this company"}
                     onClick={() => setNewCompanyFor(g)}
                   >
-                    {g.company ? "No, it's a new company" : g.level === "unreadable" ? "It's a new company" : "Add to databank"}
+                    {g.company ? "No, it's a new company" : g.level === "unreadable" || g.level === "reader_down" ? "It's a new company" : "Add to databank"}
                   </button>
                   {chooseOther(g)}
                   <button className={BTN} onClick={() => decide(g.key, { kind: "skip" })}>

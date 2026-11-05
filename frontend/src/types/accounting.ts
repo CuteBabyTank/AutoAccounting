@@ -78,7 +78,7 @@ export interface AAUploadFile {
 export interface UploadGroup {
   key: string;
   company: CompanyBrief | null;
-  level: "certain" | "likely" | "unknown" | "unreadable";
+  level: "certain" | "likely" | "unknown" | "unreadable" | "reader_down";
   detected_name: string;
   detected_tin: string;
   detected_address: string;

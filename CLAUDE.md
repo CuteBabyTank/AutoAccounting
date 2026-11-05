@@ -183,6 +183,14 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   write-offs and edits. A new import kind, or anything else that writes rows from an import, must tag them and keep
   fingerprints; a new way for later work to depend on imported rows needs a guard in `UndoFacts`. Imports before
   2026-10-19 have no batch and can't be undone.
+- **Document reader** (`services/accounting/gemini.call_gemini_raw`, the one funnel for detection + extraction):
+  `ACCOUNTING_READER=qwen` (prod) sends images / PDF pages rendered to JPEG (150 dpi, "Page N:" labels) to
+  `ACCOUNTING_READER_MODEL` (`qwen/qwen3.7-flash`, OpenRouter `provider.sort=throughput`, reasoning off, JSON mode) via
+  `services/accounting/qwen_reader.py`, reusing the assistant's base URL / key; PDFs go 2 pages a call, 8 calls per
+  file at once (`pages_per_chunk` / `chunks_at_once`), Gemini 10 pages × 3. Any service failure (quota, outage,
+  credits) raises `ReaderUnavailable`: detection groups those files as `reader_down` ("our reader is unavailable",
+  not "couldn't read a company"), and extraction stores `pipeline.READER_DOWN_MESSAGE` instead of the provider error.
+  Upload review: the dialog's × cancels the drop (all files skipped, nothing filed); "Decide later" keeps it waiting.
 - **PDF templates** are calibrated comb-cell layouts (`forms/overlay.py`); re-calibrate when BIR revises a form.
 - **Global search** (`routers/accounting_search.py`, parser `services/accounting/search.py`): one firm-scoped SELECT per group; add a new searchable table there (and its index to `schema.search_index_statements`, pg_trgm GIN only when the extension exists). Results open through `lib/search-nav.ts`: `/accounting?company=&view=&year=&quarter=&account=&month=&contact=&doc=` is parsed by `parseTarget` (UUIDs via `safeId`, shapes checked); on `/accounting` it's the `aa:open-target` event instead of a reload. The palette (`components/search/SearchPalette.tsx`, "/" or Cmd/Ctrl-K) lives in the Sidebar.
 - **Recurring entries / write-offs / checklists** (`routers/accounting_recurring.py`, `accounting_writeoff.py`, `accounting_checklists.py`; pure logic in `compute/recurring.py`, `writeoff.py`, `checklists.py`): recurring templates never post on their own (no scheduler; "Post due entries" is a user action, row-locked, one JE per template per date via `aa_journal_entries.recurring_id`). A write-off is one JE whose `writeoff_items` the subledger reads back as payments (`books/subledger.writeoff_rows`), so it can't be edited, only deleted (which reopens the invoices). Anything new that computes A/R open balances must include those payments. Frontend calls for these and the cash forecast live in `lib/extras-api.ts` / `types/extras.ts`.

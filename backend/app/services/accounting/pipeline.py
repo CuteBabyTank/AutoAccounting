@@ -45,7 +45,6 @@ _ACTIVE: dict[uuid.UUID, str] = {}
 _IMAGE_MIME = {"png": "image/png", "jpg": "image/jpeg"}
 # Gemini reads in flight per extraction job: files read ahead of the one being filed, and chunks of one file.
 READ_AHEAD = 3
-CHUNKS_AT_ONCE = 3
 
 
 def company_candidates(companies) -> list[CompanyCandidate]:
@@ -172,8 +171,8 @@ async def _read_chunk(file_id: uuid.UUID, data: bytes, mime: str, start0: int, e
 
 async def _read_file(file_id: uuid.UUID, stored_path: str, file_type: str, prompt: str,
                      user_id: str) -> list[tuple[int, int, list | None]]:
-    """Every chunk of a file read by Gemini, at most ``CHUNKS_AT_ONCE`` at a time, in page order. No database."""
-    gate = asyncio.Semaphore(CHUNKS_AT_ONCE)
+    """Every chunk of a file, at most ``chunks_at_once()`` read at a time, in page order. No database."""
+    gate = asyncio.Semaphore(aa_gemini.chunks_at_once())
 
     async def one(chunk: tuple[bytes, str, int, int]) -> tuple[int, int, list | None]:
         async with gate:
@@ -227,6 +226,10 @@ async def _store_statement(db, doc: AADocument) -> None:
         logger.exception("accounting_statement_failed document_id=%s", doc.id)
 
 
+# Shown to the firm when the reading service itself failed (out of credit, quota, outage): not the file's fault.
+READER_DOWN_MESSAGE = "Our document reader was unavailable, so this file wasn't read. Drop it again in a little while."
+
+
 async def run_detection(upload_id: uuid.UUID, user_id: str) -> None:
     async with async_session() as db:
         await bind_session_user(db, user_id)
@@ -254,6 +257,8 @@ async def run_detection(upload_id: uuid.UUID, user_id: str) -> None:
             except Exception as e:  # one bad file never blocks the rest
                 logger.warning("accounting_detect_failed file_id=%s error=%s", file_id, str(e)[:200])
                 result = {"error": str(e)[:200]}
+                if isinstance(e, aa_gemini.ReaderUnavailable):  # quota / outage: the file itself may be fine
+                    result["reader_down"] = True
             f = await db.get(AAFile, file_id)
             f.detection = result
             f.status = "detected"
@@ -381,7 +386,8 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
                     await db.rollback()
                     f = await db.get(AAFile, file_id)
                     f.status = "error"
-                    f.error_message = str(e)[:500]
+                    f.error_message = (READER_DOWN_MESSAGE if isinstance(e, aa_gemini.ReaderUnavailable)
+                                       else str(e)[:500])  # provider errors (billing, quota) stay in the log
                     filed = False
                 upload = await db.get(AAUpload, upload_id)
                 upload.processed_files += 1

@@ -230,7 +230,7 @@ export default function AccountingPage() {
       const parts = [`${filed} file${filed === 1 ? "" : "s"} filed`];
       if (dupes) parts.push(`${dupes} already uploaded`);
       if (failed) parts.push(`${failed} couldn't be read`);
-      setNotice(parts.join(" · "));
+      setNotice(filed || failed || dupes ? parts.join(" · ") : "Drop cancelled. Nothing was filed; drop the files again any time.");
       if (upload.affected_periods?.length) setAppend(upload.affected_periods);
       setPeriodRefresh((n) => n + 1);
       setUploadsDone((n) => n + 1);
@@ -332,6 +332,19 @@ export default function AccountingPage() {
     if (!upload) return;
     setUpload(await accountingApi.confirmUpload(upload.id, assignments));
     setReviewOpen(false);
+  }
+
+  // The dialog's ×: end the drop with every file skipped, so it neither asks again nor blocks the next drop.
+  async function dismissUpload() {
+    if (!upload) return;
+    const ids = [...new Set(upload.groups.flatMap((g) => g.file_ids))];
+    setReviewOpen(false);
+    if (!ids.length) return;
+    try {
+      setUpload(await accountingApi.confirmUpload(upload.id, [{ file_ids: ids, skip: true }]));
+    } catch (e) {
+      setError(apiErrorMessage(e, "Couldn't cancel the drop"));
+    }
   }
 
   async function companySaved() {
@@ -697,6 +710,7 @@ export default function AccountingPage() {
           }}
           onConfirm={confirm}
           onClose={() => setReviewOpen(false)}
+          onDismiss={dismissUpload}
         />
       )}
 

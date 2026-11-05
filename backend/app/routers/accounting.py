@@ -306,7 +306,7 @@ async def _upload_out(db: AsyncSession, ent: uuid.UUID, upload_id: uuid.UUID) ->
             groups.append(UploadGroupOut(
                 key=g.key,
                 company=CompanyBrief.model_validate(company) if company else None,
-                level=g.level if company or g.level == "unreadable" else "unknown",
+                level=g.level if company or g.level in ("unreadable", "reader_down") else "unknown",
                 detected_name=g.detected.name,
                 detected_tin=g.detected.tin,
                 detected_address=g.detected.address,

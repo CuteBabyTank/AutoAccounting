@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CheckCircle, X } from "@phosphor-icons/react";
 import CompanyForm from "@/components/accounting/CompanyForm";
 import { apiErrorMessage, formatTin } from "@/lib/accounting-format";
-import type { Company, ConfirmAssignment, Upload, UploadGroup } from "@/types/accounting";
+import type { Company, ConfirmAssignment, Upload, UploadGroup, UploadOption } from "@/types/accounting";
 
 type Decision = { kind: "company"; companyId: string } | { kind: "skip" };
 
@@ -25,6 +25,11 @@ const SELECT = "rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] 
 
 const tin9 = (tin: string) => tin.replace(/\D/g, "").slice(0, 9);
 
+/** A new company to add for a group, prefilled from what was read on the page. */
+type NewCompany = { group: UploadGroup; name: string; tin: string; address: string };
+
+const SIDE = { seller: "Seller (issued it)", buyer: "Buyer (billed to)" } as const;
+
 /** Unmatched groups whose TIN now belongs to a company (one added since the drop) start out filed to it. */
 function initialDecisions(groups: UploadGroup[], companies: Company[]): Record<string, Decision> {
   const out: Record<string, Decision> = {};
@@ -40,7 +45,15 @@ export default function UploadReviewDialog({ upload, companies, canManage, onCom
   const [decisions, setDecisions] = useState<Record<string, Decision>>(() => initialDecisions(upload.groups, companies));
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [newCompanyFor, setNewCompanyFor] = useState<UploadGroup | null>(null);
+  const [newCompanyFor, setNewCompanyFor] = useState<NewCompany | null>(null);
+  const addNew = (group: UploadGroup, o?: UploadOption) =>
+    setNewCompanyFor({
+      group,
+      name: o ? o.name : group.detected_name,
+      // A TIN that matched an existing company can't be the new one's.
+      tin: o ? o.tin : group.detected_tin === group.company?.tin ? "" : group.detected_tin,
+      address: o ? o.address : group.detected_address,
+    });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -111,6 +124,7 @@ export default function UploadReviewDialog({ upload, companies, canManage, onCom
           {upload.groups.map((g) => {
             const d = decisions[g.key];
             const company = g.company;
+            const options = g.options ?? [];
             const count = g.file_ids.filter((id) => !excluded.has(id)).length;
             return (
               <div key={g.key} className="rounded-xl border border-[var(--border)] p-4">
@@ -125,6 +139,11 @@ export default function UploadReviewDialog({ upload, companies, canManage, onCom
                     We couldn&apos;t read a company name or TIN from {count === 1 ? "this file" : `these ${count} files`}.
                     Choose the company {count === 1 ? "it belongs" : "they belong"} to, or skip{" "}
                     {count === 1 ? "it" : "them"} and drop {count === 1 ? "it" : "them"} again later.
+                  </p>
+                ) : g.level === "choose" ? (
+                  <p className="text-sm text-[var(--text-primary)]">
+                    We&apos;re not sure which company {count === 1 ? "this file is" : `these ${count} files are`} for.
+                    {" "}More than one company is on {count === 1 ? "it" : "them"}. Pick the one whose books {count === 1 ? "it goes" : "they go"} in.
                   </p>
                 ) : g.company ? (
                   <p className="text-sm text-[var(--text-primary)]">
@@ -145,8 +164,46 @@ export default function UploadReviewDialog({ upload, companies, canManage, onCom
                   </p>
                 )}
 
+                {options.length >= 2 && (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Companies on this document">
+                    {options.map((o) => {
+                      const chosen = !!o.company && d?.kind === "company" && d.companyId === o.company.id;
+                      const suggested = !!o.company && o.company.id === company?.id;
+                      return (
+                        <button
+                          key={o.key}
+                          role="radio"
+                          aria-checked={chosen}
+                          disabled={!o.company && !canManage}
+                          title={!o.company && !canManage ? "Ask an owner or manager to add this company" : undefined}
+                          onClick={() => (o.company ? decide(g.key, { kind: "company", companyId: o.company.id }) : addNew(g, o))}
+                          className={`rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-50 ${
+                            chosen
+                              ? "border-[var(--accent)] bg-[var(--accent)]/10"
+                              : "border-[var(--border)] hover:bg-[var(--bg-hover)]"
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5 text-sm font-medium text-[var(--text-primary)]">
+                            {chosen && <CheckCircle size={15} weight="fill" className="shrink-0 text-[var(--accent)]" />}
+                            <span className="truncate" title={o.company?.registered_name || o.name}>{o.company?.registered_name || o.name || "Unnamed"}</span>
+                          </span>
+                          <span className="mt-0.5 block text-xs text-[var(--text-secondary)]">
+                            {SIDE[o.side]}
+                            {o.tin && ` · TIN ${formatTin(o.tin)}`}
+                          </span>
+                          <span className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                            o.company ? "bg-[var(--accent)]/10 text-[var(--accent)]" : "bg-[var(--bg-hover)] text-[var(--text-secondary)]"
+                          }`}>
+                            {o.company ? (suggested ? "In your databank · suggested" : "In your databank") : "New company · add it"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {company && (
+                  {company && options.length < 2 && (
                     <button className={BTN} onClick={() => decide(g.key, { kind: "company", companyId: company.id })}>
                       Yes, that&apos;s right
                     </button>
@@ -155,9 +212,11 @@ export default function UploadReviewDialog({ upload, companies, canManage, onCom
                     className={BTN}
                     disabled={!canManage}
                     title={canManage ? undefined : "Ask an owner or manager to add this company"}
-                    onClick={() => setNewCompanyFor(g)}
+                    onClick={() => addNew(g)}
                   >
-                    {g.company ? "No, it's a new company" : g.level === "unreadable" || g.level === "reader_down" ? "It's a new company" : "Add to databank"}
+                    {options.length >= 2
+                      ? "A different new company"
+                      : g.company ? "No, it's a new company" : g.level === "unreadable" || g.level === "reader_down" ? "It's a new company" : "Add to databank"}
                   </button>
                   {chooseOther(g)}
                   <button className={BTN} onClick={() => decide(g.key, { kind: "skip" })}>
@@ -208,16 +267,11 @@ export default function UploadReviewDialog({ upload, companies, canManage, onCom
 
       {newCompanyFor && (
         <CompanyForm
-          initial={{
-            registered_name: newCompanyFor.detected_name,
-            // A TIN that matched an existing company can't be the new one's.
-            tin: newCompanyFor.detected_tin === newCompanyFor.company?.tin ? "" : newCompanyFor.detected_tin,
-            address: newCompanyFor.detected_address,
-          }}
+          initial={{ registered_name: newCompanyFor.name, tin: newCompanyFor.tin, address: newCompanyFor.address }}
           onClose={() => setNewCompanyFor(null)}
           onSaved={(company) => {
             onCompanyCreated(company);
-            const next: Record<string, Decision> = { ...decisions, [newCompanyFor.key]: { kind: "company", companyId: company.id } };
+            const next: Record<string, Decision> = { ...decisions, [newCompanyFor.group.key]: { kind: "company", companyId: company.id } };
             setDecisions(next);
             setNewCompanyFor(null);
             // Nothing left to decide: carry on filing the drop instead of asking for another click.

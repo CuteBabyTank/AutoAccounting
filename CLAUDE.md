@@ -192,6 +192,14 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   credits) raises `ReaderUnavailable`: detection groups those files as `reader_down` ("our reader is unavailable",
   not "couldn't read a company"), and extraction stores `pipeline.READER_DOWN_MESSAGE` instead of the provider error.
   Upload review: the dialog's × cancels the drop (all files skipped, nothing filed); "Decide later" keeps it waiting.
+- **Company detection** (`pipeline.run_detection`, pure `matching.file_options` / `is_ambiguous`): a PDF's first page
+  and one random later page (`sample_pages`) are read side by side; only the first page's failure fails the file.
+  Every party on those pages becomes an option (databank company by TIN / name, else "new"), deduped, max 4, the
+  party on the most pages first. A file is `choose` (no suggestion, Confirm stays off until a pick) when both parties
+  are clients, the pages point at different clients, the suggested client isn't on every page read while another
+  party is (a supplier's sales invoices to several customers), or the only match is by name. Groups carry `options`
+  (router drops options whose company left the firm); the dialog shows them as cards, a "new" card opens the
+  company form prefilled.
 - **PDF templates** are calibrated comb-cell layouts (`forms/overlay.py`); re-calibrate when BIR revises a form.
 - **Global search** (`routers/accounting_search.py`, parser `services/accounting/search.py`): one firm-scoped SELECT per group; add a new searchable table there (and its index to `schema.search_index_statements`, pg_trgm GIN only when the extension exists). Results open through `lib/search-nav.ts`: `/accounting?company=&view=&year=&quarter=&account=&month=&contact=&doc=` is parsed by `parseTarget` (UUIDs via `safeId`, shapes checked); on `/accounting` it's the `aa:open-target` event instead of a reload. The palette (`components/search/SearchPalette.tsx`, "/" or Cmd/Ctrl-K) lives in the Sidebar.
 - **Recurring entries / write-offs / checklists** (`routers/accounting_recurring.py`, `accounting_writeoff.py`, `accounting_checklists.py`; pure logic in `compute/recurring.py`, `writeoff.py`, `checklists.py`): recurring templates never post on their own (no scheduler; "Post due entries" is a user action, row-locked, one JE per template per date via `aa_journal_entries.recurring_id`). A write-off is one JE whose `writeoff_items` the subledger reads back as payments (`books/subledger.writeoff_rows`), so it can't be edited, only deleted (which reopens the invoices). Anything new that computes A/R open balances must include those payments. Frontend calls for these and the cash forecast live in `lib/extras-api.ts` / `types/extras.ts`.

@@ -136,10 +136,23 @@ class UploadFileOut(BaseModel):
     error_message: str | None
 
 
+class UploadOptionOut(BaseModel):
+    """One company a group of files could be for: a databank company, or a party read on the page (new)."""
+    key: str
+    company: CompanyBrief | None
+    name: str
+    tin: str
+    address: str
+    side: Literal["seller", "buyer"]
+    level: Literal["certain", "likely", "new"]
+    files: int
+
+
 class UploadGroupOut(BaseModel):
     key: str
     company: CompanyBrief | None
-    level: Literal["certain", "likely", "unknown", "unreadable", "reader_down"]
+    level: Literal["certain", "likely", "unknown", "unreadable", "reader_down", "choose"]
+    options: list[UploadOptionOut] = []
     detected_name: str
     detected_tin: str
     detected_address: str

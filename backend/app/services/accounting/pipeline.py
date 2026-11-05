@@ -7,6 +7,7 @@ no transaction is held open across the network (transaction pooler).
 
 import asyncio
 import logging
+import random
 import uuid
 from collections import deque
 from datetime import datetime, timedelta, timezone
@@ -32,7 +33,9 @@ from app.services.accounting.jobs import RUNNING_STATUSES, STALE_AFTER, JobSlots
 from app.services.accounting.extraction import (
     DETECT_PROMPT, extract_prompt, parse_detection, parse_extraction,
 )
-from app.services.accounting.matching import CompanyCandidate, detection_json, match_company
+from app.services.accounting.matching import (
+    CompanyCandidate, detection_json, file_options, is_ambiguous, match_company,
+)
 from app.services.usage_service import charge_for_pages, get_enterprise_for_user, increment_usage
 
 logger = logging.getLogger(__name__)
@@ -132,10 +135,10 @@ async def _guarded(job, upload_id: uuid.UUID, user_id: str, firm_id: uuid.UUID) 
                 await db.commit()
 
 
-async def _first_page(stored_path: str, file_type: str) -> tuple[bytes, str]:
+async def _first_page(stored_path: str, file_type: str, page: int = 0) -> tuple[bytes, str]:
     loop = asyncio.get_running_loop()
     if file_type == "pdf":
-        data = await loop.run_in_executor(None, gemini_service.render_pdf_page_jpeg, stored_path, 0)
+        data = await loop.run_in_executor(None, gemini_service.render_pdf_page_jpeg, stored_path, page)
         return data, "image/jpeg"
     data = await loop.run_in_executor(None, Path(stored_path).read_bytes)
     return data, _IMAGE_MIME[file_type]
@@ -230,6 +233,11 @@ async def _store_statement(db, doc: AADocument) -> None:
 READER_DOWN_MESSAGE = "Our document reader was unavailable, so this file wasn't read. Drop it again in a little while."
 
 
+def sample_pages(page_count: int) -> list[int]:
+    """0-based pages to read for detection: the first, plus one random later page when the file has one."""
+    return [0] if page_count <= 1 else [0, random.randrange(1, page_count)]
+
+
 async def run_detection(upload_id: uuid.UUID, user_id: str) -> None:
     async with async_session() as db:
         await bind_session_user(db, user_id)
@@ -245,15 +253,30 @@ async def run_detection(upload_id: uuid.UUID, user_id: str) -> None:
             .where(AAFile.upload_id == upload_id, AAFile.status == "uploaded")
             .order_by(AAFile.created_at)
         )).scalars().all()
-        jobs = [(f.id, f.stored_path, f.file_type) for f in files]
+        jobs = [(f.id, f.stored_path, f.file_type, f.page_count or 1) for f in files]
         await db.commit()
 
-        for file_id, stored_path, file_type in jobs:
+        async def read_page(stored_path: str, file_type: str, page: int):
+            image, mime = await _first_page(stored_path, file_type, page)
+            return parse_detection(await aa_gemini.call_gemini_raw(image, mime, DETECT_PROMPT, user_id))
+
+        for file_id, stored_path, file_type, page_count in jobs:
             try:
-                image, mime = await _first_page(stored_path, file_type)
-                raw = await aa_gemini.call_gemini_raw(image, mime, DETECT_PROMPT, user_id)
-                detection = parse_detection(raw)
-                result = detection_json(detection, match_company(detection.seller, detection.buyer, candidates))
+                pages = sample_pages(page_count) if file_type == "pdf" else [0]
+                # The first page decides; a second page (when there is one) is read side by side to catch a file
+                # that isn't what its first page suggests. Only the first page's failure fails the file.
+                reads = await asyncio.gather(*(read_page(stored_path, file_type, p) for p in pages),
+                                             return_exceptions=True)
+                if isinstance(reads[0], BaseException):
+                    raise reads[0]
+                ok = [(p + 1, d) for p, d in zip(pages, reads) if not isinstance(d, BaseException)]
+                detection = ok[0][1]
+                matches = [match_company(d.seller, d.buyer, candidates) for _, d in ok]
+                options = file_options(ok, candidates, suggested=matches[0].company_id)
+                ambiguous = is_ambiguous(matches, options)
+                if ambiguous:  # nothing is suggested: order by what the pages share
+                    options = file_options(ok, candidates)
+                result = detection_json(detection, matches[0], options, ambiguous, [p for p, _ in ok])
             except Exception as e:  # one bad file never blocks the rest
                 logger.warning("accounting_detect_failed file_id=%s error=%s", file_id, str(e)[:200])
                 result = {"error": str(e)[:200]}

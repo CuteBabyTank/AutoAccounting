@@ -41,7 +41,8 @@ from app.routers.accounting_scope import (
 from app.schemas.accounting import (
     AffectedPeriodOut, CompanyBrief, CompanyCreateIn, CompanyIn, CompanyOut, ConfirmIn, DocumentOut, DocumentPatch, DuplicatePairOut,
     FolderOut, NotDuplicateIn,
-    TreeCompanyOut, UploadFileOut, UploadGroupOut, UploadOut,
+    TreeCompanyOut, UploadFileOut, UploadGroupOut,
+    UploadOptionOut, UploadOut,
 )
 from app.services.accounting import audit, deletion, move_company, pipeline
 from app.services.accounting.assignment import lock_firm
@@ -294,6 +295,7 @@ async def _upload_out(db: AsyncSession, ent: uuid.UUID, upload_id: uuid.UUID) ->
         detected = [f for f in files if f.status == "detected"]
         raw_groups = suggest_groups([file_detection_from_json(str(f.id), f.detection or {}) for f in detected])
         ids = {uuid.UUID(g.company_id) for g in raw_groups if g.company_id}
+        ids |= {uuid.UUID(o["company_id"]) for g in raw_groups for o in g.options if _is_uuid(o.get("company_id"))}
         companies = {
             str(c.id): c
             for c in (await db.execute(
@@ -306,7 +308,8 @@ async def _upload_out(db: AsyncSession, ent: uuid.UUID, upload_id: uuid.UUID) ->
             groups.append(UploadGroupOut(
                 key=g.key,
                 company=CompanyBrief.model_validate(company) if company else None,
-                level=g.level if company or g.level in ("unreadable", "reader_down") else "unknown",
+                level=g.level if company or g.level in ("unreadable", "reader_down", "choose") else "unknown",
+                options=_options_out(g.options, companies),
                 detected_name=g.detected.name,
                 detected_tin=g.detected.tin,
                 detected_address=g.detected.address,
@@ -460,6 +463,33 @@ async def create_upload(
         else:
             pipeline.start_detection(upload_id, str(user.id), ent)
     return await _upload_out(db, ent, upload_id)
+
+
+def _is_uuid(value) -> bool:
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _options_out(options: list[dict], companies: dict) -> list[UploadOptionOut]:
+    """Options for the review dialog; a databank option whose company is gone (archived, other firm) is dropped."""
+    out = []
+    for o in options:
+        company = companies.get(str(o.get("company_id"))) if o.get("company_id") else None
+        if o.get("company_id") and company is None:
+            continue
+        try:
+            out.append(UploadOptionOut(
+                key=str(o["key"])[:200], company=CompanyBrief.model_validate(company) if company else None,
+                name=str(o.get("name") or "")[:255], tin=str(o.get("tin") or "")[:20],
+                address=str(o.get("address") or "")[:500], side=o.get("side"), level=o.get("level"),
+                files=int(o.get("files") or 1),
+            ))
+        except (ValueError, TypeError):
+            continue
+    return out
 
 
 @router.get("/uploads/pending", response_model=UploadOut | None)

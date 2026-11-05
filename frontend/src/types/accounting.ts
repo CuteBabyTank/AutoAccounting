@@ -75,10 +75,23 @@ export interface AAUploadFile {
   error_message: string | null;
 }
 
+/** A company a group of dropped files could be for: in the databank (`company`), or a party read on the page. */
+export interface UploadOption {
+  key: string;
+  company: CompanyBrief | null;
+  name: string;
+  tin: string;
+  address: string;
+  side: "seller" | "buyer";
+  level: "certain" | "likely" | "new";
+  files: number;
+}
+
 export interface UploadGroup {
   key: string;
   company: CompanyBrief | null;
-  level: "certain" | "likely" | "unknown" | "unreadable" | "reader_down";
+  level: "certain" | "likely" | "unknown" | "unreadable" | "reader_down" | "choose";
+  options?: UploadOption[];
   detected_name: string;
   detected_tin: string;
   detected_address: string;

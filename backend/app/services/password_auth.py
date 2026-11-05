@@ -10,6 +10,7 @@ Rules (OWASP authentication, password storage and forgot-password cheat sheets):
 * A reset or password change ends every session issued before it (``password_changed_at``).
 """
 
+import asyncio
 import hashlib
 import logging
 import secrets
@@ -85,10 +86,22 @@ async def _send_link(email: str, subject: str, intro: str, path: str, token: str
     link = f"{_app_url()}{path}={quote(token)}"
     text = (f"{intro}\n\n{link}\n\nThe link works once and expires in {ttl_words}. If you didn't ask for this, "
             "you can ignore this email; nothing changes.\n\nAutoAccounting")
+    # Sent after the response: an existing account (email goes out) and an unknown one (nothing to send) must
+    # answer equally fast, or response timing reveals which emails have accounts.
+    task = asyncio.create_task(_deliver(email, subject, text))
+    _pending_sends.add(task)
+    task.add_done_callback(_pending_sends.discard)
+
+
+_pending_sends: set[asyncio.Task] = set()  # keeps background sends alive until they finish
+
+
+async def _deliver(email: str, subject: str, text: str) -> None:
     try:
         await email_service.send(email, subject, text)
-    except Exception:
-        logger.exception("auth_email_failed subject=%s", subject)
+    except Exception as exc:  # never log the address or the link
+        logger.error("auth_email_failed subject=%s error=%s", subject, str(exc)[:120] if
+                     isinstance(exc, email_service.EmailSendError) else type(exc).__name__)
 
 
 def require_email() -> None:

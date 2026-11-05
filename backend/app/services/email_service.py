@@ -40,7 +40,19 @@ def _ses_client():
     return _ses
 
 
+class EmailSendError(RuntimeError):
+    """A send failed. Carries only the provider's error code: SES messages can contain the recipient's address."""
+
+
 def _send_ses(to: str, subject: str, text: str) -> None:
+    try:
+        _send_ses_raw(to, subject, text)
+    except Exception as exc:  # botocore ClientError, connection errors
+        code = getattr(exc, "response", {}).get("Error", {}).get("Code") if hasattr(exc, "response") else None
+        raise EmailSendError(f"ses_send_failed code={code or type(exc).__name__}") from None
+
+
+def _send_ses_raw(to: str, subject: str, text: str) -> None:
     _ses_client().send_email(
         Source=settings.email_from,
         Destination={"ToAddresses": [to]},

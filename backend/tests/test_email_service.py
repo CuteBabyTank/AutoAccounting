@@ -38,3 +38,23 @@ def test_ses_send_goes_to_one_address_from_the_sender(monkeypatch):
 def test_nothing_configured_refuses(monkeypatch):
     monkeypatch.setattr(settings, "email_provider", "")
     assert not email_service.ready()
+
+
+def test_ses_errors_never_carry_the_address(monkeypatch):
+    _ses(monkeypatch)
+
+    class Boom(Exception):
+        response = {"Error": {"Code": "MessageRejected", "Message": "Email address is not verified: a@b.ph"}}
+
+    class Fake:
+        def send_email(self, **kw):
+            raise Boom("Email address is not verified: a@b.ph")
+
+    monkeypatch.setattr(email_service, "_ses_client", lambda: Fake())
+    try:
+        asyncio.run(email_service.send("a@b.ph", "Hi", "Body"))
+    except email_service.EmailSendError as e:
+        assert "a@b.ph" not in str(e) and "MessageRejected" in str(e)
+        assert e.__cause__ is None and e.__suppress_context__
+    else:
+        raise AssertionError("expected EmailSendError")

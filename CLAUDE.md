@@ -185,7 +185,8 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   2026-10-19 have no batch and can't be undone.
 - **Document reader** (`services/accounting/gemini.call_gemini_raw`, the one funnel for detection + extraction):
   `ACCOUNTING_READER=qwen` (prod) sends images / PDF pages rendered to JPEG (150 dpi, "Page N:" labels) to
-  `ACCOUNTING_READER_MODEL` (`qwen/qwen3.7-flash`, OpenRouter `provider.sort=throughput`, reasoning off, JSON mode) via
+  `ACCOUNTING_READER_MODEL` (`qwen/qwen3.7-flash`, OpenRouter `provider.sort=throughput` + `data_collection: deny` (Casper too; `zdr` leaves no
+  host for this model), reasoning off, JSON mode; page images capped at 3 MP) via
   `services/accounting/qwen_reader.py`, reusing the assistant's base URL / key; PDFs go 2 pages a call, 8 calls per
   file at once (`pages_per_chunk` / `chunks_at_once`), Gemini 10 pages × 3. Any service failure (quota, outage,
   credits) raises `ReaderUnavailable`: detection groups those files as `reader_down` ("our reader is unavailable",

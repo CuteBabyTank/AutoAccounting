@@ -126,6 +126,8 @@ async def _chat(messages: list[dict], tools: list[dict], tool_choice: str) -> di
             payload["enable_thinking"] = False
         elif not settings.assistant_llm_think and host == "openrouter.ai":
             payload["reasoning"] = {"enabled": False}
+        if host == "openrouter.ai":  # firm data: only hosts that don't keep or train on prompts
+            payload["provider"] = {"data_collection": "deny"}
     headers = {}
     if settings.assistant_llm_api_key:
         headers["Authorization"] = f"Bearer {settings.assistant_llm_api_key}"

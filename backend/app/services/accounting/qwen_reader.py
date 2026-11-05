@@ -20,6 +20,7 @@ logger = logging.getLogger("reader")
 
 DPI = 150  # receipts' small print stays legible; a page is ~1 to 2k image tokens
 JPEG_QUALITY = 80
+MAX_PIXELS = 3_000_000  # ~A4 at 200 dpi: a PDF with a giant page size can't blow up memory
 _slots = asyncio.Semaphore(16)  # reads in flight per instance (several uploads can run at once)
 
 
@@ -39,10 +40,20 @@ def configured() -> bool:
     return bool(_base() and _key() and settings.accounting_reader_model)
 
 
+def _zoom(rect: "fitz.Rect") -> float:
+    zoom = DPI / 72
+    area = max(rect.width, 1) * max(rect.height, 1) * zoom * zoom
+    return zoom * min(1.0, (MAX_PIXELS / area) ** 0.5)
+
+
 def _pdf_pages(data: bytes) -> list[bytes]:
     doc = fitz.open(stream=data, filetype="pdf")
     try:
-        return [page.get_pixmap(dpi=DPI).tobytes("jpeg", jpg_quality=JPEG_QUALITY) for page in doc]
+        pages = []
+        for page in doc:  # a chunk is a few pages (pages_per_chunk), each capped at MAX_PIXELS
+            z = _zoom(page.rect)
+            pages.append(page.get_pixmap(matrix=fitz.Matrix(z, z)).tobytes("jpeg", jpg_quality=JPEG_QUALITY))
+        return pages
     finally:
         doc.close()
 
@@ -73,7 +84,8 @@ def _payload(content: list[dict], prompt: str) -> dict:
     host = urlsplit(_base()).hostname or ""
     if host == "openrouter.ai":
         payload["reasoning"] = {"enabled": False}
-        payload["provider"] = {"sort": "throughput"}  # the fastest host serving this model
+        # Clients' tax documents: only hosts that neither keep nor train on what they're sent, fastest first.
+        payload["provider"] = {"sort": "throughput", "data_collection": "deny"}
     elif host == "dashscope.aliyuncs.com" or (host.startswith("dashscope-") and host.endswith(".aliyuncs.com")):
         payload["enable_thinking"] = False
     return payload
@@ -91,10 +103,10 @@ def _strip_fences(text: str) -> str:
 async def read(file_bytes: bytes, mime_type: str, prompt: str, user_id: str) -> str:
     if not configured():
         raise ReaderError("reader_not_configured")
-    payload = _payload(await content_for(file_bytes, mime_type), prompt)
     headers = {"Authorization": f"Bearer {_key()}"}
     timeout = httpx.Timeout(settings.accounting_reader_timeout_seconds, connect=10)
-    async with _slots, httpx.AsyncClient(timeout=timeout) as client:
+    async with _slots, httpx.AsyncClient(timeout=timeout) as client:  # the slot also bounds page rendering
+        payload = _payload(await content_for(file_bytes, mime_type), prompt)
         for attempt in range(3):
             retry = attempt < 2
             try:

@@ -61,3 +61,14 @@ def test_qwen_reads_small_pieces_side_by_side(tmp_path, monkeypatch):
 
     assert [(s, e) for _, s, e in pdf_chunks_for_gemini(str(path))] == [(0, 1), (2, 3), (4, 4)]
     assert aa_gemini.chunks_at_once() == 8
+
+
+def test_qwen_page_images_are_capped(tmp_path):
+    from app.services.accounting import qwen_reader
+    doc = fitz.open()
+    doc.new_page(width=14400, height=14400)  # 200 x 200 inches
+    data = doc.tobytes()
+    doc.close()
+    [jpeg] = qwen_reader._pdf_pages(data)
+    pix = fitz.Pixmap(jpeg)
+    assert pix.width * pix.height <= qwen_reader.MAX_PIXELS * 1.01

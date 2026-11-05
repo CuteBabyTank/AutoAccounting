@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "prebuild": "node scripts/version-assets.mjs",
+    "version-assets": "node scripts/version-assets.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.7",

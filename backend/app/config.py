@@ -58,7 +58,11 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     # Verification / reset emails: "" = off (password sign-up and reset hidden), "console" = log them (dev only).
     email_provider: str = ""
-    email_from: str = "AutoAccounting <no-reply@autoaccounting.ph>"
+    email_from: str = "AutoAccounting <noreply@autoaccounting.ph>"
+    # Amazon SES (EMAIL_PROVIDER=ses); the same account SnagStock uses.
+    aws_region: str = "ap-southeast-2"
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
 
     @property
     def allowed_origins(self) -> list[str]:

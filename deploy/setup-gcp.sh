@@ -107,10 +107,12 @@ secret AA_DB_BACKUP_URL "AA_DB_BACKUP_URL (postgresql://postgres.<ref>:<pw>@<poo
 secret AA_GEMINI_API_KEY "AA_GEMINI_API_KEY"
 secret AA_JWT_SECRET "" "$(openssl rand -hex 32)"
 secret AA_ASSISTANT_LLM_API_KEY "AA_ASSISTANT_LLM_API_KEY (DashScope key)"
+secret AA_AWS_ACCESS_KEY_ID "AA_AWS_ACCESS_KEY_ID (Amazon SES sender, same account as SnagStock)"
+secret AA_AWS_SECRET_ACCESS_KEY "AA_AWS_SECRET_ACCESS_KEY"
 
 # ── IAM ──────────────────────────────────────────────────────────────────────
 say "IAM"
-for s in AA_DATABASE_URL AA_GEMINI_API_KEY AA_JWT_SECRET AA_ASSISTANT_LLM_API_KEY; do
+for s in AA_DATABASE_URL AA_GEMINI_API_KEY AA_JWT_SECRET AA_ASSISTANT_LLM_API_KEY AA_AWS_ACCESS_KEY_ID AA_AWS_SECRET_ACCESS_KEY; do
   g secrets add-iam-policy-binding "$s" --member "serviceAccount:$BACKEND_SA" \
     --role roles/secretmanager.secretAccessor >/dev/null
 done

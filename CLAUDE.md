@@ -87,7 +87,7 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
 `ASSISTANT_FIRM_DAILY_TOKENS` (3000000), `ASSISTANT_USER_DAILY_TOKENS` (600000),
 `ASSISTANT_PLATFORM_DAILY_TOKENS` (20000000 per instance; all caps reset at Manila midnight, 0 disables),
 `ASSISTANT_HISTORY_TURNS` (12 messages), `ASSISTANT_HISTORY_CHARS` (800 per message),
-`ASSISTANT_HISTORY_BUDGET_CHARS` (4000 total), `EMAIL_PROVIDER` ("" off, "console" dev), `EMAIL_FROM`, `ASSISTANT_ANSWER_CHARS` (4000, truncated with `…`), `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB` (50), `MAX_BATCH_SIZE` (200), `BOOTSTRAP_ADMIN_EMAIL`, `ENABLE_DEV_LOGIN`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+`ASSISTANT_HISTORY_BUDGET_CHARS` (4000 total), `EMAIL_PROVIDER` ("" off, "console" dev, "ses"), `EMAIL_FROM`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `ASSISTANT_ANSWER_CHARS` (4000, truncated with `…`), `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB` (50), `MAX_BATCH_SIZE` (200), `BOOTSTRAP_ADMIN_EMAIL`, `ENABLE_DEV_LOGIN`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
 Multipart bodies are capped at the smaller of the configured batch capacity and 256 MiB, plus 64 KiB per file and
 1 MiB for headers/fields. JSON bodies are capped at 25 MiB; limits count received bytes regardless of Content-Length.
@@ -334,8 +334,9 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   unverified account takes it over and cancels pending links (pre-hijack defence). Email links: random 256-bit token, only its SHA-256 in `auth_tokens`, single
   use, verify 24 h / reset 30 min, a new link cancels older ones. 10 wrong passwords lock 15 min. A reset sets
   `users.password_changed_at` and `_get_active_user` rejects tokens issued before it (signed out everywhere).
-  `EMAIL_PROVIDER` "" (prod default) hides sign-up / forgot and the password form until an account has a password;
-  "console" (dev) logs the links. Add a real provider in `email_service.send`. Links open `/login?verify=` /
+  `EMAIL_PROVIDER`: "" hides sign-up / forgot and the password form until an account has a password; "console"
+  (dev) logs the links; "ses" (prod) sends through Amazon SES `ap-southeast-2` (same AWS account as SnagStock,
+  autoaccounting.ph verified with DKIM) as `EMAIL_FROM`, keys in `AA_AWS_ACCESS_KEY_ID` / `AA_AWS_SECRET_ACCESS_KEY`. Links open `/login?verify=` /
   `?reset=`, which strip the token from the URL. Only `/login` may be framed, and only same-origin (middleware sets
   `frame-ancestors 'self'` + `X-Frame-Options: SAMEORIGIN` there, DENY elsewhere).
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.

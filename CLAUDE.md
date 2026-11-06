@@ -66,6 +66,10 @@ docker compose exec backend ruff check app --select F,E9
 cd frontend && npm install && npm run lint && npx tsc --noEmit && npm run build
 ```
 
+Backend images install with `-c backend/constraints.txt` (exact versions of the last good prod image), so an
+upstream release can't change prod between builds; add a new dependency to `pyproject.toml` *and* pin it there.
+Anything the app imports directly must be a main dependency, never only a dev extra or a transitive one.
+
 Both `backend/` and `frontend/` are bind-mounted and hot-reload (frontend uses `WATCHPACK_POLLING`; `node_modules`/`.next` stay in anonymous volumes). Rebuild only after dependency changes (`docker compose up --build -d --renew-anon-volumes`) or `.env` changes (`--force-recreate`).
 
 ## First run

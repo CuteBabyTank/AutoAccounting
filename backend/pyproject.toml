@@ -20,8 +20,9 @@ dependencies = [
     "python-multipart>=0.0.9",
     "pymupdf>=1.24.0",
     "pillow>=10.0.0",
-    "google-genai>=1.0.0",
+    "google-genai>=1.0.0,<3",  # 3.x is an untested major (it also dropped httpx)
     "openpyxl>=3.1.0",
+    "httpx>=0.27.0",  # imported directly (assistant LLM client, Qwen reader); never rely on it arriving transitively
 ]
 
 [project.optional-dependencies]

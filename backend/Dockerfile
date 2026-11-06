@@ -2,8 +2,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir ".[dev]"
+COPY pyproject.toml constraints.txt ./
+RUN pip install --no-cache-dir -c constraints.txt ".[dev]"
 
 COPY . .
 

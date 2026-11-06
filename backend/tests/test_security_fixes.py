@@ -225,12 +225,12 @@ async def test_asset_edit_checks_the_assets_own_area(monkeypatch, document_id, a
 
 
 class _OneUserDb:
-    def __init__(self, user):
-        self.user, self.statements = user, []
+    def __init__(self, user, marked=0):
+        self.user, self.statements, self.marked = user, [], marked
 
     async def execute(self, stmt):
         self.statements.append(stmt)
-        return SimpleNamespace(scalar_one_or_none=lambda: self.user, scalar_one=lambda: 1, rowcount=2)
+        return SimpleNamespace(scalar_one_or_none=lambda: self.user, scalar_one=lambda: self.marked, rowcount=2)
 
     def add(self, obj):
         pass
@@ -354,3 +354,78 @@ def test_a_file_that_keeps_killing_its_job_is_set_aside():
         count, status = jobs.after_interrupt(count)
         states.append(status)
     assert states == ["detected"] * (jobs.MAX_INTERRUPTS - 1) + ["error"]
+
+
+async def test_a_recorded_suspension_that_turned_off_nobody_restores_nobody(monkeypatch):
+    from app.routers import admin
+    owner = User(id=uuid.uuid4(), email="o2@example.test", role=UserRole.ENTERPRISE, is_active=False,
+                 suspended_with_firm=True)
+
+    async def target(db, user_id):
+        return owner
+
+    monkeypatch.setattr(admin, "_user_or_404", target)
+    monkeypatch.setattr(admin.audit, "record", lambda *a, **k: None)
+    db = _OneUserDb(owner)
+    await admin.toggle_active(owner.id, db=db, admin=SimpleNamespace(id=uuid.uuid4()))
+    sql = str(db.statements[-1].compile(compile_kwargs={"literal_binds": True}))
+    assert "users.suspended_with_firm IS true" in sql and owner.is_active and owner.suspended_with_firm is False
+
+
+async def test_a_firm_suspended_before_the_fix_gets_its_members_back(monkeypatch):
+    from app.routers import admin
+    owner = User(id=uuid.uuid4(), email="o3@example.test", role=UserRole.ENTERPRISE, is_active=False,
+                 suspended_with_firm=False)
+
+    async def target(db, user_id):
+        return owner
+
+    monkeypatch.setattr(admin, "_user_or_404", target)
+    monkeypatch.setattr(admin.audit, "record", lambda *a, **k: None)
+    db = _OneUserDb(owner)
+    await admin.toggle_active(owner.id, db=db, admin=SimpleNamespace(id=uuid.uuid4()))
+    sql = str(db.statements[-1].compile(compile_kwargs={"literal_binds": True}))
+    assert "users.is_active IS false" in sql
+
+
+async def test_members_marked_by_the_first_version_count_as_recorded(monkeypatch):
+    from app.routers import admin
+    owner = User(id=uuid.uuid4(), email="o4@example.test", role=UserRole.ENTERPRISE, is_active=False,
+                 suspended_with_firm=False)
+
+    async def target(db, user_id):
+        return owner
+
+    monkeypatch.setattr(admin, "_user_or_404", target)
+    monkeypatch.setattr(admin.audit, "record", lambda *a, **k: None)
+    db = _OneUserDb(owner, marked=2)
+    await admin.toggle_active(owner.id, db=db, admin=SimpleNamespace(id=uuid.uuid4()))
+    sql = str(db.statements[-1].compile(compile_kwargs={"literal_binds": True}))
+    assert "users.suspended_with_firm IS true" in sql
+
+
+async def test_one_file_never_holds_more_than_one_builder(tmp_path, monkeypatch):
+    path = tmp_path / "doc.pdf"
+    _blank_pdf(str(path), 12)
+    monkeypatch.setattr(pipeline.aa_gemini, "pages_per_chunk", lambda: 2)
+    monkeypatch.setattr(pipeline.aa_gemini, "chunks_at_once", lambda: 6)
+    live, peak = 0, 0
+    real_build = pipeline._chunk_bytes
+
+    async def build(*args):
+        nonlocal live, peak
+        live += 1
+        peak = max(peak, live)
+        try:
+            await asyncio.sleep(0.01)
+            return await real_build(*args)
+        finally:
+            live -= 1
+
+    async def read(file_id, data, mime, start0, end0, prompt, user_id):
+        return start0, end0 - start0 + 1, None
+
+    monkeypatch.setattr(pipeline, "_chunk_bytes", build)
+    monkeypatch.setattr(pipeline, "_read_chunk", read)
+    await pipeline._read_file(uuid.uuid4(), str(path), "pdf", "prompt", "u")
+    assert peak == 1

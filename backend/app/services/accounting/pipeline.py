@@ -167,16 +167,18 @@ async def _chunks(stored_path: str, file_type: str) -> list[tuple[str, int, int]
     return [(_IMAGE_MIME[file_type], 0, 0)]
 
 
-# PyMuPDF documents itself as not thread-safe, and chunks are now built one per reader call (up to
-# chunks_at_once per file, several files at once), so every build goes through this one thread. A build takes a
-# few ms, far below the reader call it feeds. (Builds differ only in the random trailer /ID, wherever they run.)
-_CHUNK_THREAD = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pdf-chunk")
+# Chunk builds run on their own small pool (each opens its own documents; concurrent builds differ only in the
+# random trailer /ID). One upload job builds one chunk at a time (``run_extraction`` shares one lock across its
+# files), and a job holds a whole firm (JobSlots), so a firm never holds more than one builder: at most
+# CHUNK_BUILDERS builds are in memory at once, each bounded by its file, and other firms keep a builder free.
+CHUNK_BUILDERS = 3
+_CHUNK_THREADS = ThreadPoolExecutor(max_workers=CHUNK_BUILDERS, thread_name_prefix="pdf-chunk")
 
 
 async def _chunk_bytes(stored_path: str, file_type: str, start0: int, end0: int) -> bytes:
     loop = asyncio.get_running_loop()
     if file_type == "pdf":
-        return await loop.run_in_executor(_CHUNK_THREAD, _build_chunk, stored_path, start0, end0)
+        return await loop.run_in_executor(_CHUNK_THREADS, _build_chunk, stored_path, start0, end0)
     return await loop.run_in_executor(None, Path(stored_path).read_bytes)
 
 
@@ -199,14 +201,16 @@ async def _read_chunk(file_id: uuid.UUID, data: bytes, mime: str, start0: int, e
 
 
 async def _read_file(file_id: uuid.UUID, stored_path: str, file_type: str, prompt: str,
-                     user_id: str) -> list[tuple[int, int, list | None]]:
+                     user_id: str, building: asyncio.Lock | None = None) -> list[tuple[int, int, list | None]]:
     """Every chunk of a file, at most ``chunks_at_once()`` read at a time, in page order. No database."""
     gate = asyncio.Semaphore(aa_gemini.chunks_at_once())
+    building = building or asyncio.Lock()  # the job's: one build at a time for all of its files
 
     async def one(chunk: tuple[str, int, int]) -> tuple[int, int, list | None]:
         mime, start0, end0 = chunk
         async with gate:  # build the chunk inside the gate: at most chunks_at_once() sub-PDFs exist per file
-            data = await _chunk_bytes(stored_path, file_type, start0, end0)
+            async with building:
+                data = await _chunk_bytes(stored_path, file_type, start0, end0)
             return await _read_chunk(file_id, data, mime, start0, end0, prompt, user_id)
 
     chunks = await _chunks(stored_path, file_type)
@@ -332,6 +336,7 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
         uploader = await db.get(User, upload.uploaded_by)
         enterprise = await get_enterprise_for_user(db, uploader) if uploader else None
         enterprise_id = enterprise.id if enterprise else None
+        building = asyncio.Lock()  # this job's chunk builds, one at a time across all its files
 
         files = (await db.execute(
             select(AAFile)
@@ -392,7 +397,8 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
                         await db.commit()
                         continue
                     prompt = prompts.get(company_id)
-                    task = asyncio.create_task(_read_file(file_id, stored_path, file_type, prompt, user_id)) if prompt else None
+                    task = asyncio.create_task(_read_file(file_id, stored_path, file_type, prompt, user_id,
+                                                          building)) if prompt else None
                     reading.append((job, task))
                 if not reading:
                     break

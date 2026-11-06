@@ -162,12 +162,18 @@ async def toggle_active(
     if target.role == UserRole.ENTERPRISE:
         members = (User.enterprise_id == target.id, User.role.in_(_MEMBER_ROLES))
         if target.is_active:  # back on: only the members the suspension turned off
+            # The owner's own flag says this suspension was recorded (even when it turned off nobody). Only a firm
+            # suspended before suspensions were recorded lacks it, and gets its members back as it used to.
+            # Member marks also count: a firm suspended while only members were marked (the first version of this
+            # fix) is a recorded suspension too.
             marked = (await db.execute(select(func.count()).select_from(User)
                                        .where(*members, User.suspended_with_firm.is_(True)))).scalar_one()
-            # A firm suspended before suspensions were recorded has no marks: restore its members as it used to.
-            only = (User.suspended_with_firm.is_(True),) if marked else (User.is_active.is_(False),)
+            recorded = bool(target.suspended_with_firm) or marked > 0
+            only = (User.suspended_with_firm.is_(True),) if recorded else (User.is_active.is_(False),)
             stmt = update(User).where(*members, *only).values(is_active=True, suspended_with_firm=False)
+            target.suspended_with_firm = False
         else:  # suspended: remember who was on, so members the firm deactivated stay off afterwards
+            target.suspended_with_firm = True
             stmt = (update(User).where(*members, User.is_active.is_(True))
                     .values(is_active=False, suspended_with_firm=True))
         members_updated = (await db.execute(stmt)).rowcount

@@ -103,6 +103,8 @@ async def add_member(
     target.role = UserRole.EMPLOYEE
     target.enterprise_id = ctx.enterprise.id
     target.is_active = True
+    target.access = None  # per-person access belongs to the firm that set it; this firm starts from its defaults
+    target.suspended_with_firm = False
     audit.record(db, ent=ctx.enterprise.id, company_id=None, user=ctx.caller, entity="team_member",
                  entity_id=target.id, action="create", after=audit.snapshot(target, _AUDIT_FIELDS),
                  label=target.email)
@@ -205,6 +207,8 @@ async def remove_member(
     before = audit.snapshot(member, _AUDIT_FIELDS)
     member.enterprise_id = None
     member.role = UserRole.UNVERIFIED
+    member.access = None  # set by this firm; it must not follow them into another one
+    member.suspended_with_firm = False
     audit.record(db, ent=ctx.enterprise.id, company_id=None, user=ctx.caller, entity="team_member",
                  entity_id=member.id, action="delete", before=before, after=audit.snapshot(member, _AUDIT_FIELDS),
                  label=member.email)

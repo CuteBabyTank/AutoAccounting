@@ -81,7 +81,16 @@
     if (!a.dataset.signout) return;
     e.preventDefault();
     e.stopImmediatePropagation();  // don't open the sign-in pop-up
-    try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked */ }
+    try {
+      sessionStorage.removeItem(TOKEN_KEY);
+      // The signed-out person's Casper chats and quick picks (same list as src/lib/personal-storage.ts).
+      for (const store of [sessionStorage, localStorage]) {
+        for (let i = store.length - 1; i >= 0; i--) {
+          const key = store.key(i);
+          if (key && (key.startsWith("aa:assistant:messages") || key.startsWith("aa:quick:"))) store.removeItem(key);
+        }
+      }
+    } catch { /* storage blocked */ }
     renderAuth();
   }));
 

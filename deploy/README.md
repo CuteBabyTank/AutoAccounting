@@ -42,8 +42,13 @@ Rough monthly cost at low traffic: Cloud Run ≈ $0–5, buckets + backups ≈ $
 
    ```
    AA_DATABASE_URL   postgresql+asyncpg://aa_app.<ref>:<aa_app password>@<pooler host>:6543/postgres
-   AA_DB_BACKUP_URL  postgresql://postgres.<ref>:<postgres password>@<pooler host>:5432/postgres?sslmode=require
+   AA_DB_BACKUP_URL  postgresql://postgres.<ref>:<postgres password>@<pooler host>:5432/postgres
    ```
+
+   The backup job always connects with `sslmode=verify-full` against the Supabase CA (secret `AA_SUPABASE_CA`,
+   created by setup-gcp.sh from `backend/certs/supabase-prod-ca-2021.crt`, mounted at `/certs/supabase-ca.crt`).
+   Projects set up before 2026-11-06: re-run `bash deploy/setup-gcp.sh` to add the CA and update the job, then
+   rotate the `postgres` password (the old job connected without verifying the server).
 
    The app URL must say `postgresql+asyncpg://` and carry no `?sslmode=` (asyncpg rejects it); SSL is forced by
    `start.sh` and verified with `backend/certs/supabase-prod-ca-2021.crt`. Port 6543 switches the app into

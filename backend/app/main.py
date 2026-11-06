@@ -237,7 +237,10 @@ async def _http_exception_handler(request: Request, exc: HTTPException) -> Respo
 
 @app.exception_handler(RequestValidationError)
 async def _validation_exception_handler(request: Request, exc: RequestValidationError) -> Response:
-    logger.info("validation_error path=%s errors=%r", request.url.path, exc.errors())
+    # Only where and why: the submitted value (``input``) and ``ctx`` can hold passwords, reset tokens or
+    # client data, and logs are read far more widely than the database.
+    errors = [{"loc": e.get("loc"), "type": e.get("type")} for e in exc.errors()]
+    logger.info("validation_error path=%s errors=%r", request.url.path, errors)
     return JSONResponse(
         status_code=422,
         content={"detail": "Invalid request. Please check your input and try again."},

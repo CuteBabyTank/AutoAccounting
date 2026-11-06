@@ -15,11 +15,13 @@ import useBotMascotState from "@/components/assistant/useBotMascotState";
 import { SearchRow } from "@/components/search/SearchResults";
 import { assistantInfo, modelLabel, streamChat } from "@/lib/assistant-api";
 import { openResult } from "@/lib/search-nav";
+import { useAuth } from "@/lib/auth";
 import { useFeatures } from "@/lib/features";
 import { companyQuestion, shortName, usePageCompany, type PageCompany } from "@/lib/page-context";
 import type { AssistantAction, AssistantEvent, AssistantInfo, AssistantMessage, AssistantStep } from "@/types/assistant";
 
-const STORE_KEY = "aa:assistant:messages";
+// Per person: a chat never loads for anyone but who had it (sign-out also clears it, lib/personal-storage).
+const storeKey = (userId: string) => `aa:assistant:messages:${userId}`;
 const OPEN_KEY = "aa:assistant:open";
 const KEPT = 40;
 
@@ -95,6 +97,11 @@ function titleOf(messages: AssistantMessage[]): string {
  * books, documents and filings; each shows the steps it took while it works, folded away once it's done.
  */
 export default function AssistantDock() {
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+  // Whose chat is in `messages` (state, so it changes in the same render as the messages it describes): one
+  // person's chat is never saved under another's key.
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
@@ -120,12 +127,22 @@ export default function AssistantDock() {
   const pathname = usePathname();
 
   useEffect(() => {
-    const saved = read<AssistantMessage[]>(STORE_KEY, []);
-    setMessages(Array.isArray(saved) ? saved.filter((m) => !m.pending) : []);
     setOpen(read<boolean>(OPEN_KEY, false) === true);
     setMounted(true);
     return () => abort.current?.abort();
   }, []);
+  useEffect(() => {
+    // Load this person's chat (and only theirs) whenever who is signed in changes.
+    try {
+      sessionStorage.removeItem("aa:assistant:messages");  // the old key shared by everyone on this browser
+      localStorage.removeItem("aa:assistant:messages");
+    } catch {
+      // storage blocked
+    }
+    const saved = userId ? read<AssistantMessage[]>(storeKey(userId), []) : [];
+    setMessages(Array.isArray(saved) ? saved.filter((m) => !m.pending) : []);
+    setLoadedFor(userId);
+  }, [userId]);
   useEffect(() => {
     if (open && !info) assistantInfo().then(setInfo).catch(() => undefined);
   }, [open, info]);
@@ -136,8 +153,10 @@ export default function AssistantDock() {
     else setWriteMode(false);
   }, [open, mounted]);
   useEffect(() => {
-    if (!busy && mounted) write(STORE_KEY, messages.filter((m) => !m.pending).slice(-KEPT), true);
-  }, [messages, busy, mounted]);
+    if (!busy && mounted && userId && loadedFor === userId) {
+      write(storeKey(userId), messages.filter((m) => !m.pending).slice(-KEPT), true);
+    }
+  }, [messages, busy, mounted, userId, loadedFor]);
   useEffect(() => {
     const el = scroller.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });

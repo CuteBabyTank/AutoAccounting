@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     upload_dir: str = "./uploads"
     max_file_size_mb: int = 50
     max_batch_size: int = 200
+    # Pages per PDF. Every 2 pages is a paid reader call, so a tiny file with thousands of blank pages must not
+    # be accepted (checked at upload and again before extraction).
+    max_pdf_pages: int = 500
     # Source documents. Tax records must be kept >=5 years, so in production
     # this is a dedicated long-retention volume/bucket mounted here. Unset in
     # dev -> falls back to upload_dir.

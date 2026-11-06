@@ -4,11 +4,24 @@ New databases get these columns from the models via create_all; existing ones ge
 """
 
 
+PASSWORDS_SHIPPED = "2026-11-04 13:05:37+00"
+
+
 def backfill_statements() -> list[str]:
     """Idempotent data fixes run after the columns exist (each touches only rows still needing it)."""
     return [
-        # Every account from before passwords existed signed in with Google, which verified its email.
-        "UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL AND password_hash IS NULL",
+        # Every account from before passwords existed (2026-11-04) signed in with Google, which verified its email.
+        # Only those: a later email sign-up also has no password_hash until its link is opened, and must stay
+        # unverified until then.
+        f"UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL AND password_hash IS NULL"
+        f" AND created_at < '{PASSWORDS_SHIPPED}'",
+        # Undo the old unbounded version of that fix, which marked pending sign-ups verified on every boot. Only
+        # rows that are provably such sign-ups: an email sign-up (it has a verify link; Google accounts never do)
+        # whose password was never applied, email_verified_at stamped exactly at created_at, and not yet in a firm
+        # (members are left alone). They become what they were: waiting on their confirm link.
+        f"UPDATE users SET email_verified_at = NULL WHERE password_hash IS NULL AND email_verified_at = created_at"
+        f" AND created_at >= '{PASSWORDS_SHIPPED}' AND role = 'unverified' AND enterprise_id IS NULL"
+        " AND EXISTS (SELECT 1 FROM auth_tokens t WHERE t.user_id = users.id AND t.purpose = 'verify')",
     ]
 
 
@@ -18,6 +31,7 @@ def column_statements() -> list[str]:
         "ALTER TABLE aa_documents ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE aa_companies ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
         "ALTER TABLE aa_assets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ",
+        "ALTER TABLE aa_files ADD COLUMN IF NOT EXISTS interrupts INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE aa_employees ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ",
         "ALTER TABLE aa_contacts ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
         "ALTER TABLE aa_companies ADD COLUMN IF NOT EXISTS handler_id UUID REFERENCES users(id) ON DELETE SET NULL",
@@ -26,6 +40,7 @@ def column_statements() -> list[str]:
         "ALTER TABLE aa_work_items ADD COLUMN IF NOT EXISTS assigned_auto BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE aa_firm_settings ADD COLUMN IF NOT EXISTS auto_assign BOOLEAN NOT NULL DEFAULT true",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar BYTEA",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_with_firm BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS access JSONB",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)",
         "ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS pending_password_hash VARCHAR(255)",

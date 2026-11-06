@@ -103,7 +103,14 @@ secret() {  # name, prompt, [generated value]
 say "Secrets"
 echo "Supabase URLs: see deploy/README.md step 2 (app = transaction pooler 6543 as aa_app, backup = session pooler 5432 as postgres)."
 secret AA_DATABASE_URL "AA_DATABASE_URL (postgresql+asyncpg://aa_app.<ref>:<pw>@<pooler-host>:6543/postgres)"
-secret AA_DB_BACKUP_URL "AA_DB_BACKUP_URL (postgresql://postgres.<ref>:<pw>@<pooler-host>:5432/postgres?sslmode=require)"
+secret AA_DB_BACKUP_URL "AA_DB_BACKUP_URL (postgresql://postgres.<ref>:<pw>@<pooler-host>:5432/postgres)"
+# The backup job verifies Supabase's certificate with the same CA the app uses (it carries the BYPASSRLS
+# credential and receives every firm's data, so encryption without server verification isn't enough).
+if ! g secrets describe AA_SUPABASE_CA >/dev/null 2>&1; then
+  g secrets create AA_SUPABASE_CA --data-file="$(dirname "$0")/../backend/certs/supabase-prod-ca-2021.crt" \
+    --replication-policy automatic >/dev/null
+  echo "AA_SUPABASE_CA: created"
+fi
 secret AA_GEMINI_API_KEY "AA_GEMINI_API_KEY"
 secret AA_JWT_SECRET "" "$(openssl rand -hex 32)"
 secret AA_ASSISTANT_LLM_API_KEY "AA_ASSISTANT_LLM_API_KEY (DashScope key)"
@@ -116,8 +123,10 @@ for s in AA_DATABASE_URL AA_GEMINI_API_KEY AA_JWT_SECRET AA_ASSISTANT_LLM_API_KE
   g secrets add-iam-policy-binding "$s" --member "serviceAccount:$BACKEND_SA" \
     --role roles/secretmanager.secretAccessor >/dev/null
 done
-g secrets add-iam-policy-binding AA_DB_BACKUP_URL --member "serviceAccount:$BACKUP_SA" \
-  --role roles/secretmanager.secretAccessor >/dev/null
+for s in AA_DB_BACKUP_URL AA_SUPABASE_CA; do
+  g secrets add-iam-policy-binding "$s" --member "serviceAccount:$BACKUP_SA" \
+    --role roles/secretmanager.secretAccessor >/dev/null
+done
 gcloud storage buckets add-iam-policy-binding "gs://$UPLOADS_BUCKET" --member "serviceAccount:$BACKEND_SA" \
   --role roles/storage.objectAdmin >/dev/null
 gcloud storage buckets add-iam-policy-binding "gs://$BACKUPS_BUCKET" --member "serviceAccount:$BACKUP_SA" \
@@ -142,6 +151,9 @@ done
 say "Backup job"
 BACKUP_SCRIPT='set -euo pipefail
 stamp=$(date -u +%Y%m%dT%H%MZ)
+# Verify the server (certificate + host name) whatever sslmode the stored URL says: later keywords win in libpq.
+case "$DUMP_URL" in *\?*) sep="&" ;; *) sep="?" ;; esac
+DUMP_URL="${DUMP_URL}${sep}sslmode=verify-full&sslrootcert=/certs/supabase-ca.crt"
 pg_dump "$DUMP_URL" -Fc --no-owner --no-acl --schema=public -f /tmp/db.dump
 mkdir -p /backups/nightly /backups/monthly
 cp /tmp/db.dump "/backups/nightly/autoaccounting-$stamp.dump"
@@ -149,7 +161,7 @@ if [ "$(TZ=Asia/Manila date +%d)" = "01" ]; then cp /tmp/db.dump "/backups/month
 ls -l /backups/nightly | tail -3'
 job_flags=(
   --region "$REGION" --image docker.io/library/postgres:17 --service-account "$BACKUP_SA"
-  --set-secrets DUMP_URL=AA_DB_BACKUP_URL:latest
+  --set-secrets DUMP_URL=AA_DB_BACKUP_URL:latest,/certs/supabase-ca.crt=AA_SUPABASE_CA:latest
   --add-volume "name=backups,type=cloud-storage,bucket=$BACKUPS_BUCKET"
   --add-volume-mount volume=backups,mount-path=/backups
   --memory 1Gi --cpu 1 --task-timeout 1800 --max-retries 1

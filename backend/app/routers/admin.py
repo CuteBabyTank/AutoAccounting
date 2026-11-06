@@ -120,6 +120,7 @@ async def set_user_role(
         raise HTTPException(status_code=409, detail="A firm owner's role must stay intact to retain access to tax "
                             "records. Deactivate the firm instead.")
     before = audit.snapshot(target, _ACCOUNT_FIELDS)
+    before_firm = target.enterprise_id
     if new_role == target.role and not req.enterprise_id:
         return {"id": str(target.id), "role": target.role.value}
 
@@ -136,6 +137,9 @@ async def set_user_role(
     target.role = new_role
     if new_role not in _MEMBER_ROLES:
         target.enterprise_id = None
+    if target.enterprise_id != before_firm or target.role not in _MEMBER_ROLES:
+        target.access = None  # per-person access was granted by the old firm; the new one starts from its defaults
+        target.suspended_with_firm = False
     audit.record(db, ent=admin.id, company_id=None, user=admin, entity="platform_account", entity_id=target.id,
                  action="update", before=before, after=audit.snapshot(target, _ACCOUNT_FIELDS), label=target.email)
     await db.commit()
@@ -156,12 +160,17 @@ async def toggle_active(
     target.is_active = not target.is_active
     members_updated = 0
     if target.role == UserRole.ENTERPRISE:
-        result = await db.execute(
-            update(User)
-            .where(User.enterprise_id == target.id, User.role.in_(_MEMBER_ROLES))
-            .values(is_active=target.is_active)
-        )
-        members_updated = result.rowcount
+        members = (User.enterprise_id == target.id, User.role.in_(_MEMBER_ROLES))
+        if target.is_active:  # back on: only the members the suspension turned off
+            marked = (await db.execute(select(func.count()).select_from(User)
+                                       .where(*members, User.suspended_with_firm.is_(True)))).scalar_one()
+            # A firm suspended before suspensions were recorded has no marks: restore its members as it used to.
+            only = (User.suspended_with_firm.is_(True),) if marked else (User.is_active.is_(False),)
+            stmt = update(User).where(*members, *only).values(is_active=True, suspended_with_firm=False)
+        else:  # suspended: remember who was on, so members the firm deactivated stay off afterwards
+            stmt = (update(User).where(*members, User.is_active.is_(True))
+                    .values(is_active=False, suspended_with_firm=True))
+        members_updated = (await db.execute(stmt)).rowcount
     audit.record(db, ent=admin.id, company_id=None, user=admin, entity="platform_account", entity_id=target.id,
                  action="update", before=before, after=audit.snapshot(target, _ACCOUNT_FIELDS),
                  label=target.email, reason=f"Firm members updated: {members_updated}")

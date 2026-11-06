@@ -147,6 +147,9 @@ class AAFile(Base):
     sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     page_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="uploaded")
+    # Times this file's extraction died with its job (restart, out of memory). Capped by jobs.MAX_INTERRUPTS so a
+    # file that kills the instance isn't replayed for a whole day.
+    interrupts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     detection: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     pages_charged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

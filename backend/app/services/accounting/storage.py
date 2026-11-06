@@ -100,6 +100,9 @@ async def stream_upload(f: UploadFile, dest_dir: Path, shrunk: bool = False) -> 
             page_count = await loop.run_in_executor(None, get_pdf_page_count_safe, str(dest))
             if page_count < 1:
                 raise UploadRejected(f"'{filename}' couldn't be opened as a PDF")
+            if page_count > settings.max_pdf_pages:
+                raise UploadRejected(
+                    f"'{filename}' has {page_count} pages; split it into files of at most {settings.max_pdf_pages}")
         else:
             problem = await loop.run_in_executor(None, _image_problem, dest)
             if problem == "too_large":

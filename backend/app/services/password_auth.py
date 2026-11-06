@@ -137,6 +137,13 @@ async def register(db: AsyncSession, email: str, password: str, accept_privacy: 
         return
     # Signed up before but never confirmed, or already an account: nothing changes here (a stranger must never be
     # able to set this account's password). The inbox gets a link to choose a password, which also confirms it.
+    if user.email_verified_at is None:
+        # Two sign-ups now claim this address, so nobody knows whose password the first one holds: drop it. A
+        # stale "Confirm your email" link (or a resend of it) must not hand the account to the earlier sign-up's
+        # password; the inbox chooses its own through the link below.
+        await db.execute(update(AuthToken).where(AuthToken.user_id == user.id, AuthToken.purpose == "verify")
+                         .values(used_at=func.coalesce(AuthToken.used_at, datetime.now(timezone.utc)),
+                                 pending_password_hash=None))
     token = await _new_link(db, user, "reset", RESET_TTL)
     await db.commit()
     if user.email_verified_at is None:
@@ -175,7 +182,13 @@ async def login(db: AsyncSession, email: str, password: str) -> tuple[User, str]
         await passwords.verify_password(None, password)  # same work as a real attempt
         raise HTTPException(429, "Too many wrong passwords. Try again in 15 minutes, or reset your password.",
                             headers={"Retry-After": str(int((user.locked_until - now).total_seconds()) + 1)})
-    ok = await passwords.verify_password(user.password_hash if user else None, password)
+    checked_hash = user.password_hash if user else None
+    ok = await passwords.verify_password(checked_hash, password)
+    if user is not None and ok:
+        # The check ran off the event loop on a snapshot. Re-read the row under a lock: a reset that committed
+        # meanwhile changed the hash, and the old password must not mint a session after it.
+        await _lock_user(db, user)
+        ok = user.password_hash == checked_hash
     if user is not None and not ok and user.email_verified_at is None and user.is_active:
         pending = await _latest_pending(db, user)
         if pending is not None and await passwords.verify_password(pending.pending_password_hash, password):
@@ -198,10 +211,17 @@ async def login(db: AsyncSession, email: str, password: str) -> tuple[User, str]
     user.failed_logins, user.locked_until = 0, None
     if passwords.needs_rehash(user.password_hash):
         user.password_hash = await passwords.hash_password(password)
+    token = create_access_token(str(user.id))  # issued while the row is locked, so before any later reset
     await db.commit()
     await db.refresh(user)
     logger.info("password_login_success user_id=%s", user.id)
-    return user, create_access_token(str(user.id))
+    return user, token
+
+
+async def _lock_user(db: AsyncSession, user: User) -> None:
+    """Lock the user's row for this transaction and refresh ``user`` from it."""
+    await db.execute(select(User).where(User.id == user.id).with_for_update()
+                     .execution_options(populate_existing=True))
 
 
 async def _latest_pending(db: AsyncSession, user: User) -> AuthToken | None:
@@ -241,8 +261,10 @@ async def reset_password(db: AsyncSession, token: str, password: str) -> tuple[U
     if reason:
         await db.rollback()  # keep the link usable so they can try another password
         raise HTTPException(400, reason)
+    new_hash = await passwords.hash_password(password)
+    await _lock_user(db, user)  # waits for an in-flight password login, which then sees the new hash
     now = datetime.now(timezone.utc)
-    user.password_hash = await passwords.hash_password(password)
+    user.password_hash = new_hash
     user.password_changed_at = now
     user.email_verified_at = user.email_verified_at or now  # opening the emailed link proves the inbox
     user.failed_logins, user.locked_until = 0, None

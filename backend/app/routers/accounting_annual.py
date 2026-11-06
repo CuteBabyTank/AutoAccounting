@@ -9,6 +9,7 @@ from fastapi import Path as PathParam
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services import features
 from app.dependencies import get_current_user, get_db
 from app.models.accounting import AAAsset, AACompany, AADocument, AAOutput, AAPeriod
 from app.models.user import User
@@ -265,6 +266,8 @@ async def patch_asset(asset_id: uuid.UUID, body: AssetPatch, year: int | None = 
     if found is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
     row, doc = found
+    # An opening asset is part of the books; a document's asset is edited from that document's panel.
+    await features.require_area(db, user, "books" if row.document_id is None else "documents")
     company = await company_or_404(db, ent, row.company_id)
     if "cost" in body.model_fields_set and row.document_id is not None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Edit the source document to change this asset's cost")

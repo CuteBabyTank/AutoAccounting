@@ -34,6 +34,9 @@ class User(Base):
     organization_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     nickname: Mapped[str | None] = mapped_column(String(100), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Turned off only because the platform admin suspended this member's firm: reactivating the firm turns back on
+    # exactly these members, never one the firm had deactivated itself.
+    suspended_with_firm: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # Privacy policy accepted at sign-up (version = its effective date); NULL for accounts made before consent existed.
     privacy_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     privacy_policy_version: Mapped[str | None] = mapped_column(String(20), nullable=True)

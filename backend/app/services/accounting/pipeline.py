@@ -10,12 +10,14 @@ import logging
 import random
 import uuid
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy import exists, select, update
 from sqlalchemy.exc import IntegrityError
 
+from app.config import settings
 from app.database import async_session
 from app.dependencies import bind_session_user
 from app.models.accounting import AAAccount, AACompany, AADocument, AAFile, AASupplierRule, AAUpload
@@ -144,14 +146,38 @@ async def _first_page(stored_path: str, file_type: str, page: int = 0) -> tuple[
     return data, _IMAGE_MIME[file_type]
 
 
-async def _chunks(stored_path: str, file_type: str) -> list[tuple[bytes, str, int, int]]:
-    """(bytes, mime, start_page_0, end_page_0) pieces to send to Gemini."""
+# A sub-PDF only holds resources from its own pages, so a real one is never much bigger than the whole file.
+# Past twice the file (or this floor, for small files) it is a file built to balloon: refused, not held in memory.
+CHUNK_BYTES_FLOOR = 64 * 1024 * 1024
+
+
+def _build_chunk(stored_path: str, start0: int, end0: int) -> bytes:
+    limit = max(2 * Path(stored_path).stat().st_size, CHUNK_BYTES_FLOOR)
+    return aa_gemini.pdf_chunk(stored_path, start0, end0, limit=limit)
+
+
+async def _chunks(stored_path: str, file_type: str) -> list[tuple[str, int, int]]:
+    """(mime, start_page_0, end_page_0) pieces to send to the reader; bytes are built by ``_chunk_bytes``."""
     loop = asyncio.get_running_loop()
     if file_type == "pdf":
-        chunks = await loop.run_in_executor(None, aa_gemini.pdf_chunks_for_gemini, stored_path)
-        return [(b, "application/pdf", s, e) for b, s, e in chunks]
-    data = await loop.run_in_executor(None, Path(stored_path).read_bytes)
-    return [(data, _IMAGE_MIME[file_type], 0, 0)]
+        count = await loop.run_in_executor(None, gemini_service.get_pdf_page_count_safe, stored_path)
+        if count > settings.max_pdf_pages:
+            raise ValueError(f"PDF has {count} pages; the limit is {settings.max_pdf_pages}")
+        return [("application/pdf", s, e) for s, e in aa_gemini.pdf_chunk_ranges(max(count, 1))]
+    return [(_IMAGE_MIME[file_type], 0, 0)]
+
+
+# PyMuPDF documents itself as not thread-safe, and chunks are now built one per reader call (up to
+# chunks_at_once per file, several files at once), so every build goes through this one thread. A build takes a
+# few ms, far below the reader call it feeds. (Builds differ only in the random trailer /ID, wherever they run.)
+_CHUNK_THREAD = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pdf-chunk")
+
+
+async def _chunk_bytes(stored_path: str, file_type: str, start0: int, end0: int) -> bytes:
+    loop = asyncio.get_running_loop()
+    if file_type == "pdf":
+        return await loop.run_in_executor(_CHUNK_THREAD, _build_chunk, stored_path, start0, end0)
+    return await loop.run_in_executor(None, Path(stored_path).read_bytes)
 
 
 async def _read_chunk(file_id: uuid.UUID, data: bytes, mime: str, start0: int, end0: int, prompt: str,
@@ -177,9 +203,11 @@ async def _read_file(file_id: uuid.UUID, stored_path: str, file_type: str, promp
     """Every chunk of a file, at most ``chunks_at_once()`` read at a time, in page order. No database."""
     gate = asyncio.Semaphore(aa_gemini.chunks_at_once())
 
-    async def one(chunk: tuple[bytes, str, int, int]) -> tuple[int, int, list | None]:
-        async with gate:
-            return await _read_chunk(file_id, *chunk, prompt, user_id)
+    async def one(chunk: tuple[str, int, int]) -> tuple[int, int, list | None]:
+        mime, start0, end0 = chunk
+        async with gate:  # build the chunk inside the gate: at most chunks_at_once() sub-PDFs exist per file
+            data = await _chunk_bytes(stored_path, file_type, start0, end0)
+            return await _read_chunk(file_id, data, mime, start0, end0, prompt, user_id)
 
     chunks = await _chunks(stored_path, file_type)
     try:

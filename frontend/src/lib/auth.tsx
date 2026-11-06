@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import api, { AUTH_EXPIRED, TOKEN_KEY } from "@/lib/api";
 import type { User } from "@/types";
 import { HOMEPAGE } from "@/lib/roles";
+import { clearPersonalStorage } from "@/lib/personal-storage";
 
 interface AuthState {
   user: User | null;
@@ -30,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onExpired = () => {
+      clearPersonalStorage();
       setUser(null);
       setToken(null);
     };
@@ -77,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     sessionStorage.removeItem(TOKEN_KEY);
+    clearPersonalStorage();
     setToken(null);
     setUser(null);
     window.location.href = HOMEPAGE;

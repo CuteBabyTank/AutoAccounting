@@ -13,6 +13,7 @@ from sqlalchemy import Select, Text, and_, case, cast, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
+from app.services import features
 from app.dependencies import get_current_user, get_db
 from app.models.accounting import (
     AABankLine, AABankStatement, AACompany, AAContact, AADocument, AAJournalEntry, AATask,
@@ -51,6 +52,16 @@ def groups_for(q: SearchQuery, f: Filters, types: list[str] | None) -> list[str]
     if f.date_from or f.date_to:
         wanted = [t for t in wanted if t not in _UNDATED]
     return wanted
+
+
+# The area that owns each group: a person who can't open that area (Team page access, or a maintenance switch)
+# doesn't get its records from search either. Companies have no area of their own.
+GROUP_AREA: dict[str, str | None] = {"document": "documents", "bank_line": "bank", "journal_entry": "books",
+                                     "contact": "subledgers", "task": "work", "company": None}
+
+
+def allowed_groups(kinds: list[str], enabled: dict[str, bool]) -> list[str]:
+    return [k for k in kinds if GROUP_AREA.get(k) is None or enabled.get(GROUP_AREA[k], False)]
 
 
 def _text(q: SearchQuery, *cols):
@@ -328,7 +339,8 @@ async def search(
     wanted = [t.strip() for t in types.split(",")] if types else None
     cap = limit * _CANDIDATES
     groups = []
-    for kind in groups_for(query, filters, wanted):
+    enabled = await features.effective_for(db, user)
+    for kind in allowed_groups(groups_for(query, filters, wanted), enabled):
         items, more = rank(await _group(db, kind, ent, query, filters, cap + 1), limit)
         if items:
             groups.append({"type": kind, "items": items, "more": more})

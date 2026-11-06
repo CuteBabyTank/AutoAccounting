@@ -26,6 +26,11 @@ def assistant_defaults(monkeypatch):
     monkeypatch.setattr(guard, "HISTORY_TURNS", 12)
     monkeypatch.setattr(guard, "HISTORY_CHARS", 800)
     monkeypatch.setattr(guard, "HISTORY_BUDGET_CHARS", 4000)
+    from app.services import features
+
+    async def all_areas_on(db, user):  # stub DBs can't answer the per-person area lookup search now makes
+        return {k: True for k in features.KEYS}
+    monkeypatch.setattr(features, "effective_for", all_areas_on)
 
 
 # ---- guard ------------------------------------------------------------------------------------------------------

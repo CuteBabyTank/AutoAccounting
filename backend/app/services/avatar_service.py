@@ -9,7 +9,7 @@ import io
 from PIL import Image, ImageOps
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
-MAX_PIXELS = 50_000_000   # refuse decompression bombs before decoding
+MAX_PIXELS = 16_000_000   # refuse decompression bombs before decoding (ample for a 192 px avatar)
 SIDE = 192                # px, stored square
 QUALITY = 78
 MAX_STORED_BYTES = 60 * 1024
@@ -25,6 +25,8 @@ def make_avatar(data: bytes) -> bytes:
                 raise ValueError("Upload a JPG or PNG image.")
             if img.width * img.height > MAX_PIXELS:
                 raise ValueError("Image is too large.")
+            if img.format == "JPEG":
+                img.draft("RGB", (SIDE * 4, SIDE * 4))  # decode at a reduced scale; the output is tiny anyway
             img = ImageOps.exif_transpose(img)
             if img.mode in ("RGBA", "LA", "P"):
                 rgba = img.convert("RGBA")

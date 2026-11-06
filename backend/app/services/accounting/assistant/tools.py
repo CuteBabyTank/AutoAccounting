@@ -152,7 +152,9 @@ _TYPES = ("document", "contact", "bank_line", "journal_entry", "task", "company"
 
 async def search(ctx: Ctx, query: str = "", company: str | None = None, types: list[str] | None = None,
                  date_from: str | None = None, date_to: str | None = None, review_only: bool = False) -> Result:
-    from app.routers.accounting_search import SEARCH_COUNT_CAP, Filters, _group, count_query, groups_for, rank
+    from app.routers.accounting_search import (SEARCH_COUNT_CAP, Filters, _group, allowed_groups, count_query,
+                                               groups_for, rank)
+    from app.services import features
     from app.services.accounting.search import parse_query
 
     company_id = (await resolve_company(ctx, company)).id if company else None
@@ -162,7 +164,8 @@ async def search(ctx: Ctx, query: str = "", company: str | None = None, types: l
     wanted = [t for t in (types or []) if t in _TYPES] or None
     hits: list[tuple[str, dict]] = []
     totals: dict[str, dict] = {}
-    for kind in groups_for(q, f, wanted):
+    enabled = await features.effective_for(ctx.db, ctx.user)
+    for kind in allowed_groups(groups_for(q, f, wanted), enabled):
         count = (await ctx.db.execute(count_query(kind, ctx.ent, q, f))).scalar_one()
         totals[kind] = {"total": min(count, SEARCH_COUNT_CAP)}
         if count > SEARCH_COUNT_CAP:

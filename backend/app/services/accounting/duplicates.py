@@ -6,6 +6,7 @@ and copies whose number was misread (same counterparty, date and amount). A pair
 said is not a duplicate is never offered again.
 """
 
+import heapq
 import uuid
 from dataclasses import dataclass
 from datetime import date
@@ -67,41 +68,82 @@ def _is_bill(doc: DupDoc) -> bool:
     return doc.role == "buyer" and doc.category in _BILLS
 
 
+def _first_uncleared(candidates, doc: DupDoc) -> DupDoc | None:
+    """The first candidate (in filing order) a person hasn't cleared against ``doc``. Cleared pairs are rare, so
+    this stops almost at once."""
+    for earlier in candidates:
+        if not _cleared(earlier, doc):
+            return earlier
+    return None
+
+
+@dataclass
+class _NumberBucket:
+    """Earlier documents sharing (role, counterparty, number), indexed so a lookup never rescans the bucket."""
+    all: list[DupDoc]
+    dated: dict[date, list[tuple[int, DupDoc]]]
+    undated: list[tuple[int, DupDoc]]
+    bills: list[DupDoc]          # dated supplier bills, for number_reused
+
+
+@dataclass
+class _DetailsBucket:
+    all: list[DupDoc]
+    unnumbered: list[DupDoc]
+
+
 def duplicate_pairs(docs: list[DupDoc]) -> list[Pair]:
     """Each later copy paired with the first document it repeats. ``docs`` come in filing order.
 
-    A supplier bill whose number the same supplier already used on another date pairs as ``number_reused``.
+    Two numbered documents with different numbers are different papers, and so are two dated ones with
+    different dates (monthly statements repeat the account number). A supplier bill whose number the same
+    supplier already used on another date pairs as ``number_reused``.
+
+    Buckets are indexed by the fields that decide a match, so the work stays near-linear even when a company has
+    thousands of documents with one number or one date and amount.
     """
-    by_number: dict[tuple, list[DupDoc]] = {}
-    by_details: dict[tuple, list[DupDoc]] = {}
+    by_number: dict[tuple, _NumberBucket] = {}
+    by_details: dict[tuple, _DetailsBucket] = {}
     pairs: list[Pair] = []
-    for doc in docs:
+    for seq, doc in enumerate(docs):
         number_key = (doc.role, doc.counterparty, doc.doc_number) if doc.doc_number else None
         details_key = ((doc.role, doc.counterparty, doc.doc_date, doc.gross)
                        if doc.counterparty and doc.doc_date and doc.gross > 0 else None)
         found = None
-        reused = None
-        for key, index, reason in ((number_key, by_number, SAME_NUMBER), (details_key, by_details, SAME_DETAILS)):
-            if key is None or found:
-                continue
-            for earlier in index.get(key, []):
-                # Two numbered documents with different numbers are different papers, and so are two dated
-                # ones with different dates (monthly statements repeat the account number).
-                if reason == SAME_DETAILS and earlier.doc_number and doc.doc_number:
-                    continue
-                if reason == SAME_NUMBER and earlier.doc_date and doc.doc_date and earlier.doc_date != doc.doc_date:
-                    if reused is None and _is_bill(doc) and _is_bill(earlier) and not _cleared(earlier, doc):
-                        reused = Pair(earlier.id, doc.id, NUMBER_REUSED)
-                    continue
-                if not _cleared(earlier, doc):
-                    found = Pair(earlier.id, doc.id, reason)
-                    break
-        if found or reused:
-            pairs.append(found or reused)
+        nb = by_number.get(number_key) if number_key else None
+        if nb is not None:
+            if doc.doc_date:  # same date or undated, in filing order
+                same = (d for _, d in heapq.merge(nb.dated.get(doc.doc_date, []), nb.undated, key=lambda t: t[0]))
+            else:  # an undated document matches every earlier one
+                same = iter(nb.all)
+            earlier = _first_uncleared(same, doc)
+            if earlier is not None:
+                found = Pair(earlier.id, doc.id, SAME_NUMBER)
+        if found is None and details_key and details_key in by_details:
+            db_ = by_details[details_key]
+            earlier = _first_uncleared(db_.unnumbered if doc.doc_number else db_.all, doc)
+            if earlier is not None:
+                found = Pair(earlier.id, doc.id, SAME_DETAILS)
+        if found is None and nb is not None and doc.doc_date and _is_bill(doc):
+            earlier = _first_uncleared((b for b in nb.bills if b.doc_date != doc.doc_date), doc)
+            if earlier is not None:
+                found = Pair(earlier.id, doc.id, NUMBER_REUSED)
+        if found:
+            pairs.append(found)
         if number_key:
-            by_number.setdefault(number_key, []).append(doc)
+            nb = by_number.setdefault(number_key, _NumberBucket([], {}, [], []))
+            nb.all.append(doc)
+            if doc.doc_date:
+                nb.dated.setdefault(doc.doc_date, []).append((seq, doc))
+                if _is_bill(doc):
+                    nb.bills.append(doc)
+            else:
+                nb.undated.append((seq, doc))
         if details_key:
-            by_details.setdefault(details_key, []).append(doc)
+            dbk = by_details.setdefault(details_key, _DetailsBucket([], []))
+            dbk.all.append(doc)
+            if not doc.doc_number:
+                dbk.unnumbered.append(doc)
     return pairs
 
 

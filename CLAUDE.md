@@ -89,7 +89,7 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
 `ASSISTANT_FIRM_DAILY_TOKENS` (3000000), `ASSISTANT_USER_DAILY_TOKENS` (600000),
 `ASSISTANT_PLATFORM_DAILY_TOKENS` (20000000 per instance; all caps reset at Manila midnight, 0 disables),
 `ASSISTANT_HISTORY_TURNS` (12 messages), `ASSISTANT_HISTORY_CHARS` (800 per message),
-`ASSISTANT_HISTORY_BUDGET_CHARS` (4000 total), `EMAIL_PROVIDER` ("" off, "console" dev, "ses"), `EMAIL_FROM`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `ASSISTANT_ANSWER_CHARS` (4000, truncated with `…`), `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB` (50), `MAX_BATCH_SIZE` (200), `BOOTSTRAP_ADMIN_EMAIL`, `ENABLE_DEV_LOGIN`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+`ASSISTANT_HISTORY_BUDGET_CHARS` (4000 total), `EMAIL_PROVIDER` ("" off, "console" dev, "ses"), `EMAIL_FROM`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `ASSISTANT_ANSWER_CHARS` (4000, truncated with `…`), `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB` (50), `MAX_BATCH_SIZE` (200), `MAX_PDF_PAGES` (500, checked at upload and before extraction), `BOOTSTRAP_ADMIN_EMAIL`, `ENABLE_DEV_LOGIN`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
 Multipart bodies are capped at the smaller of the configured batch capacity and 256 MiB, plus 64 KiB per file and
 1 MiB for headers/fields. JSON bodies are capped at 25 MiB; limits count received bytes regardless of Content-Length.
@@ -203,6 +203,16 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
 - **PDF templates** are calibrated comb-cell layouts (`forms/overlay.py`); re-calibrate when BIR revises a form.
 - **Global search** (`routers/accounting_search.py`, parser `services/accounting/search.py`): one firm-scoped SELECT per group; add a new searchable table there (and its index to `schema.search_index_statements`, pg_trgm GIN only when the extension exists). Results open through `lib/search-nav.ts`: `/accounting?company=&view=&year=&quarter=&account=&month=&contact=&doc=` is parsed by `parseTarget` (UUIDs via `safeId`, shapes checked); on `/accounting` it's the `aa:open-target` event instead of a reload. The palette (`components/search/SearchPalette.tsx`, "/" or Cmd/Ctrl-K) lives in the Sidebar.
 - **Recurring entries / write-offs / checklists** (`routers/accounting_recurring.py`, `accounting_writeoff.py`, `accounting_checklists.py`; pure logic in `compute/recurring.py`, `writeoff.py`, `checklists.py`): recurring templates never post on their own (no scheduler; "Post due entries" is a user action, row-locked, one JE per template per date via `aa_journal_entries.recurring_id`). A write-off is one JE whose `writeoff_items` the subledger reads back as payments (`books/subledger.writeoff_rows`), so it can't be edited, only deleted (which reopens the invoices). Anything new that computes A/R open balances must include those payments. Frontend calls for these and the cash forecast live in `lib/extras-api.ts` / `types/extras.ts`.
+- **Security rules from the 2026-11 audit:** PDF chunks are built one at a time inside the reader gate
+  (`pipeline._chunk_bytes`, each capped at 2× the file or `CHUNK_BYTES_FLOOR`), never all at once. CPU-heavy work in a request (image
+  decode, etc.) goes through `asyncio.to_thread`, never inline on the shared event loop. Search groups are
+  filtered by the caller's areas (`accounting_search.GROUP_AREA`; add a new group there). Opening-asset create / delete are gated as `books`; an asset PATCH checks its own area in the handler
+  (`features.require_area`: books for an opening asset, documents for a document's). A firm suspension marks
+  members `suspended_with_firm` and reactivation restores only those. A file whose extraction dies
+  `jobs.MAX_INTERRUPTS` times is set aside. Validation-error logs keep only `loc`/`type`, never submitted values.
+  Browser copies of a person's data (Casper chats, quick picks) are keyed by user and cleared on sign-out
+  (`lib/personal-storage.ts`; keep `public/app.js` sign-out in step). The backup job always uses
+  `sslmode=verify-full` with the `AA_SUPABASE_CA` secret.
 - **Privacy toggle** (`lib/privacy.ts`, `PrivacyToggle`): give any dashboard amount the class `aa-amount` and it blurs while "Hide amounts" is on.
 - **Books on by default:** a new company gets `books_start` = the first day of its current fiscal year (the
   `CompanyForm` default, plus `create_company` when the request leaves the field out). An explicit null keeps it
@@ -329,7 +339,8 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   `components/assistant/CasperHelp.tsx`, a static list of what Casper reads and (with write mode) changes, with
   examples that drop into the composer. Keep it in step when a tool is added or removed.
 - **Per-person access** (`services/access.py`, Team page → Access → `components/team/AccessPanel.tsx`):
-  `users.access = {"off": [feature keys], "assistant": off|read|write}`; the owner sets anyone's, a manager sets
+  `users.access = {"off": [feature keys], "assistant": off|read|write}` (cleared whenever the person joins, leaves or
+  is moved between firms: it is the setting firm's grant); the owner sets anyone's, a manager sets
   employees' only (`PUT /api/team/members/{id}/access`, audited as `team_member` / `access`). `features.effective_for`
   narrows the firm's switches by it, so `GET /api/features` hides those areas and `feature_gate` answers 403 ("ask
   your firm owner"; maintenance stays 503). Casper's read/write tools check the same areas (`tools.TOOL_AREAS`; add

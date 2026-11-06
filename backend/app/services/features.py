@@ -78,6 +78,10 @@ ROUTES: tuple[tuple[frozenset[str] | None, re.Pattern[str], str], ...] = tuple(
         (None, rf"^{_A}/companies/{_ID}/books/(close|reopen)$", "close"),
         (None, rf"^{_A}/companies/{_ID}/(journal-entries|books)(/|$)", "books"),
         (None, rf"^{_A}/journal-entries/", "books"),
+        # Opening assets live in the Books panel. Editing one asset (PATCH) is checked in the handler instead: an
+        # opening asset is books, a document's asset is that document (``require_area``).
+        (frozenset({"POST"}), rf"^{_A}/companies/{_ID}/assets$", "books"),
+        (frozenset({"DELETE"}), rf"^{_A}/assets/{_ID}$", "books"),
         (_WRITE, rf"^{_A}/(companies/{_ID}/accounts|accounts/{_ID})$", "books"),
         (None, rf"^{_A}/(companies/{_ID}/recurring-entries|recurring-entries)(/|$)", "recurring"),
         (None, rf"^{_A}/(companies/{_ID}/bank|bank-[a-z]+)(/|$)", "bank"),
@@ -104,7 +108,8 @@ ALWAYS_ON: frozenset[str] = frozenset({
     f"{_A}/uploads/pending", f"{_A}/uploads/{{upload_id}}",
     f"{_A}/periods/{{company_id}}/{{year}}/{{quarter}}",  # the quarter folder's documents
     f"{_A}/companies/{{company_id}}/health",
-    f"{_A}/companies/{{company_id}}/assets", f"{_A}/assets/{{asset_id}}",
+    f"{_A}/companies/{{company_id}}/assets",           # GET: the asset list (writes are gated as books)
+    f"{_A}/assets/{{asset_id}}",                        # PATCH: gated per asset in the handler (require_area)
     f"{_A}/coa-templates", f"{_A}/coa-templates/{{template_id}}",
     f"{_A}/atc-codes",                                  # the ATC pickers' list
 })
@@ -173,6 +178,17 @@ def no_access_message(key: str) -> str:
 
 def off_message(key: str) -> str:
     return f"{LABELS.get(key, key)} is turned off for maintenance. Please try again later."
+
+
+async def require_area(db: AsyncSession, user: User, key: str) -> None:
+    """The same check as ``feature_gate``, for a route whose area depends on the record it touches."""
+    if user.role == UserRole.ADMIN:
+        return
+    firm_on = await firm_effective_for(db, user)
+    if not firm_on[key]:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=off_message(key))
+    if access.blocked_personally(key, firm_on, user.access, user.role.value):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=no_access_message(key))
 
 
 async def feature_gate(

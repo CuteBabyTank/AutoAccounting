@@ -62,21 +62,34 @@ def chunks_at_once() -> int:
     return max(1, settings.accounting_reader_parallel) if _qwen() else 3
 
 
-def pdf_chunks_for_gemini(pdf_path: str, size: int | None = None) -> list[tuple[bytes, int, int]]:
-    """Split a PDF into compressed chunks of at most ``PAGES_PER_CHUNK`` pages.
+def pdf_chunk_ranges(page_count: int, size: int | None = None) -> list[tuple[int, int]]:
+    """``(start_page_0indexed, end_page_0indexed_inclusive)`` of each chunk, without building any."""
+    size = size or pages_per_chunk()
+    return [(start, min(start + size, page_count) - 1) for start in range(0, page_count, size)]
 
-    Returns ``(chunk_bytes, start_page_0indexed, end_page_0indexed_inclusive)``.
-    """
+
+def pdf_chunk(pdf_path: str, start: int, end: int, limit: int | None = None) -> bytes:
+    """One compressed sub-PDF of pages ``start``..``end``. Built only when it is about to be read, so a file's
+    chunks are never all in memory at once (each sub-PDF carries its own copy of every resource its pages
+    share). ``limit`` refuses a chunk that expands past that many bytes."""
     source = fitz.open(pdf_path)
     try:
-        chunks: list[tuple[bytes, int, int]] = []
-        size = size or pages_per_chunk()
-        for start in range(0, len(source), size):
-            end = min(start + size, len(source)) - 1
-            part = fitz.open()
+        part = fitz.open()
+        try:
             part.insert_pdf(source, from_page=start, to_page=end)
-            chunks.append((part.tobytes(garbage=4, deflate=True), start, end))
+            data = part.tobytes(garbage=4, deflate=True)
+        finally:
             part.close()
-        return chunks
     finally:
         source.close()
+    if limit is not None and len(data) > limit:
+        raise ValueError(f"pages {start + 1}-{end + 1} expand to {len(data)} bytes")
+    return data
+
+
+def pdf_chunks_for_gemini(pdf_path: str, size: int | None = None) -> list[tuple[bytes, int, int]]:
+    """Every chunk of a PDF at once: ``(chunk_bytes, start_page_0indexed, end_page_0indexed_inclusive)``.
+    Small files and tests only; extraction builds chunks one at a time with ``pdf_chunk``."""
+    with fitz.open(pdf_path) as source:
+        count = len(source)
+    return [(pdf_chunk(pdf_path, s, e), s, e) for s, e in pdf_chunk_ranges(count, size)]

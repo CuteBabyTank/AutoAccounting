@@ -1,5 +1,7 @@
 """Auth routes: Google SSO + profile."""
 
+import asyncio
+
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -142,6 +144,9 @@ async def update_me(
     return UserResponse(**await _response(db, user))
 
 
+_AVATAR_SLOTS = asyncio.Semaphore(2)
+
+
 @router.put("/me/avatar", response_model=UserResponse)
 async def upload_avatar(
     file: UploadFile = File(...),
@@ -151,7 +156,9 @@ async def upload_avatar(
     """Set your own profile picture (JPG / PNG under 5 MB, stored as a ~10 KB WebP)."""
     data = await file.read(MAX_UPLOAD_BYTES + 1)
     try:
-        user.avatar = make_avatar(data)
+        # Decoding is CPU work: off the event loop (shared by every firm), at most two at a time.
+        async with _AVATAR_SLOTS:
+            user.avatar = await asyncio.to_thread(make_avatar, data)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     await db.commit()

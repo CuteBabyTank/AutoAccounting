@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autoaccounting}
       POSTGRES_DB: ${POSTGRES_DB:-autoaccounting}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"  # loopback only: never reachable from the LAN
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
@@ -20,7 +20,7 @@ services:
     build: ./backend
     extra_hosts: ["host.docker.internal:host-gateway"]
     ports:
-      - "8001:8000"
+      - "127.0.0.1:8001:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -37,7 +37,7 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     depends_on:
       - backend
     env_file:

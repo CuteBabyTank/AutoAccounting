@@ -1,6 +1,7 @@
 """AutoAccounting phase 1: company databank, uploads, folder tree, documents."""
 
 import asyncio
+import logging
 from dataclasses import dataclass
 import re
 import shutil
@@ -55,7 +56,7 @@ from app.services.accounting.review_rules import BULK_MAX, LOCKED_REASON, bulk_t
 from app.services.accounting import duplicates
 from app.services.accounting.classify import document_nature, needs_review_for, rule_conflicts
 from app.services.accounting.matching import file_detection_from_json, suggest_groups
-from app.services.accounting.jobs import stale_action
+from app.services.accounting.jobs import INTERRUPTED_MESSAGE, after_interrupt, stale_action
 from app.services.accounting.periods import period_fields, period_for, quarter_label
 from app.services.accounting.storage import (
     UploadRejected, filed_hashes, is_stored_path_safe, read_page_bytes, stream_upload, upload_dir,
@@ -65,6 +66,7 @@ from app.services.accounting.tree import TreeCompanyInput, bank_nodes, build_tre
 from app.services.usage_service import get_effective_rate_config, get_enterprise_for_user
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 accounting_upload_limiter = RateLimiter(max_attempts=20, window_seconds=600)
 
@@ -279,7 +281,10 @@ async def _upload_out(db: AsyncSession, ent: uuid.UUID, upload_id: uuid.UUID) ->
             if action == "resume":
                 for f in files:
                     if f.status == "extracting":  # claimed by the dead job; none of its work was committed
-                        f.status = "detected"
+                        f.interrupts, f.status = after_interrupt(f.interrupts or 0)
+                        if f.status == "error":
+                            f.error_message = INTERRUPTED_MESSAGE
+                            logger.warning("accounting_file_set_aside file_id=%s interrupts=%d", f.id, f.interrupts)
             else:
                 upload.status = "failed"
                 for f in files:
@@ -1377,7 +1382,10 @@ async def file_page(
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Page not found")
     data, media_type = result
-    return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, max-age=3600"})
+    # Cached per session: Vary on the bearer token, so a later sign-in on the same browser (another person, or
+    # someone the firm has since removed) never gets these bytes from the cache without asking the server.
+    return Response(content=data, media_type=media_type,
+                    headers={"Cache-Control": "private, max-age=3600", "Vary": "Authorization"})
 
 
 router.include_router(accounting_work.router)

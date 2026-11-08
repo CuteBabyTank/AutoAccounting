@@ -8,11 +8,12 @@ from app.services.accounting.compute.due_dates import quarter_end
 
 def deletion_problem(dates: Iterable[date], periods: Iterable[tuple[int, int]],
                      closes: Iterable[tuple[date, date]], filed: set[tuple[int, int]], fye: int,
-                     *, from_date: date | None = None) -> str | None:
+                     *, from_date: date | None = None, doing: str = "deleting it") -> str | None:
+    """Why retained history refuses this change, or None. ``doing`` names the change ("deleting it")."""
     days = set(dates)
     for start, end in closes:
         if any(start <= d <= end for d in days) or (from_date is not None and end >= from_date):
-            return f"{start:%B %Y} is closed. Reopen the month before deleting; retained books cannot be removed."
+            return f"{start:%B %Y} is closed. Reopen the month before {doing}; retained books cannot be removed."
     affected = set(periods)
     for d in days:
         p = period_for(d, fye)
@@ -23,5 +24,6 @@ def deletion_problem(dates: Iterable[date], periods: Iterable[tuple[int, int]],
     if affected & filed or later_filing or (from_date is not None and any(
         quarter_end(y, q or 4, fye) >= from_date for y, q in filed
     )):
-        return "This record affects a filed return. Correct it through an amendment or journal entry instead of deleting it."
+        return ("This record affects a filed return. Correct it through an amendment or journal entry instead of "
+                f"{doing}.")
     return None

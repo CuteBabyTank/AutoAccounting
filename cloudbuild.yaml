@@ -81,7 +81,7 @@ steps:
       - '--cpu'
       - '2'
       - '--memory'
-      - '4Gi'  # 3 concurrent PDF compressions (compress.PDF_WORKERS) + app + uploads
+      - '4Gi'  # shared pdf_budget: 3 compression/render children (2304 MiB) + parent/buffers (1792 MiB)
       - '--execution-environment'
       - 'gen2'
       - '--no-cpu-throttling'  # extraction runs after the upload request returns; throttled CPU stalls it

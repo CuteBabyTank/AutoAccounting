@@ -107,7 +107,7 @@ async def google_login(
             logger.info("google_registration_success user_id=%s email=%s privacy_version=%s terms_version=%s",
                         user.id, email, PRIVACY_POLICY_VERSION, TERMS_VERSION)
         else:
-            if not user.is_active:
+            if not user.is_active or user.platform_disabled_at is not None:
                 logger.warning("google_login_failed reason=deactivated user_id=%s email=%s", user.id, email)
                 raise _AccountDeactivated()
             if user.email_verified_at is None:
@@ -138,7 +138,7 @@ async def google_login(
         if user.role == UserRole.UNVERIFIED:
             await _maybe_bootstrap_admin(db, user)
 
-        token = create_access_token(str(user.id))
+        token = create_access_token(str(user.id), password_changed_at=user.password_changed_at)
         return user, token
     except _AccountDeactivated:
         raise HTTPException(status_code=403, detail="Account is deactivated")
@@ -175,7 +175,7 @@ async def dev_login(db: AsyncSession, email: str | None) -> tuple[User, str]:
         await db.commit()
         await db.refresh(user)
         logger.info("dev_registration user_id=%s email=%s", user.id, email)
-    elif not user.is_active:
+    elif not user.is_active or user.platform_disabled_at is not None:
         raise HTTPException(status_code=403, detail="Account is deactivated")
 
     if user.role == UserRole.UNVERIFIED:
@@ -189,7 +189,7 @@ async def dev_login(db: AsyncSession, email: str | None) -> tuple[User, str]:
             logger.info("dev_bootstrap_admin_granted user_id=%s email=%s", user.id, email)
 
     logger.info("dev_login_success user_id=%s email=%s", user.id, email)
-    return user, create_access_token(str(user.id))
+    return user, create_access_token(str(user.id), password_changed_at=user.password_changed_at)
 
 
 async def _maybe_bootstrap_admin(db: AsyncSession, user: User) -> None:

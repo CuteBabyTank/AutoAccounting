@@ -181,10 +181,11 @@ def read_page_bytes(stored_path: str, file_type: str, page: int) -> tuple[bytes,
     path = Path(stored_path)
     if not path.is_file():
         return None
+    if file_type == "pdf":
+        # Both helpers isolate their renders. None alone permits the full-page fallback; failures propagate.
+        trimmed = render_pdf_page_trimmed(str(path), page - 1)
+        return (trimmed or render_pdf_page_webp(str(path), page - 1)), "image/webp"
     try:
-        if file_type == "pdf":
-            trimmed = render_pdf_page_trimmed(str(path), page - 1)
-            return (trimmed or render_pdf_page_webp(str(path), page - 1)), "image/webp"
         if page != 1:
             return None
         data = path.read_bytes()

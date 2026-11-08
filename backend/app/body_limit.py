@@ -1,6 +1,8 @@
 """Bound streamed request bodies before handing bytes to the body parser."""
 
 from collections.abc import Awaitable, Callable
+import re
+
 
 Receive = Callable[[], Awaitable[dict]]
 Send = Callable[[dict], Awaitable[None]]
@@ -11,10 +13,13 @@ class _BodyTooLarge(Exception):
 
 
 class BodySizeLimitMiddleware:
-    def __init__(self, app, max_bytes: int, multipart_max_bytes: int) -> None:
+    def __init__(self, app, max_bytes: int, multipart_max_bytes: int,
+                 route_limits: tuple[tuple[str, str, bool, int], ...] = ()) -> None:
         self.app = app
         self.max_bytes = max_bytes
         self.multipart_max_bytes = multipart_max_bytes
+        self.route_limits = [(method, re.compile(path), multipart, limit)
+                             for method, path, multipart, limit in route_limits]
 
     async def __call__(self, scope: dict, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -30,6 +35,11 @@ class BodySizeLimitMiddleware:
             return
         multipart = (types[0] if types else b"").lower().startswith(b"multipart/form-data")
         limit = self.multipart_max_bytes if multipart else self.max_bytes
+        for method, path, is_multipart, allowance in self.route_limits:
+            if (scope.get("method") == method and multipart == is_multipart
+                    and path.fullmatch(scope.get("path", ""))):
+                limit = allowance
+                break
         received = 0
         exceeded = rejected = started = False
 

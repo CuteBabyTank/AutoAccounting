@@ -96,17 +96,20 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
 `ASSISTANT_HISTORY_BUDGET_CHARS` (4000 total), `EMAIL_PROVIDER` ("" off, "console" dev, "ses"), `EMAIL_FROM`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `ASSISTANT_ANSWER_CHARS` (4000, truncated with `…`), `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB` (50), `MAX_BATCH_SIZE` (200), `MAX_PDF_PAGES` (500, checked at upload and before extraction), `BOOTSTRAP_ADMIN_EMAIL`, `ENABLE_DEV_LOGIN`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
 Multipart bodies are capped at the smaller of the configured batch capacity and 256 MiB, plus 64 KiB per file and
-1 MiB for headers/fields. JSON bodies are capped at 25 MiB; limits count received bytes regardless of Content-Length.
+1 MiB for headers/fields on batch uploads only; other bodies default to 1 MiB, with route-specific caps of 5 MiB + 64 KiB for avatars, 6/11 MiB for books/payroll imports, 2 MiB for assistant history, 4 MiB for form edits/previews and 25 MiB for bulk certificate edits; limits count received bytes regardless of Content-Length.
 
 ## Gotchas
 
+- **Legacy account disables:** run `python -m app.services.platform_disabled_backfill [--dry-run]` once after deployment; it preserves proven firm-only suspensions and restricts ambiguous legacy disables until platform review (idempotent, system-audited).
 - **aa_* tables have FORCE RLS** keyed on `app.current_user_id` → the user's firm. Every DB session that touches them must `bind_session_user` (`get_current_user` does it; background jobs like `pipeline.run_extraction` do it themselves). The app's DB role must be **NOBYPASSRLS** or RLS silently does nothing.
 - **Firm scope:** every accounting row carries `enterprise_id` = the firm owner's user id (`routers/accounting_scope.scope_for`). Always filter by it, even with RLS on.
 - **Upload compression:** `storage.stream_upload` compresses every accepted file before it is kept
   (`services/accounting/compress.py`: photos ≤ 2400 px JPEG q80, PDF images > 240 dpi resampled to 200, fonts subset).
   The stored `sha256` is the **original** upload's (duplicate drops still match); `file_size`, `stored_path` and
   `file_type` are the kept copy's (a PNG may become a JPG). Signed / encrypted PDFs are kept byte-for-byte. The PDF
-  rewrite runs in a memory-capped subprocess, up to `compress.PDF_WORKERS` (3) at once on `PDF_POOL`; past
+  rewrite runs in a memory-capped subprocess on `PDF_POOL` (up to `compress.PDF_WORKERS`, 3). Compression and
+  rendering share `pdf_budget.PDF_CHILD_SLOTS`: at most 3 children × 768 MiB, leaving 1792 MiB of the 4 GiB
+  instance for the parent and buffers. Background work waits; the page viewer can return 503 when full. Past
   `storage.PDF_QUEUE_MAX` waiting, a PDF is kept as uploaded. JPEG photos are shrunk in the browser first
   (`lib/photo-shrink.ts`, same 2400 px / q80) and flagged `shrunk` per file; the server then skips its own JPEG pass.
   Never key duplicates on a browser-supplied hash (a firm member could pre-claim one and get a later real file
@@ -391,3 +394,5 @@ Alphalist DAT export (BIR layout unverified), Gemini read of scanned payroll reg
 
 - Companies/contacts use `archived_at`; assets/payroll use `deleted_at`. Keep identities, TIN uniqueness, source files and tax history (≥5 years); active loaders must exclude tombstones. Contact merges require both contacts restored first.
 - Before deleting accounting sources, use `services/accounting/deletion.py` (`protect_document`, `protect_entry`, `protect_history`), backed by pure `compute/retention.py`. Refuse closed/filed history, including later returns affected by carry-forwards, depreciation and bank/reference dependencies. Take `assignment.lock_firm` before reading mutation facts; competing filing/closing/bank writes use the same lock. Rematch only the bank lines covered by the guard, retain rows with tombstones, audit before commit, and confirm destructive UI actions.
+- Document edits, bulk exclusion and company moves use the same guard (`protect_document(..., doing=...)` for the refusal wording): only edits that take a document out of retained history (exclude, date, period, `paid_on`, `settles_document_id`) or a move are refused; ordinary corrections (parties, amounts, accounts) stay editable on filed / closed documents. Every rematch after a document change uses `deletion.safe_line_ids` (skips confirmed, closed/filed-dated and reconciled lines), never a full rematch.
+- PDF children: `pdf_budget.BACKGROUND_CHILD_SLOTS` (2 of the 3) caps compression + background (`wait=True`) renders, and `render_pool.BACKGROUND_WORKERS` caps their pool threads, so the page viewer always has a thread and a child; the frontend retries a page 503 once.

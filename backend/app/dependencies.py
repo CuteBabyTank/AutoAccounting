@@ -11,7 +11,7 @@ from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session
-from app.auth.jwt import verify_token
+from app.auth.jwt import credential_version, verify_token
 from app.models.user import User, UserRole
 from app.auth.security import global_user_limiter
 
@@ -77,14 +77,14 @@ async def _get_active_user(db: AsyncSession, payload: dict) -> User:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
-    if not user.is_active:
+    if not user.is_active or user.platform_disabled_at is not None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated",
         )
-    # A password change or reset signs out every session issued before it (to the second, as ``iat`` is).
-    changed = user.password_changed_at
-    if changed is not None and int(payload.get("iat") or 0) < int(changed.timestamp()):
+    # Bind to the credential state, including resets within the token's iat second. Legacy tokens sign out.
+    version = payload.get("pwd")
+    if type(version) is not int or version != credential_version(user.password_changed_at):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     return user
 

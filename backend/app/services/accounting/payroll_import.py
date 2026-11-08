@@ -19,6 +19,8 @@ MAX_ROWS = 5000
 MAX_READ_ROWS = MAX_ROWS * 4 + 50     # physical rows read (blank ones included) before giving up on a sheet
 MAX_COLUMNS = 120
 MAX_UNZIPPED = 60 * 1024 * 1024     # an .xlsx is a zip: refuse ones that inflate past this (zip bombs)
+MAX_CELL_CHARS = 2000
+MAX_SHEET_CHARS = 2 * MAX_UNZIPPED  # count references too: XLSX shared strings may alias
 # Extra pseudo-field: one "Last, First Middle" column.
 IMPORT_FIELDS = {"full_name": "Full name (Last, First Middle)", **FIELD_LABELS}
 DATES = ("employed_from", "employed_to", "birth_date", "prev_from", "prev_to")
@@ -56,7 +58,7 @@ def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9 ]+", " ", str(text).lower()).strip()
 
 
-def _cell(value) -> str:
+def _cell(value: object) -> str:
     if value is None:
         return ""
     if isinstance(value, datetime):
@@ -65,7 +67,10 @@ def _cell(value) -> str:
         return value.isoformat()
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
-    return str(value).strip()
+    text = str(value)
+    if len(text) > MAX_CELL_CHARS:
+        raise ValueError("A cell in that sheet is too long; check the file.")
+    return text.strip()
 
 
 def _decode(data: bytes) -> str:
@@ -89,14 +94,28 @@ def parse_sheet(data: bytes, filename: str) -> tuple[list[str], list[list[str]]]
         except zipfile.BadZipFile:
             raise ValueError("Couldn't read that file as an Excel workbook.") from None
         wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
-        ws = wb.worksheets[0]
-        raw = [[_cell(v) for v in row]
-               for row in ws.iter_rows(values_only=True, max_row=MAX_READ_ROWS, max_col=MAX_COLUMNS)]
-        wb.close()
+        try:
+            ws = wb.worksheets[0]
+            raw: list[list[str]] = []
+            total = 0
+            for row in ws.iter_rows(values_only=True, max_row=MAX_READ_ROWS, max_col=MAX_COLUMNS):
+                cells = [_cell(v) for v in row]
+                total += sum(len(c) for c in cells)
+                if total > MAX_SHEET_CHARS:
+                    raise ValueError("That sheet holds too much text; save just the rows you need.")
+                raw.append(cells)
+        finally:
+            wb.close()
     elif filename.lower().endswith((".csv", ".txt")):
         text = _decode(data)
-        raw = [[c.strip() for c in row[:MAX_COLUMNS]]
-               for _, row in zip(range(MAX_READ_ROWS), csv.reader(io.StringIO(text)))]
+        raw = []
+        total = 0
+        for _, row in zip(range(MAX_READ_ROWS), csv.reader(io.StringIO(text))):
+            cells = [_cell(c) for c in row[:MAX_COLUMNS]]
+            total += sum(len(c) for c in cells)
+            if total > MAX_SHEET_CHARS:
+                raise ValueError("That sheet holds too much text; save just the rows you need.")
+            raw.append(cells)
     else:
         raise ValueError("Upload an Excel (.xlsx) or CSV file.")
     start = next((i for i, row in enumerate(raw)

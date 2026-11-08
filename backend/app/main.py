@@ -87,11 +87,28 @@ _CSP_POLICY = (
 )
 
 
-_JSON_BODY_MAX_BYTES = 25 * 1024 * 1024  # 25 MB
+_JSON_BODY_MAX_BYTES = 1024 * 1024
 # Bound the whole batch as well as each file; reserve space for multipart headers/fields.
 _MULTIPART_BODY_MAX_BYTES = min(
     settings.max_file_size_mb * settings.max_batch_size * 1024 * 1024, 256 * 1024 * 1024,
 ) + settings.max_batch_size * 64 * 1024 + 1024 * 1024
+
+# Exact method/path/media matches are evaluated before FastAPI parses any body. All other requests, including
+# multipart on JSON endpoints, keep the 1 MiB default. Import sheets allow 5 MiB (books) / 10 MiB (payroll).
+_BODY_ROUTE_LIMITS = (
+    ("PUT", r"/api/auth/me/avatar", True, 5 * 1024 * 1024 + 64 * 1024),
+    ("POST", r"/api/accounting/uploads", True, _MULTIPART_BODY_MAX_BYTES),
+    ("POST", r"/api/accounting/companies/[^/]+/imports/(opening-tb|open-items|journal-entries)(/preview)?",
+     True, 6 * 1024 * 1024),
+    ("POST", r"/api/accounting/companies/[^/]+/employees/[0-9]+/import(/preview)?", True, 11 * 1024 * 1024),
+    # 60 history messages of up to 4000 characters, including JSON unicode escapes.
+    ("POST", r"/api/accounting/assistant/chat", False, 2 * 1024 * 1024),
+    # Form previews/saves carry editable field maps; certificate zips carry up to 2000 such maps.
+    ("POST", r"/api/accounting/outputs/[^/]+/(preview|edits|2307s/preview)", False, 4 * 1024 * 1024),
+    ("POST", r"/api/accounting/companies/[^/]+/employees/[0-9]+/2316/preview", False, 4 * 1024 * 1024),
+    ("POST", r"/api/accounting/outputs/[^/]+/2307s", False, 25 * 1024 * 1024),
+    ("POST", r"/api/accounting/companies/[^/]+/employees/[0-9]+/2316\.zip", False, 25 * 1024 * 1024),
+)
 
 
 @app.middleware("http")
@@ -197,7 +214,7 @@ async def abuse_protection_middleware(request: Request, call_next) -> Response:
 # ---------------------------------------------------------------------------
 # Count bytes outside the HTTP middleware stack, including multipart parser reads.
 app.add_middleware(BodySizeLimitMiddleware, max_bytes=_JSON_BODY_MAX_BYTES,
-                   multipart_max_bytes=_MULTIPART_BODY_MAX_BYTES)
+                   multipart_max_bytes=_JSON_BODY_MAX_BYTES, route_limits=_BODY_ROUTE_LIMITS)
 
 # CORS: must be added LAST to be the outermost middleware (processed first for requests)
 # ---------------------------------------------------------------------------

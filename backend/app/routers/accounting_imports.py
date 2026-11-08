@@ -268,6 +268,9 @@ async def confirm_import(company_id: uuid.UUID, kind: ImportKind, file: UploadFi
         problem = entry_problem(built.chart, body, company.books_start, kept)
         if problem:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, problem)
+        if row is not None:
+            await deletion.protect_entry(db, company, row)
+        await deletion.protect_history(db, company, [company.books_start], from_date=company.books_start)
         batch.restore = {"opening": entry_state(row) if row is not None else None}
         if row is None:
             row = new_entry_row(ent, company, body, user)
@@ -498,6 +501,17 @@ async def undo_import(batch_id: uuid.UUID, user: User = Depends(get_current_user
     problem = undo_problem(facts)
     if problem:
         raise HTTPException(status.HTTP_409_CONFLICT, problem)
+
+    # Check every source before mutating any of them; UndoFacts' dependency refusals still apply.
+    if batch.kind == "opening-tb":
+        await deletion.protect_entry(db, company, extra["current"])
+        await deletion.protect_history(db, company, [company.books_start], from_date=company.books_start)
+    elif batch.kind == "journal-entries":
+        for e in extra["live"]:
+            await deletion.protect_entry(db, company, e)
+    else:
+        for item in extra["items"]:
+            await deletion.protect_opening_item(db, company, item)
 
     if batch.kind == "opening-tb":
         current, plan = extra["current"], extra["plan"]

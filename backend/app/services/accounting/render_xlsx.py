@@ -93,7 +93,7 @@ def _form_sheet(wb, form, values, changes, version, parent_version) -> None:
         ws.cell(row, 1, key)
         ws.cell(row, 2, label)
         year = key.endswith("_YEAR")  # a year cell, not an amount
-        cell = ws.cell(row, 3, values[key] if year else _number(values[key]))
+        cell = ws.cell(row, 3, _safe(values[key] if year else _number(values[key])))
         if isinstance(cell.value, Decimal):
             cell.number_format = WHOLE if form in WHOLE_PESO_FORMS else MONEY
         ws.cell(row, 4, notes.get(key, ""))

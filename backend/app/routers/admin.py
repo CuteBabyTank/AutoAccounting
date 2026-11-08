@@ -24,11 +24,12 @@ from app.services.budget_service import compute_new_budget
 router = APIRouter()
 
 _MEMBER_ROLES = (UserRole.EMPLOYEE, UserRole.MANAGER)
-_ACCOUNT_FIELDS = ("email", "role", "enterprise_id", "organization_name", "is_active")
+_ACCOUNT_FIELDS = ("email", "role", "enterprise_id", "organization_name", "is_active", "platform_disabled_at")
 
 
 async def _user_or_404(db: AsyncSession, user_id: uuid.UUID) -> User:
-    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    user = (await db.execute(select(User).where(User.id == user_id).with_for_update()
+                             .execution_options(populate_existing=True))).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return user
@@ -157,7 +158,9 @@ async def toggle_active(
         raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
     target = await _user_or_404(db, user_id)
     before = audit.snapshot(target, _ACCOUNT_FIELDS)
-    target.is_active = not target.is_active
+    # A platform restriction survives firm-side state changes; only this operation clears it.
+    target.is_active = target.platform_disabled_at is not None or not target.is_active
+    target.platform_disabled_at = None if target.is_active else datetime.now(timezone.utc)
     members_updated = 0
     if target.role == UserRole.ENTERPRISE:
         members = (User.enterprise_id == target.id, User.role.in_(_MEMBER_ROLES))
@@ -170,7 +173,8 @@ async def toggle_active(
                                        .where(*members, User.suspended_with_firm.is_(True)))).scalar_one()
             recorded = bool(target.suspended_with_firm) or marked > 0
             only = (User.suspended_with_firm.is_(True),) if recorded else (User.is_active.is_(False),)
-            stmt = update(User).where(*members, *only).values(is_active=True, suspended_with_firm=False)
+            stmt = (update(User).where(*members, *only, User.platform_disabled_at.is_(None))
+                    .values(is_active=True, suspended_with_firm=False))
             target.suspended_with_firm = False
         else:  # suspended: remember who was on, so members the firm deactivated stay off afterwards
             target.suspended_with_firm = True

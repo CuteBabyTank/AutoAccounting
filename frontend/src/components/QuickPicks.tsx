@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Plus, X } from "@phosphor-icons/react";
 import { loadPicks, removePick, savePick } from "@/lib/quick-picks";
+import { useAuth } from "@/lib/auth";
+import { quickPickKind } from "@/lib/personal-storage";
 
 interface Props {
   /** Storage key: one list per kind of field ("review-reason", "task-title"…). */
@@ -21,7 +23,15 @@ const CHIP =
   "inline-flex max-w-full items-center gap-1 rounded-full border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)]";
 
 /** One-click phrases under a text field, plus "+ Save" to keep what was just typed for next time. */
-export default function QuickPicks({ kind, presets = [], value, onPick, maxLength = 120, className = "mt-1.5" }: Props) {
+export default function QuickPicks(props: Props) {
+  const { user } = useAuth();
+  if (!user) return null;
+  const kind = quickPickKind(user.id, props.kind);
+  // Remount before painting another person's field, including the in-memory saved phrases.
+  return <PersonalQuickPicks {...props} kind={kind} key={kind} />;
+}
+
+function PersonalQuickPicks({ kind, presets = [], value, onPick, maxLength = 120, className = "mt-1.5" }: Props) {
   const [saved, setSaved] = useState<string[]>([]);
   useEffect(() => setSaved(loadPicks(kind)), [kind]);
 

@@ -184,7 +184,8 @@ async def preview_import(company_id: uuid.UUID, year: int, file: UploadFile, use
                          db: AsyncSession = Depends(get_db)):
     company = await company_or_404(db, scope_for(user), company_id)
     headers, rows = await _read_sheet(file)
-    return PreviewOut(headers=headers, sample=rows[:5], rows=len(rows),
+    sample = [[cell if len(cell) <= 200 else cell[:199] + "…" for cell in row] for row in rows[:5]]
+    return PreviewOut(headers=headers, sample=sample, rows=len(rows),
                       mapping=suggest_mapping(headers, company.payroll_mapping or {}), fields=IMPORT_FIELDS)
 
 

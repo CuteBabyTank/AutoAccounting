@@ -20,6 +20,8 @@ from pathlib import Path
 import pymupdf
 from PIL import Image, ImageOps
 
+from app.services.accounting.pdf_budget import BACKGROUND_CHILD_SLOTS, PDF_CHILD_SLOTS, PDF_MEMORY_BYTES
+
 logger = logging.getLogger(__name__)
 
 MAX_SIDE = 2400        # px, long side of a photo / scanned image file
@@ -120,12 +122,11 @@ def _pdf_bytes(data: bytes) -> bytes | None:
     return out
 
 
-# Address-space cap per rewrite process. A 50 MB scanned PDF peaks around 370 MB resident, so 768 MB is ~2x
-# headroom; a PDF that needs more is kept as uploaded.
-PDF_MEMORY_BYTES = 768 * 1024 * 1024
+# Each child keeps its 768 MiB address-space cap; a PDF needing more is kept as uploaded.
 PDF_TIMEOUT_S = 90
-# Rewrites running at once. PDF_WORKERS x PDF_MEMORY_BYTES (~2.3 GB) plus the app and spooled uploads must fit the
-# instance (Cloud Run --memory 4Gi in cloudbuild.yaml); raise them together.
+# At most three children across BOTH compression and rendering: pdf_budget reserves 2304 MiB
+# of address space and leaves 1792 MiB for the parent and buffers on the 4 GiB instance.
+# This pool's worker count cannot increase the shared admission budget.
 PDF_WORKERS = 3
 # Uploads queue here (awaited, no shared executor thread held), so every PDF is still compressed.
 PDF_POOL = ThreadPoolExecutor(max_workers=PDF_WORKERS, thread_name_prefix="pdf-compress")
@@ -152,10 +153,14 @@ def _pdf_file_isolated(src: Path, dest: Path) -> bool:
     """``_pdf_bytes`` in a separate process with a memory cap and a timeout: a PDF that would make MuPDF decode
     something enormous (an inline or annotation image the pre-check can't see) kills only that process."""
     try:
-        proc = subprocess.run([sys.executable, "-I", "-c", _WORKER, _APP_ROOT, str(PDF_MEMORY_BYTES),
-                               str(src.resolve()), str(dest.resolve())],
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                              timeout=PDF_TIMEOUT_S, check=False)
+        # Blocking background work waits here; the permit remains held until the child exits,
+        # even when the coroutine awaiting this executor thread is cancelled. Compression is background
+        # work: it uses the background share, so one child always stays free for the page viewer.
+        with BACKGROUND_CHILD_SLOTS, PDF_CHILD_SLOTS:
+            proc = subprocess.run([sys.executable, "-I", "-c", _WORKER, _APP_ROOT, str(PDF_MEMORY_BYTES),
+                                   str(src.resolve()), str(dest.resolve())],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                  timeout=PDF_TIMEOUT_S, check=False)
     except subprocess.TimeoutExpired:
         logger.warning("compress_skipped type=pdf error=timeout")
         return False

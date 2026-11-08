@@ -9,6 +9,8 @@ import asyncio
 import base64
 import logging
 import random
+import tempfile
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import fitz  # PyMuPDF
@@ -47,15 +49,15 @@ def _zoom(rect: "fitz.Rect") -> float:
 
 
 def _pdf_pages(data: bytes) -> list[bytes]:
-    doc = fitz.open(stream=data, filetype="pdf")
-    try:
-        pages = []
-        for page in doc:  # a chunk is a few pages (pages_per_chunk), each capped at MAX_PIXELS
-            z = _zoom(page.rect)
-            pages.append(page.get_pixmap(matrix=fitz.Matrix(z, z)).tobytes("jpeg", jpg_quality=JPEG_QUALITY))
-        return pages
-    finally:
-        doc.close()
+    from app.services.accounting.render_pool import render_page
+
+    with tempfile.TemporaryDirectory(prefix="aa-qwen-") as folder:
+        path = Path(folder) / "chunk.pdf"
+        path.write_bytes(data)
+        with fitz.open(path) as doc:
+            count = len(doc)  # metadata only; untrusted content streams are drawn only in the child
+        return [render_page(str(path), page, "qwen", dpi=DPI, quality=JPEG_QUALITY)
+                for page in range(count)]
 
 
 def _image_part(data: bytes, mime: str) -> dict:
@@ -64,7 +66,9 @@ def _image_part(data: bytes, mime: str) -> dict:
 
 async def content_for(file_bytes: bytes, mime_type: str) -> list[dict]:
     if mime_type == "application/pdf":
-        pages = await asyncio.get_running_loop().run_in_executor(None, _pdf_pages, file_bytes)
+        from app.services.accounting.render_pool import run_pdf_work
+
+        pages = await run_pdf_work(_pdf_pages, file_bytes, wait=True)
         parts: list[dict] = []
         for n, page in enumerate(pages, 1):
             parts.append({"type": "text", "text": f"Page {n}:"})

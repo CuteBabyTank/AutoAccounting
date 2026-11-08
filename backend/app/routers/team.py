@@ -39,6 +39,7 @@ def _member_response(member: User, caller: User | None = None) -> MemberResponse
 async def _member_or_404(db: AsyncSession, firm_id: uuid.UUID, member_id: uuid.UUID, roles=_MEMBER_ROLES) -> User:
     member = (await db.execute(
         select(User).where(User.id == member_id, User.enterprise_id == firm_id, User.role.in_(roles))
+        .with_for_update().execution_options(populate_existing=True)
     )).scalar_one_or_none()
     if member is None:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -84,12 +85,15 @@ async def add_member(
     ctx: EnterpriseContext = Depends(get_enterprise_context),
 ):
     """Attach an existing UNVERIFIED signup to this firm as an employee."""
-    target = (await db.execute(select(User).where(func.lower(User.email) == req.email.strip().lower()))).scalar_one_or_none()
+    target = (await db.execute(select(User).where(func.lower(User.email) == req.email.strip().lower())
+                              .with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     if target is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No account found with that email. Ask them to sign in with Google first.",
         )
+    if target.platform_disabled_at is not None:
+        raise HTTPException(status_code=403, detail="Account is deactivated by the platform administrator")
     if target.email_verified_at is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -125,6 +129,8 @@ async def update_member(
     if ctx.caller.role == UserRole.MANAGER and member.role == UserRole.MANAGER:
         raise HTTPException(status_code=403, detail="Managers cannot modify other managers")
     if req.is_active is not None:
+        if req.is_active and member.platform_disabled_at is not None:
+            raise HTTPException(status_code=403, detail="Account is deactivated by the platform administrator")
         before = audit.snapshot(member, _AUDIT_FIELDS)
         member.is_active = req.is_active
         audit.record(db, ent=ctx.enterprise.id, company_id=None, user=ctx.caller, entity="team_member",

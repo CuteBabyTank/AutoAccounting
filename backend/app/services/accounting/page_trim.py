@@ -64,8 +64,15 @@ def trimmed_image(data: bytes) -> tuple[bytes, str] | None:
 def render_pdf_page_trimmed(pdf_path: str, page_number: int) -> bytes | None:
     """A PDF page (0-indexed) clipped to its content and rendered sharper, as WebP; None when it has no margin to
     trim (the caller renders the whole page as before)."""
+    from app.services.accounting.render_pool import render_page
+
+    return render_page(pdf_path, page_number, "trimmed")
+
+
+def _render_pdf_page_trimmed(pdf_path: str, page_number: int) -> bytes | None:
+    """Child-only implementation; the public helper always isolates parsing and rasterization."""
     with fitz.open(pdf_path) as doc:
-        if page_number >= len(doc):
+        if not 0 <= page_number < len(doc):
             return None
         page = doc[page_number]
         zoom = render_zoom(page.rect.width, page.rect.height, _PROBE_DPI)

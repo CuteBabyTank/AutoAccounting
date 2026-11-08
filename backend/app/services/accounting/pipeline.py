@@ -1,7 +1,7 @@
 """Background detection + extraction for AutoAccounting uploads.
 
-Each job opens its own session (no request context), binds the uploader for
-RLS parity with the rest of the app, and commits before every Gemini call so
+Each job opens its own session (no request context), binds its validated firm owner for
+RLS independently of the initiating user's membership, and commits before every Gemini call so
 no transaction is held open across the network (transaction pooler).
 """
 
@@ -10,20 +10,24 @@ import logging
 import random
 import uuid
 from collections import deque
+from collections.abc import Awaitable, Callable, Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import exists, select, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
 from app.dependencies import bind_session_user
 from app.models.accounting import AAAccount, AACompany, AADocument, AAFile, AASupplierRule, AAUpload
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.services import gemini_service
-from app.services.accounting import duplicates, gemini as aa_gemini
+from app.services.accounting import audit, duplicates, gemini as aa_gemini
+from app.services.accounting.assignment import lock_firm
 from app.services.accounting.classify import (
     CompanyProfile, classify_document, duplicate_key, empty_document_fields, mark_duplicates,
 )
@@ -31,22 +35,22 @@ from app.services.accounting.books import bank
 from app.services.accounting.books.chart import Chart
 from app.services.accounting.books.links import relink_receipts
 from app.services.accounting.review_rules import flag_locked
-from app.services.accounting.jobs import RUNNING_STATUSES, STALE_AFTER, JobSlots
+from app.services.accounting.jobs import INTERRUPTED_MESSAGE, MAX_INTERRUPTS, RUNNING_STATUSES, STALE_AFTER, JobSlots
 from app.services.accounting.extraction import (
     DETECT_PROMPT, extract_prompt, parse_detection, parse_extraction,
 )
 from app.services.accounting.matching import (
     CompanyCandidate, detection_json, file_options, is_ambiguous, match_company,
 )
-from app.services.usage_service import charge_for_pages, get_enterprise_for_user, increment_usage
+from app.services.usage_service import charge_for_pages, increment_usage
 
 logger = logging.getLogger(__name__)
 
 # Accounting jobs per instance (each holds a DB session for its run), one per firm.
 _SLOTS = JobSlots(total=4)
 _TASKS: set[asyncio.Task] = set()
-# Uploads with a job on this instance (queued for a slot or running) -> the user it runs as.
-_ACTIVE: dict[uuid.UUID, str] = {}
+# Uploads with a job on this instance (queued for a slot or running) -> trusted firm scope.
+_ACTIVE: dict[uuid.UUID, uuid.UUID] = {}
 _IMAGE_MIME = {"png": "image/png", "jpg": "image/jpeg"}
 # Gemini reads in flight per extraction job: files read ahead of the one being filed, and chunks of one file.
 READ_AHEAD = 3
@@ -67,8 +71,8 @@ def company_profile(c: AACompany) -> CompanyProfile:
     )
 
 
-def _spawn(upload_id: uuid.UUID, user_id: str, coro) -> None:
-    _ACTIVE[upload_id] = user_id
+def _spawn(upload_id: uuid.UUID, firm_id: uuid.UUID, coro: Coroutine[Any, Any, None]) -> None:
+    _ACTIVE[upload_id] = firm_id
     task = asyncio.create_task(coro)
     _TASKS.add(task)
 
@@ -80,11 +84,11 @@ def _spawn(upload_id: uuid.UUID, user_id: str, coro) -> None:
 
 
 def start_detection(upload_id: uuid.UUID, user_id: str, firm_id: uuid.UUID) -> None:
-    _spawn(upload_id, user_id, _guarded(run_detection, upload_id, user_id, firm_id))
+    _spawn(upload_id, firm_id, _guarded(run_detection, upload_id, user_id, firm_id))
 
 
 def start_extraction(upload_id: uuid.UUID, user_id: str, firm_id: uuid.UUID) -> None:
-    _spawn(upload_id, user_id, _guarded(run_extraction, upload_id, user_id, firm_id))
+    _spawn(upload_id, firm_id, _guarded(run_extraction, upload_id, user_id, firm_id))
 
 
 def is_running(upload_id: uuid.UUID) -> bool:
@@ -109,13 +113,14 @@ async def release_running() -> None:
     if tasks:
         await asyncio.wait(tasks, timeout=3)
     back = datetime.now(timezone.utc) - STALE_AFTER - timedelta(minutes=1)
-    for upload_id, user_id in active.items():
+    for upload_id, firm_id in active.items():
         try:
             async with async_session() as db:
-                await bind_session_user(db, user_id)
+                await _bind_job_firm(db, firm_id)
                 await db.execute(
                     update(AAUpload)
-                    .where(AAUpload.id == upload_id, AAUpload.status.in_(RUNNING_STATUSES))
+                    .where(AAUpload.id == upload_id, AAUpload.enterprise_id == firm_id,
+                           AAUpload.status.in_(RUNNING_STATUSES))
                     .values(updated_at=back)
                 )
                 await db.commit()
@@ -123,24 +128,75 @@ async def release_running() -> None:
             logger.exception("accounting_job_release_failed upload_id=%s", upload_id)
 
 
-async def _guarded(job, upload_id: uuid.UUID, user_id: str, firm_id: uuid.UUID) -> None:
+async def _guarded(job: Callable[[uuid.UUID, str, uuid.UUID], Awaitable[None]], upload_id: uuid.UUID,
+                   user_id: str, firm_id: uuid.UUID) -> None:
     try:
         async with _SLOTS.slot(str(firm_id)):
-            await job(upload_id, user_id)
+            await job(upload_id, user_id, firm_id)
     except Exception:
         logger.exception("accounting_job_failed upload_id=%s", upload_id)
-        async with async_session() as db:
-            await bind_session_user(db, user_id)
-            upload = await db.get(AAUpload, upload_id)
-            if upload is not None:
+        await _fail_upload(upload_id, user_id, firm_id)
+
+
+FAILED_MESSAGE = "Processing failed. Retry this upload or drop the file again."
+
+
+async def _fail_upload(upload_id: uuid.UUID, user_id: str, firm_id: uuid.UUID) -> None:
+    """Final failure cannot resume: mark the upload failed and its unfinished files ``error`` (releasing their
+    pending-page reservations so retry_upload can reclaim them) atomically with the audit event, as the GET
+    recovery path does. Keeps finished files. A failing cleanup (a transient DB error, or a firm binding that
+    raises) is retried, then tried under the initiating user's own binding; RLS and the firm check below keep
+    that to this firm's upload. Never raises."""
+
+    async def bind_owner(db: AsyncSession) -> None:
+        await _bind_job_firm(db, firm_id)
+
+    async def bind_initiator(db: AsyncSession) -> None:
+        await bind_session_user(db, user_id)
+
+    for attempt, bind in enumerate((bind_owner, bind_owner, bind_initiator), 1):
+        try:
+            async with async_session() as db:
+                await bind(db)
+                await lock_firm(db, firm_id)
+                upload = await db.get(AAUpload, upload_id)
+                if upload is None or upload.enterprise_id != firm_id:
+                    return
+                files = list((await db.execute(select(AAFile).where(
+                    AAFile.enterprise_id == firm_id, AAFile.upload_id == upload_id,
+                ))).scalars().all())
+                before = {"status": upload.status,
+                          "files": [{"id": str(f.id), "status": f.status} for f in files]}
                 upload.status = "failed"
+                for f in files:
+                    if f.status in ("uploaded", "detected", "extracting"):
+                        f.status, f.error_message = "error", FAILED_MESSAGE
+                audit.record(db, ent=firm_id, company_id=None, user=None, entity="upload", entity_id=upload_id,
+                             action="fail", before=before,
+                             after={"status": upload.status,
+                                    "files": [{"id": str(f.id), "status": f.status} for f in files]},
+                             reason="Background processing failed")
                 await db.commit()
+                return
+        except Exception:
+            logger.exception("accounting_job_fail_cleanup_failed upload_id=%s attempt=%d", upload_id, attempt)
+
+
+async def _bind_job_firm(db: AsyncSession, firm_id: uuid.UUID) -> User:
+    """The server-supplied firm owns persistence; the initiating user is attribution only."""
+    owner = await db.get(User, firm_id)  # users is outside accounting RLS
+    if owner is None or owner.role not in (UserRole.ENTERPRISE, UserRole.ADMIN):
+        raise ValueError("Upload firm owner is missing or invalid")
+    await bind_session_user(db, str(owner.id))
+    return owner
 
 
 async def _first_page(stored_path: str, file_type: str, page: int = 0) -> tuple[bytes, str]:
     loop = asyncio.get_running_loop()
     if file_type == "pdf":
-        data = await loop.run_in_executor(None, gemini_service.render_pdf_page_jpeg, stored_path, page)
+        from app.services.accounting.render_pool import run_pdf_work
+
+        data = await run_pdf_work(gemini_service.render_pdf_page_jpeg, stored_path, page, wait=True)
         return data, "image/jpeg"
     data = await loop.run_in_executor(None, Path(stored_path).read_bytes)
     return data, _IMAGE_MIME[file_type]
@@ -270,19 +326,21 @@ def sample_pages(page_count: int) -> list[int]:
     return [0] if page_count <= 1 else [0, random.randrange(1, page_count)]
 
 
-async def run_detection(upload_id: uuid.UUID, user_id: str) -> None:
+async def run_detection(upload_id: uuid.UUID, user_id: str, firm_id: uuid.UUID) -> None:
     async with async_session() as db:
-        await bind_session_user(db, user_id)
+        await _bind_job_firm(db, firm_id)
         upload = await db.get(AAUpload, upload_id)
         if upload is None:
             return
+        if upload.enterprise_id != firm_id:
+            raise ValueError("Upload does not belong to the job's firm")
         companies = (await db.execute(
             select(AACompany).where(AACompany.enterprise_id == upload.enterprise_id, AACompany.archived_at.is_(None))
         )).scalars().all()
         candidates = company_candidates(companies)
         files = (await db.execute(
             select(AAFile)
-            .where(AAFile.upload_id == upload_id, AAFile.status == "uploaded")
+            .where(AAFile.enterprise_id == firm_id, AAFile.upload_id == upload_id, AAFile.status == "uploaded")
             .order_by(AAFile.created_at)
         )).scalars().all()
         jobs = [(f.id, f.stored_path, f.file_type, f.page_count or 1) for f in files]
@@ -293,6 +351,17 @@ async def run_detection(upload_id: uuid.UUID, user_id: str) -> None:
             return parse_detection(await aa_gemini.call_gemini_raw(image, mime, DETECT_PROMPT, user_id))
 
         for file_id, stored_path, file_type, page_count in jobs:
+            f = await db.get(AAFile, file_id)
+            if (f.interrupts or 0) >= MAX_INTERRUPTS:
+                f.status = "error"
+                f.error_message = INTERRUPTED_MESSAGE
+                upload = await db.get(AAUpload, upload_id)
+                upload.processed_files += 1
+                await db.commit()
+                continue
+            # Durable before opening the PDF. Keep "uploaded" so pending-page budget checks still count it.
+            f.detection = {"_in_progress": True}
+            await db.commit()
             try:
                 pages = sample_pages(page_count) if file_type == "pdf" else [0]
                 # The first page decides; a second page (when there is one) is read side by side to catch a file
@@ -326,21 +395,23 @@ async def run_detection(upload_id: uuid.UUID, user_id: str) -> None:
         await db.commit()
 
 
-async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
+async def run_extraction(upload_id: uuid.UUID, user_id: str, firm_id: uuid.UUID) -> None:
     async with async_session() as db:
-        await bind_session_user(db, user_id)
+        owner = await _bind_job_firm(db, firm_id)
         upload = await db.get(AAUpload, upload_id)
         if upload is None:
             return
-        enterprise_scope = upload.enterprise_id
-        uploader = await db.get(User, upload.uploaded_by)
-        enterprise = await get_enterprise_for_user(db, uploader) if uploader else None
-        enterprise_id = enterprise.id if enterprise else None
+        if upload.enterprise_id != firm_id:
+            raise ValueError("Upload does not belong to the job's firm")
+        enterprise_scope = firm_id
+        # Only an explicitly admin-owned scope is exempt. Uploader membership cannot change the payer.
+        enterprise_id = None if owner.role == UserRole.ADMIN else enterprise_scope
         building = asyncio.Lock()  # this job's chunk builds, one at a time across all its files
 
         files = (await db.execute(
             select(AAFile)
             .where(
+                AAFile.enterprise_id == enterprise_scope,
                 AAFile.upload_id == upload_id,
                 AAFile.company_id.is_not(None),
                 AAFile.status.in_(("uploaded", "detected")),
@@ -432,6 +503,8 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
                     f = await db.get(AAFile, file_id)
                     if not f.pages_charged and enterprise_id is not None:
                         ent = await db.get(User, enterprise_id)
+                        if ent is None or ent.role != UserRole.ENTERPRISE:
+                            raise ValueError("Upload firm owner is missing or invalid")
                         await charge_for_pages(db, ent, page_count)
                         await increment_usage(db, enterprise_id, page_count)
                         f.pages_charged = True
@@ -459,6 +532,7 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str) -> None:
 
         for company_id in company_ids:
             try:
+                await lock_firm(db, enterprise_scope)
                 await relink_receipts(db, company_id)
                 await duplicates.refresh_flags(db, company_id)  # copies dropped in earlier uploads too
                 company = await db.get(AACompany, company_id)

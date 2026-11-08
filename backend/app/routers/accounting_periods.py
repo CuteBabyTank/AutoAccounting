@@ -337,7 +337,16 @@ async def get_period(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ):
     company = await company_or_404(db, scope_for(user), company_id)
-    return await _period_out(db, company, year, quarter)
+    out = await _period_out(db, company, year, quarter)
+    from app.services import features
+
+    if not (await features.effective_for(db, user))["filing"]:
+        out = out.model_copy(update={
+            "inputs": PeriodInputsModel(), "filed_at": None, "filed_forms": {},
+            "latest_version": None, "stale": False, "books_stale": False,
+            "forms_expected": [], "due_dates": {}, "outputs": [],
+        })
+    return out
 
 
 @router.put("/periods/{company_id}/{year}/{quarter}/inputs", response_model=PeriodOut)

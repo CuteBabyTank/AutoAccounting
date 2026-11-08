@@ -34,6 +34,8 @@ class User(Base):
     organization_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     nickname: Mapped[str | None] = mapped_column(String(100), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Individual platform restriction: only Platform admin may clear it; firm activation is independent.
+    platform_disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Turned off only because the platform admin suspended this member's firm: reactivating the firm turns back on
     # exactly these members, never one the firm had deactivated itself.
     suspended_with_firm: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

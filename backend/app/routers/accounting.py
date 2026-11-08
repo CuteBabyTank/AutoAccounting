@@ -1,6 +1,5 @@
 """AutoAccounting phase 1: company databank, uploads, folder tree, documents."""
 
-import asyncio
 import logging
 from dataclasses import dataclass
 import re
@@ -63,7 +62,7 @@ from app.services.accounting.storage import (
 )
 from app.services.accounting.books import bank as bank_service
 from app.services.accounting.tree import TreeCompanyInput, bank_nodes, build_tree, folder_counts, stale_periods
-from app.services.usage_service import get_effective_rate_config, get_enterprise_for_user
+from app.services.usage_service import get_enterprise_for_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -77,21 +76,32 @@ def _require_manager(user: User) -> None:
         )
 
 
+async def _precheck_budget(db: AsyncSession, user: User) -> None:
+    """Refuse a drop at once when no page could be admitted, before anything is streamed or compressed."""
+    if user.role == UserRole.ADMIN:
+        return
+    enterprise = await get_enterprise_for_user(db, user)
+    if enterprise is None:
+        return
+    from app.services.usage_service import upload_budget_refusal
+
+    refusal = await upload_budget_refusal(db, enterprise)
+    if refusal:
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, refusal)
+
+
 async def _assert_budget(db: AsyncSession, user: User) -> None:
     if user.role == UserRole.ADMIN:
         return
     enterprise = await get_enterprise_for_user(db, user)
     if enterprise is None:
         return
-    # Billing is opt-in: until the platform owner sets a page rate, uploads are free.
-    flat, tiers = await get_effective_rate_config(db, enterprise)
-    if not tiers and not flat:
-        return
-    if (enterprise.budget or 0) <= 0:
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            "Budget depleted. Contact your administrator to top up before uploading again.",
-        )
+    from app.services.usage_service import assert_pending_page_budget
+
+    try:
+        await assert_pending_page_budget(db, enterprise)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, str(exc)) from None
 
 
 # --- Companies -----------------------------------------------------------------
@@ -278,21 +288,38 @@ async def _upload_out(db: AsyncSession, ent: uuid.UUID, upload_id: uuid.UUID) ->
         )
         if claimed.rowcount == 1:
             job_status = upload.status
+            before = {"status": upload.status, "files": [
+                {"id": str(f.id), "status": f.status, "interrupts": f.interrupts or 0} for f in files
+            ]}
+            resume_job = action == "resume"
             if action == "resume":
                 for f in files:
-                    if f.status == "extracting":  # claimed by the dead job; none of its work was committed
-                        f.interrupts, f.status = after_interrupt(f.interrupts or 0)
+                    detecting = (job_status == "detecting" and f.status == "uploaded"
+                                 and (f.detection or {}).get("_in_progress") is True)
+                    if f.status == "extracting" or detecting:  # claimed by the dead job
+                        retry_status = "uploaded" if detecting else "detected"
+                        f.interrupts, f.status = after_interrupt(f.interrupts or 0, retry_status)
+                        if detecting:
+                            f.detection = None
                         if f.status == "error":
                             f.error_message = INTERRUPTED_MESSAGE
                             logger.warning("accounting_file_set_aside file_id=%s interrupts=%d", f.id, f.interrupts)
+                if job_status == "detecting" and not any(f.status == "uploaded" for f in files):
+                    upload.status = "awaiting_confirmation" if any(f.status == "detected" for f in files) else "failed"
+                    resume_job = False
             else:
                 upload.status = "failed"
                 for f in files:
                     if f.status in ("uploaded", "detected", "extracting"):
                         f.status = "error"
                         f.error_message = "Processing was interrupted. Drop the file again."
+            audit.record(db, ent=ent, company_id=None, user=None, entity="upload", entity_id=upload.id,
+                         action="resume" if resume_job else "fail", before=before,
+                         after={"status": upload.status, "files": [
+                             {"id": str(f.id), "status": f.status, "interrupts": f.interrupts or 0} for f in files
+                         ]}, reason="Background processing was interrupted")
             await db.commit()
-            if action == "resume":
+            if resume_job:
                 pipeline.resume(upload.id, str(upload.uploaded_by), upload.enterprise_id, job_status)
 
     groups: list[UploadGroupOut] = []
@@ -375,7 +402,6 @@ async def create_upload(
             status.HTTP_429_TOO_MANY_REQUESTS, "Too many uploads. Please try again later.",
             headers={"Retry-After": "60"},
         )
-    await _assert_budget(db, user)
     if not files:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No files were uploaded")
     if len(files) > settings.max_batch_size:
@@ -383,6 +409,7 @@ async def create_upload(
     company = await _company_or_404(db, ent, company_id) if company_id else None
     if company is not None and company.archived_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Restore the company before uploading files")
+    await _precheck_budget(db, user)
 
     upload_id = uuid.uuid4()
     dest = upload_dir(upload_id)
@@ -392,10 +419,10 @@ async def create_upload(
         for f, was_shrunk in zip(files, flags):
             stored.append(await stream_upload(f, dest, was_shrunk))
 
+        await lock_firm(db, ent)
         if company is not None:
             # Compression happens before the lock; then re-check archive status so an overlapping retirement
             # cannot admit a new drop after the archive's pending-upload guard has passed.
-            await lock_firm(db, ent)
             company = (await db.execute(select(AACompany).where(
                 AACompany.id == company.id, AACompany.enterprise_id == ent,
             ).with_for_update().execution_options(populate_existing=True))).scalar_one()
@@ -445,6 +472,8 @@ async def create_upload(
         upload.total_files = fresh
         if fresh == 0:
             upload.status = "done"
+        await db.flush()
+        await _assert_budget(db, user)
         audit.record(db, ent=ent, company_id=company.id if company else None, user=user, entity="upload",
                      entity_id=upload_id, action="create", label="Upload",
                      after={"status": upload.status, "files": [s.filename for s in stored], "new_files": fresh})
@@ -683,6 +712,9 @@ async def confirm_upload(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Every file must be assigned to a company or skipped")
 
     has_work = any(not a.skip for a in body.assignments)
+    await db.flush()
+    if has_work:
+        await _assert_budget(db, user)
     for a in body.assignments:
         if a.company_id and not a.skip and a.file_ids:
             audit.record(db, label="Upload",
@@ -709,7 +741,6 @@ async def retry_upload(
     """Read again the files of a finished upload that failed (e.g. the AI service was busy or out of quota)."""
     ent = _scope(user)
     await lock_firm(db, ent)
-    await _assert_budget(db, user)
     failed = (await db.execute(
         select(AAFile).join(AAUpload, AAUpload.id == AAFile.upload_id)
         .where(AAFile.upload_id == upload_id, AAUpload.enterprise_id == ent,
@@ -733,6 +764,8 @@ async def retry_upload(
     for f in failed:
         f.status = "uploaded"
         f.error_message = None
+    await db.flush()
+    await _assert_budget(db, user)
     audit.record(db, ent=ent, company_id=None, user=user, entity="upload", entity_id=upload_id,
                  action="retry", label="Retry failed upload files",
                  after={"files": [f.original_filename for f in failed]}, always=True)
@@ -754,6 +787,35 @@ _NULLABLE_FIELDS = {"doc_date", "paid_on"}
 # What a person can change on a document (the audit log diffs these).
 _AUDIT_DOC_FIELDS = _PLAIN_FIELDS + ("gl_account_code", "settles_document_id", "period_year", "period_quarter",
                                      "period_month", "period_locked")
+# Inputs to receipt linking, bank candidates and their net payment amounts: an edit to any of them rematches
+# the company's bank lines, but only the lines retained history doesn't hold (deletion.safe_line_ids).
+_DOCUMENT_MATCH_FIELDS = frozenset({
+    "doc_date", "doc_number", "gross_amount", "withholding_amount", "seller_tin", "buyer_tin", "seller_name",
+    "buyer_name", "category", "account", "client_role", "excluded", "settles_document_id", "paid_on", "paid_via",
+    "payment_ref", "vat_amount", "ewt_atc", "gl_account_code",
+})
+
+
+def _retained_edits(doc: AADocument, body: DocumentPatch, sent: set[str]) -> list[str]:
+    """What this edit would take out of (or move within) retained history: exclusion, the dates, the period and
+    the invoice a receipt pays. Ordinary corrections (parties, amounts, accounts) aren't listed; they stay
+    editable on filed / closed documents, and the rematch after them leaves retained bank lines alone."""
+    changes = []
+    if "excluded" in sent and body.excluded is True and not doc.excluded:
+        changes.append("excluding it")
+    if ("doc_date" in sent and body.doc_date != doc.doc_date) or ("period_year" in sent and (
+            (body.period_year, body.period_quarter) != (doc.period_year, doc.period_quarter)
+            or (body.period_year is None and doc.period_locked))):
+        changes.append("changing its date or period")
+    if "paid_on" in sent and body.paid_on != doc.paid_on:
+        changes.append("changing its payment date")
+    if "settles_document_id" in sent and body.settles_document_id != doc.settles_document_id:
+        changes.append("changing the invoice it pays")
+    return changes
+
+
+def _doing(changes: list[str]) -> str:
+    return changes[0] if len(changes) == 1 else ", ".join(changes[:-1]) + " or " + changes[-1]
 
 
 def _by_company(rows) -> dict[str, dict]:
@@ -1020,6 +1082,26 @@ async def patch_document(
     doc = await _document_or_404(db, ent, doc_id)
     company = await _company_or_404(db, ent, doc.company_id)
     sent = body.model_fields_set
+    retained = _retained_edits(doc, body, sent)
+    if retained:
+        # Read stored dependencies under the firm lock, before exclusion/relinking/rematching
+        # (or clearing dates/periods) can erase the evidence that makes this history retained.
+        await deletion.protect_document(db, company, doc, doing=_doing(retained))
+    # Retained bank lines keep their match through the rematch below, so an edit that changes how such a line
+    # posts is refused (the document's side) or voids its reconciliation (a receipt's amount, which the line
+    # moves into the bank in place of its own). Plain invoice / bill amounts don't: the line posts its own amount.
+    type_change = any(name in sent and getattr(body, name, None) is not None
+                      and getattr(body, name) != getattr(doc, name) for name in ("category", "client_role"))
+    is_receipt = doc.settles_document_id is not None or ("settles_document_id" in sent
+                                                         and body.settles_document_id is not None)
+    receipt_amount = is_receipt and (
+        ("gross_amount" in sent and body.gross_amount is not None and body.gross_amount != doc.gross_amount)
+        or ("withholding_amount" in sent and body.withholding_amount is not None
+            and body.withholding_amount != doc.withholding_amount))
+    held = await deletion.held_lines(db, company, doc) if type_change or receipt_amount else []
+    if type_change and held:
+        deletion.refuse("A bank line in closed, filed or reconciled history is matched to this document. "
+                        "Undo the bank match on Bank (reopening its month if needed) before changing its type.")
     before = audit.snapshot(doc, _AUDIT_DOC_FIELDS)
     classifying = bool(sent & {"category", "account", "gl_account_code", "client_role"})
     if classifying:
@@ -1082,6 +1164,17 @@ async def patch_document(
             doc.period_locked = True
     elif "doc_date" in sent and not doc.period_locked:
         _apply_period_from_date(doc, company)
+    if retained:  # nor may the new date / period land in retained history
+        await deletion.protect_history(
+            db, company, [doc.doc_date, doc.paid_on],
+            [(doc.period_year, doc.period_quarter)] if doc.period_year and doc.period_quarter else [],
+            doing=_doing(retained))
+
+    if receipt_amount and held:  # month close then asks for a fresh reconciliation of these accounts
+        for account in {l.account_code for l in held}:
+            await bank_service.void_reconciliations(
+                db, company.id, account, min(l.line_date for l in held if l.account_code == account))
+        touch_books(company)
 
     after = audit.snapshot(doc, _AUDIT_DOC_FIELDS)
     old, new = audit.diff(before, after)
@@ -1097,11 +1190,11 @@ async def patch_document(
     if not audit.casper_reason.get() and sent & {"category", "account"}:
         applied = await _apply_rule_to_supplier_documents(db, doc, user)
 
-    if sent & {"doc_date", "gross_amount", "withholding_amount", "seller_tin", "buyer_tin", "seller_name",
-               "buyer_name", "category", "excluded", "settles_document_id", "paid_on"}:
+    if sent & _DOCUMENT_MATCH_FIELDS:
         await db.flush()
-        await relink_receipts(db, doc.company_id)
-        await _bank_after_document_change(db, doc, company)
+        await relink_receipts(db, doc.company_id)  # keeps automatic links in retained history
+        await _bank_after_document_change(db, doc, company, line_ids=await deletion.safe_line_ids(db, company),
+                                          statement_changed="excluded" in sent)
     if sent & {"doc_number", "doc_date", "gross_amount", "seller_tin", "buyer_tin", "seller_name", "buyer_name"}:
         await db.flush()
         await duplicates.refresh_flags(db, doc.company_id)
@@ -1131,6 +1224,22 @@ async def bulk_resolve(body: BulkResolveIn, user: User = Depends(get_current_use
         AADocument.enterprise_id == ent, AADocument.id.in_(ids)))).scalars().all())
     found = {d.id for d in docs}
     ok, skipped = bulk_targets(docs, body.reason_code)
+    if body.action == "exclude":
+        # Same retention rule as a single exclusion: documents in closed / filed history (or holding retained
+        # bank, write-off or 2307 links) are skipped with the reason, before anything changes.
+        companies = {c.id: c for c in (await db.execute(select(AACompany).where(
+            AACompany.enterprise_id == ent, AACompany.id.in_({d.company_id for d in ok})))).scalars().all()}
+        allowed = []
+        for doc in ok:
+            try:
+                await deletion.protect_document(db, companies[doc.company_id], doc, doing="excluding it")
+            except HTTPException as exc:
+                if exc.status_code != status.HTTP_409_CONFLICT:
+                    raise
+                skipped.append((doc.id, exc.detail))
+            else:
+                allowed.append(doc)
+        ok = allowed
     reason = body.reason.strip()
     for doc in ok:
         before = audit.snapshot(doc, ("reviewed", "excluded"))
@@ -1146,14 +1255,14 @@ async def bulk_resolve(body: BulkResolveIn, user: User = Depends(get_current_use
                      after=new, reason=f"Bulk: {reason}")
     if ok and body.action == "exclude":
         await db.flush()
+        safe = {company_id: await deletion.safe_line_ids(db, companies[company_id])
+                for company_id in {d.company_id for d in ok}}
         for doc in ok:
             if doc.doc_type == "statement":
-                await bank_service.statement_document_changed(db, doc)
-        for company_id in {d.company_id for d in ok}:
-            company = await db.get(AACompany, company_id)
+                await bank_service.statement_document_changed(db, doc, line_ids=safe[doc.company_id])
+        for company_id in safe:
             await relink_receipts(db, company_id)
-            if company is not None:
-                await bank_service.rematch(db, company)
+            await bank_service.rematch(db, companies[company_id], line_ids=safe[company_id])
             await duplicates.refresh_flags(db, company_id)
     await db.commit()
     return {"resolved": [str(d.id) for d in ok],
@@ -1162,12 +1271,13 @@ async def bulk_resolve(body: BulkResolveIn, user: User = Depends(get_current_use
 
 
 async def _bank_after_document_change(db: AsyncSession, doc: AADocument, company: AACompany | None,
-                                      *, line_ids: set[uuid.UUID] | None = None) -> None:
+                                      *, line_ids: set[uuid.UUID] | None = None,
+                                      statement_changed: bool = True) -> None:
     """A deleted / excluded statement's lines stop counting; any other document a bank line pays (or could pay)
     changed, so the lines are matched again."""
-    if doc.doc_type == "statement":
+    if doc.doc_type == "statement" and statement_changed:
         await bank_service.statement_document_changed(db, doc, line_ids=line_ids)
-    elif company is not None:
+    elif company is not None and doc.doc_type != "statement":
         await bank_service.rematch(db, company, line_ids=line_ids)
 
 
@@ -1223,7 +1333,15 @@ async def _move_document(db: AsyncSession, ent: uuid.UUID, user: User, doc: AADo
     The caller relinks / rematches / refreshes duplicates of both companies afterwards."""
     target = to.company
     doc_ref = str(doc.id)
+    try:  # a document in closed / filed history stays with the company whose books and returns hold it
+        await deletion.protect_document(db, source, doc, doing="moving it to another company")
+        retained = ""
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_409_CONFLICT:
+            raise
+        retained = str(exc.detail)
     facts = move_company.MoveFacts(
+        retained_history=retained,
         is_statement=doc.doc_type == "statement",
         has_asset=(await db.execute(select(AAAsset.id).where(AAAsset.document_id == doc.id).limit(1))).first()
         is not None,
@@ -1269,7 +1387,7 @@ async def _refresh_after_move(db: AsyncSession, companies: list[AACompany]) -> N
     await db.flush()
     for company in companies:
         await relink_receipts(db, company.id)
-        await bank_service.rematch(db, company)
+        await bank_service.rematch(db, company, line_ids=await deletion.safe_line_ids(db, company))
         await duplicates.refresh_flags(db, company.id)
 
 
@@ -1376,9 +1494,14 @@ async def file_page(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Page not found")
     if not is_stored_path_safe(f.stored_path):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Page not found")
-    result = await asyncio.get_running_loop().run_in_executor(
-        None, read_page_bytes, f.stored_path, f.file_type, page
-    )
+    from app.services.accounting.render_pool import RenderBusy, run_pdf_work
+
+    try:
+        result = await run_pdf_work(read_page_bytes, f.stored_path, f.file_type, page, owner=str(user.id))
+    except RenderBusy as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Page unavailable: renderer is busy") from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Page unavailable: PDF could not be rendered") from exc
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Page not found")
     data, media_type = result

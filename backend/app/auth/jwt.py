@@ -34,11 +34,20 @@ _SSE_TOKEN_TTL_MINUTES = 1
 _SCOPE_SSE = "sse"
 
 
+def credential_version(changed_at: datetime | None) -> int:
+    """Exact UTC microseconds; avoid both JWT's whole seconds and float rounding."""
+    if changed_at is None:
+        return 0
+    delta = changed_at.astimezone(timezone.utc) - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    return (delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds
+
+
 def create_access_token(
     user_id: str,
     *,
     scope: str | None = None,
     expires_minutes: int | None = None,
+    password_changed_at: datetime | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
     if expires_minutes is not None:
@@ -50,6 +59,7 @@ def create_access_token(
         "iat": now,
         "exp": expire,
         "jti": str(uuid.uuid4()),
+        "pwd": credential_version(password_changed_at),
     }
     if scope is not None:
         payload["scope"] = scope
@@ -61,10 +71,11 @@ def create_access_token(
     )
 
 
-def create_sse_token(user_id: str) -> str:
+def create_sse_token(user_id: str, *, password_changed_at: datetime | None = None) -> str:
     """Mint a short-lived, SSE-scoped token for the realtime stream URL."""
     return create_access_token(
-        user_id, scope=_SCOPE_SSE, expires_minutes=_SSE_TOKEN_TTL_MINUTES
+        user_id, scope=_SCOPE_SSE, expires_minutes=_SSE_TOKEN_TTL_MINUTES,
+        password_changed_at=password_changed_at,
     )
 
 

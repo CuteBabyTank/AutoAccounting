@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import AuditLogPanel from "@/components/accounting/AuditLogPanel";
 import FirmPicker from "@/components/admin/FirmPicker";
 import FeatureSwitches from "@/components/admin/FeatureSwitches";
+import ExtractFormats from "@/components/admin/ExtractFormats";
 import Hint from "@/components/guide/Hint";
 import GuideTour, { GuideButton } from "@/components/guide/GuideTour";
 import { ADMIN_TOUR } from "@/components/guide/tours";
@@ -18,7 +19,7 @@ import type { Account, AdminFeatures, BudgetOperation, UserRole } from "@/types"
 import { confirmDialog, promptDialog } from "@/components/ui/Dialogs";
 
 type AssignableRole = Exclude<UserRole, "admin">;
-type Tab = "accounts" | "features" | "billing" | "audit";
+type Tab = "accounts" | "features" | "extract" | "billing" | "audit";
 const TAB_KEY = "aa-admin-tab";
 
 export default function AdminPage() {
@@ -39,7 +40,7 @@ export default function AdminPage() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(TAB_KEY);
-      if (saved === "features" || saved === "billing" || saved === "audit") setTabState(saved);
+      if (saved === "features" || saved === "extract" || saved === "billing" || saved === "audit") setTabState(saved);
     } catch {
       // no storage: start on Accounts
     }
@@ -168,6 +169,7 @@ export default function AdminPage() {
   const tabs: { id: Tab; label: string; badge?: string; alert?: boolean }[] = [
     { id: "accounts", label: "Accounts", badge: String(accounts.length) },
     { id: "features", label: "Features", badge: offCount ? `${offCount} off` : undefined, alert: offCount > 0 },
+    { id: "extract", label: "Extract formats" },
     { id: "billing", label: "Billing", badge: savedRate == null ? "off" : `₱${formatPeso(savedRate)}/page` },
     { id: "audit", label: "Audit log" },
   ];
@@ -231,6 +233,8 @@ export default function AdminPage() {
             onAllOn={() => flip("all", () => adminApi.allFeaturesOn())}
           />
         )}
+
+        {tab === "extract" && <ExtractFormats firms={firms} />}
 
         {tab === "billing" && <section>
           {sectionLabel("Billing")}

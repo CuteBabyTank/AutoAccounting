@@ -186,3 +186,13 @@ def test_builtin_name_clash():
 def test_audit_view_lists_keys_and_ids():
     view = formats.audit_view("Slip", "d", 2, [_f("a"), _f("b")], [{"id": "c_1"}])
     assert view == {"name": "Slip", "description": "d", "version": 2, "fields": ["a", "b"], "checks": ["c_1"]}
+
+
+def test_admin_row_shows_prompt_and_deleted_flag():
+    from datetime import datetime, timezone
+    from app.routers.admin import extract_format_row
+    r = row(name="Hauling slip", fields=builtins.BUILTINS["receipt"]["fields"], checks=builtins.BUILTINS["receipt"]["checks"],
+            deleted_at=datetime(2026, 11, 1, tzinfo=timezone.utc), updated_at=datetime(2026, 11, 1, tzinfo=timezone.utc))
+    out = extract_format_row(r, "Santos CPA", "Ana")
+    assert out["firm"] == "Santos CPA" and out["deleted"] and out["updated_by"] == "Ana"
+    assert '"total_amount"' in out["prompt"] and out["checks"][0]["sentence"]

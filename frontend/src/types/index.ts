@@ -75,3 +75,18 @@ export interface AdminFeatures {
   features: { key: string; label: string; group: string; description: string; enabled: boolean }[];
   overrides: Record<string, Record<string, boolean>>;
 }
+
+/** One firm's Extract format as the platform admin sees it (read only). */
+export interface AdminExtractFormat {
+  id: string;
+  firm: string;
+  name: string;
+  base_key: string | null;
+  version: number;
+  deleted: boolean;
+  updated_at: string | null;
+  updated_by: string;
+  fields: { key: string; label: string; type: string; scope: "header" | "row"; required: boolean; description: string }[];
+  checks: { id: string; kind: string; level: "red" | "yellow"; sentence: string }[];
+  prompt: string;
+}

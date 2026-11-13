@@ -98,6 +98,9 @@ _MULTIPART_BODY_MAX_BYTES = min(
 _BODY_ROUTE_LIMITS = (
     ("PUT", r"/api/auth/me/avatar", True, 5 * 1024 * 1024 + 64 * 1024),
     ("POST", r"/api/accounting/uploads", True, _MULTIPART_BODY_MAX_BYTES),
+    # Extract: a format sample is one file; run drops share the batch upload cap.
+    ("POST", r"/api/accounting/extract/drafts", True, settings.max_file_size_mb * 1024 * 1024 + 64 * 1024),
+    ("POST", r"/api/accounting/extract/runs", True, _MULTIPART_BODY_MAX_BYTES),
     ("POST", r"/api/accounting/companies/[^/]+/imports/(opening-tb|open-items|journal-entries)(/preview)?",
      True, 6 * 1024 * 1024),
     ("POST", r"/api/accounting/companies/[^/]+/employees/[0-9]+/import(/preview)?", True, 11 * 1024 * 1024),

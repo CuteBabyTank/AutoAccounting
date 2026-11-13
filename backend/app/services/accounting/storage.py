@@ -65,6 +65,11 @@ def upload_dir(upload_id: uuid.UUID) -> Path:
     return Path(settings.accounting_root) / "accounting" / str(upload_id)
 
 
+def extract_draft_dir(draft_id: uuid.UUID) -> Path:
+    """Where an Extract format draft keeps its sample (deleted on save or after 24 hours)."""
+    return Path(settings.accounting_root) / "extract" / "drafts" / str(draft_id)
+
+
 async def stream_upload(f: UploadFile, dest_dir: Path, shrunk: bool = False) -> StoredUpload:
     """Write one upload under ``dest_dir``; validate type, size, magic bytes and readability. ``shrunk``: the browser
     already shrank this JPEG (lib/photo-shrink.ts), so the server's own JPEG pass is skipped."""

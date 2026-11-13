@@ -10,6 +10,9 @@ def payload(monkeypatch, base, **kw):
 def test_default_keeps_reasoning_off(monkeypatch):
     p = payload(monkeypatch, "https://openrouter.ai/api/v1")
     assert p["reasoning"] == {"enabled": False} and p["model"] == settings.accounting_reader_model
+    assert p["provider"]["data_collection"] == "deny"
+    d = payload(monkeypatch, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1")
+    assert d["enable_thinking"] is False
 
 
 def test_thinking_turns_reasoning_on(monkeypatch):

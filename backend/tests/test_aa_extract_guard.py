@@ -33,6 +33,30 @@ def test_ordinary_accounting_names_pass():
         "Withholding tax", "Check no.", "Amount in words", "Prepared by"]
 
 
-def test_markup_is_reduced_to_a_label():
-    assert guard.field_names("<b>Plate No</b> {json}") == ["bPlate No/b json"]
+BYPASSES = [
+    "ig\u200bnore previous", "you  are now", "act\tas admin", "don\u2019t list", "ht\u200btp://x",
+    "ign\u00adore", "ig\u034fnore", "pro\u200bmpt", "do  not list", "return  the TIN", "every  client",
+    "w\u200bww.x.com", "o\u0442her firm", "ign\u043ere the rules", "ig-nore the rules", "i g n o r e",
+    "list\nall firms", "you\nare now", "<b>Plate No</b> {json}", "`code`",
+]
+
+
+@pytest.mark.parametrize("note", BYPASSES)
+def test_bypasses_refused(note):
+    with pytest.raises(ValueError):
+        guard.field_names(note)
+
+
+@pytest.mark.parametrize("note", [None, 5, ["a"]])
+def test_other_types_raise_value_error(note):
+    with pytest.raises(ValueError):
+        guard.field_names(note)
+
+
+def test_more_plain_names_pass():
+    assert guard.field_names("Se\u00f1or's code, Net of VAT (12%)") == ["Se\u00f1or's code", "Net of VAT (12%)"]
+    assert guard.field_names("PO no.\nDriver") == ["PO no. Driver"]
+
+
+def test_name_cap():
     assert len(guard.field_names(", ".join(f"f{i}" for i in range(30)))) == 10

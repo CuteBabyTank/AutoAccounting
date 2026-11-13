@@ -27,6 +27,9 @@ MAX_VALUE = 200
 MAX_TERMS = 10
 MAX_RATES = 6
 MAX_ONE_OF = 20
+MAX_NUMBER_CHARS = 30
+MAX_MAGNITUDE = Decimal("1e15")
+MAX_DECIMALS = 12
 
 _PUNCT = frozenset("-/.,()%#&'")
 _NUMERIC = ("money", "number", "percent")
@@ -91,13 +94,21 @@ def _number(value: Any) -> str | None:
     """A finite number as a normalized Decimal string, else None."""
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         return None
+    text = str(value).strip()
+    if len(text) > MAX_NUMBER_CHARS:
+        return None
     try:
-        d = Decimal(str(value).strip())
-    except InvalidOperation:
+        d = Decimal(text)
+        if not d.is_finite() or abs(d) >= MAX_MAGNITUDE:
+            return None
+        if d == 0:
+            return "0"
+        d = d.normalize()
+        if d.as_tuple().exponent < -MAX_DECIMALS:
+            return None
+        return format(d, "f")
+    except (InvalidOperation, ArithmeticError):
         return None
-    if not d.is_finite():
-        return None
-    return format(d.normalize(), "f") if d != 0 else "0"
 
 
 def _rate(value: Any) -> int | float | None:
@@ -120,30 +131,45 @@ class _Refs:
             return None
         return field
 
-    def inferred_scope(self, keys: list[str]) -> str:
-        return "row" if any(self.by_key[k]["scope"] == "row" for k in keys) else "header"
+    def shared_scope(self, keys: list[str]) -> str | None:
+        """The one scope all these (existing) fields share, or None when they mix header and row."""
+        scopes = {self.by_key[k]["scope"] for k in keys}
+        return scopes.pop() if len(scopes) == 1 else None
 
 
 def _params(raw: dict, refs: _Refs) -> dict | None:
-    """The cleaned params of one check (without level / id), or None when it is not acceptable."""
+    """The cleaned params of one check (without level / id), or None when it is not acceptable.
+
+    Every kind except rows_sum (a row field summed into a header total) must use fields of a single scope.
+    """
+    params = _kind_params(raw, refs)
+    if params is None:
+        return None
+    if raw["kind"] != "rows_sum" and refs.shared_scope(check_fields(params)) is None:
+        return None
+    return params
+
+
+def _kind_params(raw: dict, refs: _Refs) -> dict | None:
     kind = raw.get("kind")
     ok = refs.get
     if kind == "required":
         return {"field": raw["field"]} if ok(raw.get("field")) else None
     if kind == "sum":
         terms = raw.get("terms")
-        scope = raw.get("scope", "header")
-        if not isinstance(terms, list) or not 1 <= len(terms) <= MAX_TERMS or scope not in SCOPES:
+        if not isinstance(terms, list) or not 1 <= len(terms) <= MAX_TERMS:
             return None
-        only = "header" if scope == "header" else None
         out_terms = []
         for t in terms:
-            if not isinstance(t, dict) or t.get("sign") not in (1, -1) or isinstance(t.get("sign"), bool):
+            if not isinstance(t, dict) or isinstance(t.get("sign"), bool) or t.get("sign") not in (1, -1):
                 return None
-            if not ok(t.get("field"), _NUMERIC, only):
+            if not ok(t.get("field"), _NUMERIC):
                 return None
-            out_terms.append({"field": t["field"], "sign": t["sign"]})
-        if not ok(raw.get("target"), _NUMERIC, only):
+            out_terms.append({"field": t["field"], "sign": int(t["sign"])})
+        if not ok(raw.get("target"), _NUMERIC):
+            return None
+        scope = refs.shared_scope([t["field"] for t in out_terms] + [raw["target"]])
+        if scope is None or raw.get("scope", scope) != scope:
             return None
         return {"terms": out_terms, "target": raw["target"], "scope": scope}
     if kind == "percent_of":
@@ -185,6 +211,8 @@ def _params(raw: dict, refs: _Refs) -> dict | None:
         if not ok(raw.get("field"), _NUMERIC):
             return None
         lo, hi = _number(raw.get("min")), _number(raw.get("max"))
+        if (lo is None and raw.get("min") is not None) or (hi is None and raw.get("max") is not None):
+            return None
         if lo is None and hi is None:
             return None
         if lo is not None and hi is not None and Decimal(lo) > Decimal(hi):
@@ -258,11 +286,15 @@ def check_fields(check: Check) -> list[str]:
 def apply_picks(fields: list[Field], checks: list[Check], picks: list[dict],
                 check_ids: list[str]) -> tuple[list[Field], list[Check]]:
     """Narrow a proposal to what the person ticked. Raises ValueError for a key the proposal doesn't have."""
+    if not isinstance(picks, list) or not isinstance(check_ids, list):
+        raise ValueError("Invalid selection")
+    if not all(isinstance(i, str) for i in check_ids):
+        raise ValueError("Invalid check selection")
     by_key = {f["key"]: f for f in fields}
     kept_fields: list[Field] = []
     for pick in picks:
         key = pick.get("key") if isinstance(pick, dict) else None
-        if key not in by_key:
+        if not isinstance(key, str) or key not in by_key:
             raise ValueError("Unknown field in selection")
         if any(f["key"] == key for f in kept_fields):
             continue
@@ -271,12 +303,12 @@ def apply_picks(fields: list[Field], checks: list[Check], picks: list[dict],
         kept_fields.append({**base, "label": label, "required": pick.get("required") is True})
     survivors = {f["key"] for f in kept_fields}
     wanted = set(check_ids)
-    kept_checks = [c for c in checks
-                   if c["kind"] != "required" and c["id"] in wanted and all(k in survivors for k in check_fields(c))]
+    inherited = [c for c in checks
+                 if c["kind"] != "required" and c["id"] in wanted and all(k in survivors for k in check_fields(c))]
     old_levels = {c["field"]: c["level"] for c in checks if c["kind"] == "required"}
     required = [{"kind": "required", "field": f["key"], "level": old_levels.get(f["key"], "red")}
                 for f in kept_fields if f["required"]]
-    return kept_fields, kept_checks + clean_checks(required, kept_fields)
+    return kept_fields, clean_checks(inherited + required, kept_fields)
 
 
 # ── sentences ─────────────────────────────────────────────────────────────

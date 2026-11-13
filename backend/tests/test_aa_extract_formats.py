@@ -124,6 +124,16 @@ def test_append_found_rekeys_skips_known_labels_and_respects_room():
     assert {c["kind"] for c in new["checks"]} == {"not_future", "format"}
 
 
+def test_append_found_puts_the_new_fields_default_checks_before_a_full_check_list():
+    fields = [_f(f"n{i}", "money") for i in range(40)]
+    full = spec.clean_checks([{"kind": "range", "field": f"n{i}", "min": 0} for i in range(40)], fields)
+    assert len(full) == spec.MAX_CHECKS
+    proposal = formats.fresh_proposal({"name": "S", "detect_hint": "", "fields": fields, "checks": full})
+    new, added = formats.append_found(proposal, [_f("buyer_tin", "tin", value="123", label="Buyer TIN")], room=5)
+    assert len(added) == 1 and len(new["checks"]) == spec.MAX_CHECKS
+    assert new["checks"][0]["kind"] == "format" and new["checks"][0]["field"] == added[0]["key"]
+
+
 def test_append_found_stops_at_the_field_cap():
     proposal = formats.fresh_proposal({"name": "S", "detect_hint": "", "checks": [],
                                        "fields": [_f(f"f{i}") for i in range(spec.MAX_FIELDS)]})

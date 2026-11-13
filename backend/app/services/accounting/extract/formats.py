@@ -130,7 +130,7 @@ def ask_problem(asks: int, added: int) -> str | None:
 
 def append_found(proposal: dict, found: list[dict], room: int) -> tuple[dict, list[dict]]:
     """Add fields found by a missing-fields ask (switched on, keys made unique), skipping labels the proposal already
-    has, at most `room` and never past the field cap. New TIN / date fields get their default checks."""
+    has, at most `room` and never past the field cap. New TIN / date fields get their default checks, listed first so the check cap can't crowd them out."""
     fields = list(proposal["fields"])
     labels = {f["label"].casefold() for f in fields}
     taken = {f["key"] for f in fields}
@@ -146,7 +146,7 @@ def append_found(proposal: dict, found: list[dict], room: int) -> tuple[dict, li
         labels.add(f["label"].casefold())
         fields.append(field)
         added.append(field)
-    checks = spec.clean_checks(list(proposal["checks"]) + spec.default_checks(added), fields) if added \
+    checks = spec.clean_checks(spec.default_checks(added) + list(proposal["checks"]), fields) if added \
         else list(proposal["checks"])
     return {**proposal, "fields": fields, "checks": checks}, added
 

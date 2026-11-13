@@ -259,6 +259,9 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   lists every firm's formats read only, through a SELECT-only admin RLS policy (`aa_extract_formats_admin_read`); the
   admin never edits a firm's format. Feature key `extract` (in `FEATURES`, `ROUTES`, `PERSONAL_KEYS`, `FeatureKey`;
   the Team access panel reads the area list from the API).
+  `python -m scripts.extract_isolation_check` (inside backend, development only: it refuses other environments and
+  non-local hosts) creates two throwaway firms, an employee and an admin, checks the routes over HTTP and removes them;
+  it tests application-level filtering only (the dev DB role is a superuser, so RLS needs a NOBYPASSRLS role).
 - **Page tours** (`components/guide/SpotlightTour.tsx`, wrapped by `PageGuide`): the first visit to Documents, Work,
   Companies and Team, or a click on "How this works", runs an on-screen tour. It dims the page, rings each element and
   joins it to an explainer card with a dashed line. Stops are listed in `tours/spots.ts` and point at `data-tour="…"`

@@ -9,16 +9,19 @@ application filtering, role guards and feature switches even with a superuser DB
 import asyncio
 import sys
 import uuid
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import delete
 
 from app.auth.jwt import create_access_token
+from app.config import settings
 from app.database import async_session
 from app.dependencies import bind_session_user
 from app.models.accounting import AAExtractFile, AAExtractFormat, AAExtractRecord, AAExtractRun
 from app.models.user import User, UserRole
 
+ALLOWED_HOSTS = {"localhost", "127.0.0.1", "backend"}  # backend = the compose service name
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36"}
 FIELDS = [{"key": "invoice_no", "label": "Invoice no", "type": "text", "scope": "header", "required": True,
            "description": ""}]
@@ -54,7 +57,17 @@ async def seed_firm(owner: uuid.UUID, name: str) -> dict:
         return out
 
 
+def refuse_unless_safe(base: str) -> None:
+    """Creates and deletes users and mints tokens from the configured secret: development databases only."""
+    if settings.environment != "development":
+        sys.exit(f"Refusing to run: ENVIRONMENT is {settings.environment!r}, this check is for development only.")
+    host = urlparse(base).hostname
+    if host not in ALLOWED_HOSTS:
+        sys.exit(f"Refusing to run: base URL host {host!r} is not one of {sorted(ALLOWED_HOSTS)}.")
+
+
 async def main(base: str):
+    refuse_unless_safe(base)
     marker = uuid.uuid4().hex[:10]
     made: list[uuid.UUID] = []
     passed = 0
@@ -124,8 +137,8 @@ async def main(base: str):
             check("admin firm filter", {f["id"] for f in r.json()} & {fa["format"], fb["format"]}, {fa["format"]})
             check("owner A GET admin overview", await call("GET", f"{base}/api/admin/extract-formats", h_a), 403)
             check("employee GET admin overview", await call("GET", f"{base}/api/admin/extract-formats", h_emp), 403)
-            check("admin cannot edit via firm route", await call(
-                "DELETE", f"{base_x}/formats/{fa['format']}", h_admin) in (403, 404), True)
+            check("admin cannot delete A's format", await call(
+                "DELETE", f"{base_x}/formats/{fa['format']}", h_admin), 404)
 
             # Feature switch off for firm A: 503 for staff, owner too, features list says off; B unaffected.
             sw = f"{base}/api/admin/firms/{a}/features/extract"
@@ -150,10 +163,14 @@ async def main(base: str):
         print(f"ALL {passed} CHECKS PASSED")
     finally:
         # Everything hangs off the users (ON DELETE CASCADE): formats, runs, files, records, overrides, audit rows.
-        async with async_session() as db:
-            for uid in (made[::-1]):
-                await db.execute(delete(User).where(User.id == uid))
-            await db.commit()
+        # Each user in its own session so one failure never skips the rest; the original error still propagates.
+        for uid in made[::-1]:
+            try:
+                async with async_session() as db:
+                    await db.execute(delete(User).where(User.id == uid))
+                    await db.commit()
+            except Exception as exc:  # noqa: BLE001
+                print(f"CLEANUP FAILED for user {uid}: {exc!r}", file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":

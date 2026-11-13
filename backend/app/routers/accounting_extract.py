@@ -27,6 +27,7 @@ from app.models.accounting import AAExtractDraft, AAExtractFile, AAExtractFormat
 from app.models.user import User, UserRole
 from app.routers.accounting_scope import MANAGER_ROLES, scope_for
 from app.services.accounting import audit, gemini
+from app.services.accounting.assignment import lock_firm
 from app.services.accounting.extract import builder, checks, export, formats, guard, runner, spec
 from app.services.accounting.pipeline import READER_DOWN_MESSAGE
 from app.services.accounting.xlsx_preview import workbook_preview
@@ -627,19 +628,24 @@ async def edit_record(record_id: str, body: EditsIn, user: User = Depends(get_cu
 @router.put("/files/{file_id}/format")
 async def pick_file_format(file_id: str, body: FileFormatIn, user: User = Depends(get_current_user),
                            db: AsyncSession = Depends(get_db)):
-    """Pick the format for a file auto detect wasn't sure about; it is queued and read."""
+    """Pick the format for a file auto detect wasn't sure about; it is queued and read. Locks follow Extract's one
+    order (see runner.py): the run row, then the firm owner row, then the file row."""
     ent = scope_for(user)
-    f, run = await _file_or_404(db, ent, file_id, lock=True)
-    if f.status != "choose":
-        raise HTTPException(status.HTTP_409_CONFLICT, "This file already has a format")
+    _, found = await _file_or_404(db, ent, file_id)              # no lock yet: only to find the run
+    run = await _run_or_404(db, ent, str(found.id), lock=True)   # 1. run
     if body.format_key not in (run.snapshots or {}):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pick one of this run's formats")
     await _precheck_budget(db, user)
+    enterprise = await get_enterprise_for_user(db, user)
+    if enterprise is not None:
+        await lock_firm(db, enterprise.id)                       # 2. firm owner (the reservation's own lock)
+    f, _ = await _file_or_404(db, ent, file_id, lock=True)      # 3. file
+    if f.status != "choose":
+        raise HTTPException(status.HTTP_409_CONFLICT, "This file already has a format")
     f.format_key, f.status, f.error = body.format_key, "queued", ""
     await db.flush()
-    await _reserve_pages(db, user)
-    await db.execute(update(AAExtractRun).where(AAExtractRun.id == run.id, AAExtractRun.enterprise_id == ent)
-                     .values(status="reading"))
+    await _reserve_pages(db, user)                               # re-takes the owner lock it already holds
+    run.status = "reading"
     await db.commit()
     runner.start(run.id, str(user.id), ent)
     return _file_out(f)

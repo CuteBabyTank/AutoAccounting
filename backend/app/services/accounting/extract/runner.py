@@ -8,6 +8,11 @@ The job follows the upload pipeline's rules: its own session bound to the firm o
 chunks built one at a time inside the reader gate (`pipeline.read_chunks`), resumable after a restart (files left in
 `detecting` / `reading` are requeued on the next read of the run, with interrupts counted), and pages charged once
 per file, only when it was read. One file's failure never stops the others.
+
+Lock order, everywhere in Extract (routes and this job): the run row first, then the firm owner's `users` row (the
+budget lock: `lock_firm`, `assert_pending_page_budget`, `charge_for_pages`), then file rows (records last). A
+transaction may skip a level but never takes an earlier one after a later one. Rows a transaction has just inserted
+are invisible to others and don't count.
 """
 
 import asyncio
@@ -351,7 +356,9 @@ async def _fail_run(run_id: uuid.UUID, firm_id: uuid.UUID) -> None:
     try:
         async with async_session() as db:
             await pipeline._bind_job_firm(db, firm_id)
-            run = await _run(db, run_id, firm_id)
+            run = (await db.execute(select(AAExtractRun).where(          # the run row first (lock order)
+                AAExtractRun.id == run_id, AAExtractRun.enterprise_id == firm_id,
+            ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
             if run is None:
                 return
             files = await _files(db, run_id, firm_id)
@@ -412,8 +419,10 @@ async def _job(run_id: uuid.UUID, user_id: str, firm_id: uuid.UUID) -> None:
             if f is None:
                 break
             await _process(db, f, snapshots, user_id, firm_id, building)
-        run = await _run(db, run_id, firm_id)
-        if run is not None and run.deleted_at is None:
+        run = (await db.execute(select(AAExtractRun).where(              # the run row first (lock order)
+            AAExtractRun.id == run_id, AAExtractRun.enterprise_id == firm_id,
+        ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+        if run is not None and run.deleted_at is None:  # a format picked meanwhile shows here as "queued"
             run.status = run_status([f.status for f in await _files(db, run_id, firm_id)])
         await db.commit()
 
@@ -511,7 +520,15 @@ async def _process(db: AsyncSession, f: AAExtractFile, snapshots: dict, user_id:
             await db.rollback()
             logger.info("extract_file_skipped file_id=%s run_id=%s reason=run_deleted", file_id, run_id)
             return
+        # Lock order: run (above), then the firm owner (charge), then the file, then its records.
         f = await _file(db, file_id, firm_id)
+        owner = await db.get(User, firm_id)  # users is outside accounting RLS
+        if chargeable(True, f.pages_charged, owner is not None and owner.role == UserRole.ENTERPRISE):
+            await charge_for_pages(db, owner, page_count)  # locks the owner row first, then the month's usage row
+            await increment_usage(db, firm_id, page_count)
+            f.pages_charged = True
+        f.status, f.error = "done", ""
+        await db.flush()
         # A resumed file never has committed records (they commit with `done`), but never keep two sets.
         await db.execute(delete(AAExtractRecord).where(
             AAExtractRecord.file_id == file_id, AAExtractRecord.enterprise_id == firm_id))
@@ -519,13 +536,6 @@ async def _process(db: AsyncSession, f: AAExtractFile, snapshots: dict, user_id:
             enterprise_id=firm_id, run_id=run_id, file_id=file_id, position=i, page_start=r["page_start"],
             page_end=r["page_end"], confidence=r["confidence"], values=r["values"], edited=[],
             bad_cells=r["bad_cells"], flags=r["flags"]) for i, r in enumerate(records)])
-        await db.flush()
-        owner = await db.get(User, firm_id)  # users is outside accounting RLS
-        if chargeable(True, f.pages_charged, owner is not None and owner.role == UserRole.ENTERPRISE):
-            await charge_for_pages(db, owner, page_count)  # locks the owner row first, then the month's usage row
-            await increment_usage(db, firm_id, page_count)
-            f.pages_charged = True
-        f.status, f.error = "done", ""
         await db.commit()
         logger.info("extract_file_done file_id=%s pages=%d records=%d", file_id, page_count, len(records))
     except Exception as exc:  # one bad file never stops the run

@@ -21,14 +21,16 @@ export const extractApi = {
   /** Built-ins first (an edited one in its place), then the firm's own formats by name. */
   formats: () => api.get<ExtractFormat[]>(`${BASE}/formats`).then((r) => r.data),
   /** Read a sample and propose a format; `formatKey` merges it onto an existing format (editing). Managers only. */
-  createDraft: (file: File, formatKey?: string) => {
+  createDraft: (file: File, formatKey?: string, signal?: AbortSignal) => {
     const fd = new FormData();
     fd.append("file", file);
     if (formatKey) fd.append("format_key", formatKey);
-    return api.post<ExtractDraft>(`${BASE}/drafts`, fd, MULTIPART).then((r) => r.data);
+    return api.post<ExtractDraft>(`${BASE}/drafts`, fd, { ...MULTIPART, signal }).then((r) => r.data);
   },
-  askMissing: (draftId: string, note: string) =>
-    api.post<ExtractMissingResult>(`${BASE}/drafts/${seg(draftId)}/missing`, { note }).then((r) => r.data),
+  askMissing: (draftId: string, note: string, signal?: AbortSignal) =>
+    api
+      .post<ExtractMissingResult>(`${BASE}/drafts/${seg(draftId)}/missing`, { note }, { signal })
+      .then((r) => r.data),
   saveFormat: (body: ExtractFormatInput) => api.post<ExtractFormat>(`${BASE}/formats`, body).then((r) => r.data),
   updateFormat: (id: string, body: ExtractFormatInput) =>
     api.put<ExtractFormat>(`${BASE}/formats/${seg(id)}`, body).then((r) => r.data),

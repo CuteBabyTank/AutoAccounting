@@ -29,14 +29,18 @@ export default function ExtractPage() {
   const [builder, setBuilder] = useState<Builder>(null);
   const [error, setError] = useState("");
 
+  /** `prefer` picks the format to select from the fresh list (after a save or reset), else the selection stays. */
   const loadFormats = useCallback(
-    () =>
+    (prefer?: (list: ExtractFormat[]) => string) =>
       extractApi
         .formats()
         .then((list) => {
           setFormats(list);
           // A format deleted elsewhere falls back to Auto detect.
-          setFormatKey((key) => (key === AUTO || list.some((f) => f.key === key) ? key : AUTO));
+          setFormatKey((current) => {
+            const key = prefer ? prefer(list) : current;
+            return key === AUTO || list.some((f) => f.key === key) ? key : AUTO;
+          });
         })
         .catch((e) => setError(apiErrorMessage(e, "Couldn't load your formats")))
         .finally(() => setFormatsLoaded(true)),
@@ -158,8 +162,13 @@ export default function ExtractPage() {
           onClose={() => setBuilder(null)}
           onSaved={(format) => {
             setBuilder(null);
-            loadFormats();
-            setFormatKey(format.key);
+            loadFormats(() => format.key);
+          }}
+          onDeleted={(format) => {
+            // A reset copy gives its place back to the built-in (formats keep the built-ins' order first).
+            const place = formats.findIndex((f) => f.key === format.key);
+            setBuilder(null);
+            loadFormats((list) => (format.edited && list[place]?.builtin ? list[place].key : AUTO));
           }}
         />
       )}

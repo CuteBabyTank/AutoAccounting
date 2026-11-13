@@ -47,8 +47,6 @@ export const lowConfidence = (record: ExtractRecord): boolean =>
 export const rowsLevel = (record: ExtractRecord): ExtractLevel | null =>
   worst(record.flags.filter((f) => f.cells?.some((c) => c.row !== null)).map((f) => f.level));
 
-export const recordLevel = (record: ExtractRecord): ExtractLevel | null => worst(record.flags.map((f) => f.level));
-
 export const editedCells = (record: ExtractRecord): Set<string> => new Set(record.edited.map(cellIdOf));
 
 /** The first cell a flag points at, or null for a record-wide flag. */
@@ -95,8 +93,17 @@ export const LEVEL_INPUT: Record<ExtractLevel, string> = {
 };
 export const LEVEL_WORD: Record<ExtractLevel, string> = { red: "Wrong", yellow: "Check" };
 
-/** A flag as a sentence; row checks name their line ("Line 3: Quantity x unit price = amount (…)"). */
+/** The one table line a flag is about, or null when it is about the record: no row cells, cells on several lines,
+ *  or line cells mixed with a header cell (a `rows_sum` names every line plus the header total). */
+export function flagLine(flag: ExtractFlag): number | null {
+  const cells = flag.cells ?? [];
+  if (!cells.length || cells.some((c) => c.row === null)) return null;
+  const rows = new Set(cells.map((c) => c.row));
+  return rows.size === 1 ? (cells[0].row as number) : null;
+}
+
+/** A flag as a sentence; a one-line flag names its line ("Line 3: Quantity x unit price = amount (…)"). */
 export function flagSentence(flag: ExtractFlag): string {
-  const row = flag.cells?.find((c) => c.row !== null)?.row;
-  return row === undefined || row === null ? flag.message : `Line ${row + 1}: ${flag.message}`;
+  const line = flagLine(flag);
+  return line === null ? flag.message : `Line ${line + 1}: ${flag.message}`;
 }

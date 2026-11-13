@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FocusEvent, type HTMLAttributes, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type FocusEvent, type HTMLAttributes, type KeyboardEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { CaretLeft, CaretRight, FileXls, Spinner } from "@phosphor-icons/react";
 import { EditedMark, FlagMark } from "@/components/extract/FlagMark";
@@ -60,7 +60,34 @@ export default function RecordsTable({
   const review = count.red + count.yellow;
   const records = page?.records ?? [];
 
+  // A tooltip never outlives the cell it points at: new records, or any scroll (window or a container), close it;
+  // a keyboard-focused cell (focus itself may scroll it into view) keeps its tooltip, moved along with it.
+  const [tipRecords, setTipRecords] = useState(page?.records);
+  if (tipRecords !== page?.records) {
+    setTipRecords(page?.records);
+    if (tip) setTip(null);
+  }
+  useEffect(() => {
+    if (!tip) return;
+    const hide = () => {
+      const el = anchor.current;
+      if (el && el.isConnected && el === document.activeElement) {
+        const r = el.getBoundingClientRect();
+        const above = r.bottom + 120 > window.innerHeight;
+        setTip((t) => t && { ...t, x: Math.min(r.left, window.innerWidth - 300), y: above ? r.top - 4 : r.bottom + 4, above });
+      } else setTip(null);
+    };
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+    };
+  }, [tip]);
+
+  const anchor = useRef<HTMLElement | null>(null);
   const showTip = (el: HTMLElement, lines: string[], level: ExtractLevel) => {
+    anchor.current = el;
     const r = el.getBoundingClientRect();
     const above = r.bottom + 120 > window.innerHeight;
     setTip({ lines, level, x: Math.min(r.left, window.innerWidth - 300), y: above ? r.top - 4 : r.bottom + 4, above });
@@ -227,6 +254,7 @@ function Row({ rec, number, header, hasRows, fileName, open, onOpen, tipProps }:
           }}
           {...tipProps(wide.map((f) => f.message), wideLevel)}
           tabIndex={0}
+          data-open-record={rec.id}
           aria-label={`Open record ${number}${lowConfidence(rec) ? ", the reader was not sure about it" : ""}`}
           className="inline-flex items-center gap-1 font-medium tabular-nums text-[var(--text-primary)] hover:underline"
         >

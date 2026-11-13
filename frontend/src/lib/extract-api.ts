@@ -11,7 +11,7 @@ import type {
   ExtractRecord,
   ExtractRecordPage,
   ExtractRun,
-  ExtractRunSummary,
+  ExtractRunPage,
 } from "@/types/extract";
 
 const BASE = "/accounting/extract";
@@ -44,7 +44,9 @@ export const extractApi = {
     fd.append("format_key", formatKey);
     return api.post<{ id: string }>(`${BASE}/runs`, fd, MULTIPART).then((r) => r.data);
   },
-  runs: () => api.get<ExtractRunSummary[]>(`${BASE}/runs`).then((r) => r.data),
+  /** One page of "Past extracts", newest first (limit at most 50). */
+  runs: (offset = 0, limit = 50) =>
+    api.get<ExtractRunPage>(`${BASE}/runs`, { params: { offset, limit } }).then((r) => r.data),
   run: (id: string) => api.get<ExtractRun>(`${BASE}/runs/${seg(id)}`).then((r) => r.data),
   /** One page of a run's records (limit at most 200); `formatKey` is needed when the run used several formats. */
   records: (runId: string, opts: { formatKey?: string; offset?: number; limit?: number; reviewOnly?: boolean } = {}) =>

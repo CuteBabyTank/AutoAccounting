@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import FormatPicker, { AUTO } from "@/components/extract/FormatPicker";
 import RunDropzone from "@/components/extract/RunDropzone";
-import RunHistory, { when } from "@/components/extract/RunHistory";
+import RunHistory, { appendPage, mergeFirstPage, when } from "@/components/extract/RunHistory";
 import FormatBuilder from "@/components/extract/FormatBuilder";
 import RunTable from "@/components/extract/RunTable";
 import { confirmDialog } from "@/components/ui/Dialogs";
@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/auth";
 import type { ExtractFormat, ExtractRunSummary } from "@/types/extract";
 
 const HISTORY_POLL_MS = 4000;
+const RUNS_PAGE = 50;
 
 type Builder = { mode: "new" } | { mode: "edit"; format: ExtractFormat } | null;
 
@@ -24,7 +25,9 @@ export default function ExtractPage() {
   const [formatsLoaded, setFormatsLoaded] = useState(false);
   const [formatKey, setFormatKey] = useState(AUTO);
   const [runs, setRuns] = useState<ExtractRunSummary[]>([]);
+  const [runsTotal, setRunsTotal] = useState(0);
   const [runsLoaded, setRunsLoaded] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
   const [builder, setBuilder] = useState<Builder>(null);
   const [error, setError] = useState("");
@@ -46,15 +49,35 @@ export default function ExtractPage() {
         .finally(() => setFormatsLoaded(true)),
     [],
   );
-  const loadRuns = useCallback(
+  /** Refresh the first page only, keeping runs loaded by "Show more" past it. */
+  const refreshRuns = useCallback(
     () =>
-      extractApi
-        .runs()
-        .then(setRuns)
-        .catch((e) => setError(apiErrorMessage(e, "Couldn't load past extracts")))
-        .finally(() => setRunsLoaded(true)),
+      extractApi.runs(0, RUNS_PAGE).then((page) => {
+        setRuns((shown) => mergeFirstPage(shown, page.runs, RUNS_PAGE));
+        setRunsTotal(page.total);
+      }),
     [],
   );
+  const loadRuns = useCallback(
+    () =>
+      refreshRuns()
+        .catch((e) => setError(apiErrorMessage(e, "Couldn't load past extracts")))
+        .finally(() => setRunsLoaded(true)),
+    [refreshRuns],
+  );
+
+  async function loadMoreRuns() {
+    setLoadingMore(true);
+    try {
+      const page = await extractApi.runs(runs.length, RUNS_PAGE);
+      setRuns((shown) => appendPage(shown, page.runs));
+      setRunsTotal(page.total);
+    } catch (e) {
+      setError(apiErrorMessage(e, "Couldn't load more past extracts"));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     loadFormats();
@@ -65,9 +88,9 @@ export default function ExtractPage() {
   const anyReading = runs.some((r) => r.status === "reading");
   useEffect(() => {
     if (!anyReading || openRunId) return;
-    const timer = setInterval(() => extractApi.runs().then(setRuns).catch(() => undefined), HISTORY_POLL_MS);
+    const timer = setInterval(() => refreshRuns().catch(() => undefined), HISTORY_POLL_MS);
     return () => clearInterval(timer);
-  }, [anyReading, openRunId]);
+  }, [anyReading, openRunId, refreshRuns]);
 
   const selected = formats.find((f) => f.key === formatKey) ?? null;
   const disabledHint = !formatsLoaded
@@ -96,6 +119,8 @@ export default function ExtractPage() {
     try {
       await extractApi.deleteRun(run.id);
       if (openRunId === run.id) setOpenRunId(null);
+      setRuns((shown) => shown.filter((r) => r.id !== run.id));
+      setRunsTotal((n) => Math.max(0, n - 1));
       await loadRuns();
     } catch (e) {
       setError(apiErrorMessage(e, "Couldn't delete the extract"));
@@ -152,7 +177,10 @@ export default function ExtractPage() {
         ) : (
           <RunHistory
             runs={runs}
+            total={runsTotal}
             loaded={runsLoaded}
+            loadingMore={loadingMore}
+            onMore={loadMoreRuns}
             userId={user?.id ?? null}
             canManage={canManage}
             onOpen={(id) => {

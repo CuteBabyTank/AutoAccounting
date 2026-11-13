@@ -184,6 +184,13 @@ export interface ExtractRunSummary {
   yellow_count: number;
 }
 
+/** One page of "Past extracts" (GET /runs), newest first. */
+export interface ExtractRunPage {
+  total: number;
+  offset: number;
+  runs: ExtractRunSummary[];
+}
+
 export interface ExtractEdit {
   key: string;
   row: number | null;

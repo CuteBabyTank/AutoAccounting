@@ -336,8 +336,11 @@ export default function FormatBuilder({ mode, format, onClose, onSaved, onDelete
           {/* 1. The sample */}
           <section aria-label="Sample document">
             {reading ? (
-              <div role="status" aria-live="polite" className="rounded-xl border border-[var(--accent)] bg-[var(--accent-subtle)] px-4 py-5">
-                <p className="aa-shimmer text-sm font-semibold">Reading your sample…</p>
+              <div className="rounded-xl border border-[var(--accent)] bg-[var(--accent-subtle)] px-4 py-5">
+                {/* Only the static line is live: the seconds counter below must not be announced every tick. */}
+                <p role="status" aria-live="polite" className="aa-shimmer text-sm font-semibold">
+                  Reading your sample…
+                </p>
                 <p className="mt-1 truncate text-xs text-[var(--text-secondary)]">
                   {reading} · {elapsed < 60 ? `${elapsed}s. This can take up to a minute.` : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s. Still reading; longer samples take a little more time.`}
                 </p>

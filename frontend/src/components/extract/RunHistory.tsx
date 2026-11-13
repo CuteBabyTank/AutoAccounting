@@ -6,9 +6,32 @@ import type { ExtractRunSummary } from "@/types/extract";
 export const when = (iso: string) => new Date(iso).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" });
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+/** Newest first: `a` sorts after `b` (the server's order: created_at descending, then id). */
+const after = (a: ExtractRunSummary, b: ExtractRunSummary) =>
+  a.created_at < b.created_at || (a.created_at === b.created_at && a.id > b.id);
+
+/** A fresh first page merged into the runs shown so far: the page replaces everything in its window (a run missing
+ * from it was deleted), runs loaded by "Show more" past that window stay. */
+export function mergeFirstPage(shown: ExtractRunSummary[], page: ExtractRunSummary[], limit: number): ExtractRunSummary[] {
+  if (page.length < limit) return page; // the whole list fits on the first page
+  const ids = new Set(page.map((r) => r.id));
+  const last = page[page.length - 1];
+  return [...page, ...shown.filter((r) => !ids.has(r.id) && after(r, last))];
+}
+
+/** The next page appended to the runs shown, each run once. */
+export function appendPage(shown: ExtractRunSummary[], page: ExtractRunSummary[]): ExtractRunSummary[] {
+  const ids = new Set(shown.map((r) => r.id));
+  return [...shown, ...page.filter((r) => !ids.has(r.id))];
+}
+
 interface Props {
   runs: ExtractRunSummary[];
+  /** How many runs the firm has; "Show more" shows while fewer are listed. */
+  total: number;
   loaded: boolean;
+  loadingMore: boolean;
+  onMore: () => void;
   /** The signed-in person; a run's creator may delete it, as may owners and managers. */
   userId: string | null;
   canManage: boolean;
@@ -16,8 +39,8 @@ interface Props {
   onDelete: (run: ExtractRunSummary) => void;
 }
 
-/** "Past extracts": the firm's latest runs, newest first. */
-export default function RunHistory({ runs, loaded, userId, canManage, onOpen, onDelete }: Props) {
+/** "Past extracts": the firm's runs, newest first, 50 at a time. */
+export default function RunHistory({ runs, total, loaded, loadingMore, onMore, userId, canManage, onOpen, onDelete }: Props) {
   return (
     <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
       <h2 className="px-4 pb-2 pt-4 text-sm font-semibold text-[var(--text-primary)]">Past extracts</h2>
@@ -84,6 +107,19 @@ export default function RunHistory({ runs, loaded, userId, canManage, onOpen, on
           );
         })}
       </ul>
+      {loaded && runs.length < total && (
+        <div className="border-t border-[var(--border)] px-4 py-3 text-center">
+          <button
+            type="button"
+            onClick={onMore}
+            disabled={loadingMore}
+            className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-60"
+          >
+            {loadingMore && <Spinner size={14} className="animate-spin" />}
+            Show more ({total - runs.length} older)
+          </button>
+        </div>
+      )}
     </section>
   );
 }

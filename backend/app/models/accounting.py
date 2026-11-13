@@ -1041,6 +1041,11 @@ class AAExtractRun(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+# Extract file statuses still to be read (and charged): their pages are reserved against the firm's budget by every
+# admission path (uploads and Extract runs). "choose" waits on a person, so it holds nothing until a format is picked.
+EXTRACT_FILE_PENDING = ("queued", "detecting", "reading")
+
+
 class AAExtractFile(Base):
     """A file in an Extract run."""
 

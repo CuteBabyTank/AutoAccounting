@@ -25,7 +25,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session
-from app.models.accounting import AAExtractFile, AAExtractRecord, AAExtractRun
+from app.models.accounting import EXTRACT_FILE_PENDING, AAExtractFile, AAExtractRecord, AAExtractRun
 from app.models.user import User, UserRole
 from app.services.accounting import gemini, pipeline
 from app.services.accounting.extract import checks, prompts, spec
@@ -44,12 +44,11 @@ MAX_EDITS = 200             # cells per PATCH
 MAX_EDIT_CHARS = 500        # characters per edited value
 RUNS_LISTED = 50
 
-RUNNING = frozenset({"queued", "detecting", "reading"})
-# Unread files whose pages are reserved against the budget ("choose" waits on a person, so it holds nothing).
-PENDING = tuple(sorted(RUNNING))
+RUNNING = frozenset(EXTRACT_FILE_PENDING)  # files still to be read; their pages are reserved against the budget
 UNREADABLE_FILE = "We couldn't read this file. Try a clearer copy."
 FAILED_FILE = "Reading failed. Drop the file again."
 INTERRUPTED_FAIL = "Reading was interrupted. Drop the file again."
+UNPROCESSABLE_FILE = "This file couldn't be processed. Drop it again."
 
 _MANILA = ZoneInfo("Asia/Manila")
 
@@ -180,6 +179,32 @@ def merge_edited(before: list[dict], now: list[dict]) -> list[dict]:
     return out
 
 
+def format_summary(snapshots: dict, file_keys: list[str | None],
+                   counts: dict[str | None, tuple[int, int, int]]) -> list[dict]:
+    """`[{"format_key", "name", "records", "red", "yellow"}]` for each format the run's files were (or will be) read
+    with, in snapshot order. `counts`: key -> (records, records with a red flag, records with yellow but no red)."""
+    used = set(file_keys) | set(counts)
+    out = []
+    for key, snap in snapshots.items():
+        if key in used:
+            n, red, yellow = counts.get(key, (0, 0, 0))
+            out.append({"format_key": key, "name": snap.get("name", ""), "records": n, "red": red, "yellow": yellow})
+    return out
+
+
+def records_format(requested: str | None, with_records: list[str | None], snapshots: dict) -> str | None:
+    """The format whose records to page: the one asked for (it must be the run's), else the only one with records.
+    Raises ValueError when the run has records from several formats and none was named."""
+    if requested:
+        if requested not in snapshots:
+            raise ValueError("Pick one of this run's formats")
+        return requested
+    keys = {k for k in with_records if k is not None}
+    if len(keys) > 1:
+        raise ValueError("Pick a format: this run has records from more than one")
+    return next(iter(keys), None)
+
+
 def stale(status: str, created_at: datetime, progress: list[datetime], now: datetime) -> str | None:
     """"resume" / "fail" for a run whose job died, None while alive or finished. Progress is the latest of the
     run's and its files' `updated_at` (files are touched after every chunk)."""
@@ -202,8 +227,19 @@ def recovery(action: str, files: list[tuple[Any, str, int]]) -> dict[Any, tuple[
     return plan
 
 
+class Unprocessable(Exception):
+    """The file can't be processed for a reason of ours, not the document's (its stored path is outside the run's
+    folder, or its format isn't in the run's snapshot). ``reason`` is logged; the firm sees UNPROCESSABLE_FILE."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 def file_error(exc: BaseException) -> str:
     """What the firm is told about a file that failed (provider and internal errors stay in the log)."""
+    if isinstance(exc, Unprocessable):
+        return UNPROCESSABLE_FILE
     if isinstance(exc, gemini.ReaderUnavailable):
         return pipeline.READER_DOWN_MESSAGE
     if isinstance(exc, ValueError):
@@ -346,6 +382,15 @@ async def _file(db: AsyncSession, file_id: uuid.UUID, firm_id: uuid.UUID) -> AAE
     ).execution_options(populate_existing=True))).scalar_one()
 
 
+async def _run_deleted(db: AsyncSession, run_id: uuid.UUID, firm_id: uuid.UUID, lock: bool = False) -> bool:
+    """Whether the run is gone (deleted, or missing); `lock` takes a share lock on its row for the transaction."""
+    q = select(AAExtractRun.deleted_at).where(AAExtractRun.id == run_id, AAExtractRun.enterprise_id == firm_id)
+    if lock:
+        q = q.with_for_update(read=True)
+    row = (await db.execute(q)).one_or_none()
+    return row is None or row[0] is not None
+
+
 async def _next_queued(db: AsyncSession, run_id: uuid.UUID, firm_id: uuid.UUID) -> AAExtractFile | None:
     return (await db.execute(select(AAExtractFile).where(
         AAExtractFile.run_id == run_id, AAExtractFile.enterprise_id == firm_id, AAExtractFile.status == "queued",
@@ -436,7 +481,7 @@ async def _process(db: AsyncSession, f: AAExtractFile, snapshots: dict, user_id:
     stored_path, file_type, page_count, key = f.stored_path, f.file_type, f.page_count or 1, f.format_key
     try:
         if not own_file(run_id, stored_path):
-            raise ValueError("stored path outside the run's folder")
+            raise Unprocessable("stored_path_outside_run_folder")
         if key is None:
             f.status = "detecting"
             await db.commit()  # durable before the reader is called
@@ -451,7 +496,7 @@ async def _process(db: AsyncSession, f: AAExtractFile, snapshots: dict, user_id:
             f.format_key = key
         snap = snapshots.get(key)
         if snap is None:
-            raise ValueError("format not in the run's snapshot")
+            raise Unprocessable("format_not_in_snapshot")
         f.status = "reading"
         await db.commit()
 
@@ -460,6 +505,12 @@ async def _process(db: AsyncSession, f: AAExtractFile, snapshots: dict, user_id:
                                           _chunk_reader(file_id, snap["fields"], prompt, user_id), building)
         records = await asyncio.to_thread(_records, found, snap, manila_today())
 
+        # The run row is read-locked for this final transaction, so a delete either lands first (and nothing is
+        # stored or charged) or waits until this file is committed.
+        if await _run_deleted(db, run_id, firm_id, lock=True):
+            await db.rollback()
+            logger.info("extract_file_skipped file_id=%s run_id=%s reason=run_deleted", file_id, run_id)
+            return
         f = await _file(db, file_id, firm_id)
         # A resumed file never has committed records (they commit with `done`), but never keep two sets.
         await db.execute(delete(AAExtractRecord).where(
@@ -478,12 +529,19 @@ async def _process(db: AsyncSession, f: AAExtractFile, snapshots: dict, user_id:
         await db.commit()
         logger.info("extract_file_done file_id=%s pages=%d records=%d", file_id, page_count, len(records))
     except Exception as exc:  # one bad file never stops the run
-        message = file_error(exc)
-        if message == FAILED_FILE:  # unexpected: keep the traceback (reader / unreadable replies need only the kind)
-            logger.exception("extract_file_failed file_id=%s error=%s", file_id, type(exc).__name__)
-        else:
-            logger.warning("extract_file_failed file_id=%s error=%s", file_id, type(exc).__name__)
         await db.rollback()
+        if await _run_deleted(db, run_id, firm_id):  # its folder went with the run: nothing to report
+            await db.commit()
+            logger.info("extract_file_skipped file_id=%s run_id=%s reason=run_deleted", file_id, run_id)
+            return
+        message = file_error(exc)
+        if isinstance(exc, Unprocessable):
+            logger.error("extract_file_unprocessable run_id=%s file_id=%s reason=%s", run_id, file_id, exc.reason)
+        elif message == FAILED_FILE:  # unexpected: keep the traceback (reader / unreadable replies need only the kind)
+            logger.exception("extract_file_failed run_id=%s file_id=%s error=%s", run_id, file_id,
+                             type(exc).__name__)
+        else:
+            logger.warning("extract_file_failed run_id=%s file_id=%s error=%s", run_id, file_id, type(exc).__name__)
         f = await _file(db, file_id, firm_id)
         f.status, f.error = "error", message
         await db.commit()

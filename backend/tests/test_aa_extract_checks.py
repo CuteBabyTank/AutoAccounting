@@ -3,7 +3,7 @@ from decimal import Decimal as D
 
 import pytest
 
-from app.services.accounting.extract import checks, spec
+from app.services.accounting.extract import builtins, checks, spec
 
 FIELDS = spec.clean_fields([
     {"label": "Subtotal", "type": "money", "scope": "header"}, {"label": "VAT", "type": "money", "scope": "header"},
@@ -169,3 +169,50 @@ def test_other_types():
     assert checks.clean_value("  a   b ", "text") == ("a b", True)
     assert checks.clean_value("1" * 201, "date")[1] is False
     assert checks.clean_value("2026-02-30", "date") == ("2026-02-30", False)
+
+
+# ── blank terms count as 0; unreadable operands skip ──────────────────────
+
+R_FIELDS = builtins.BUILTINS["receipt"]["fields"]
+R_SUM = [c for c in builtins.BUILTINS["receipt"]["checks"] if c["kind"] == "sum"]
+
+
+def receipt(**header):
+    values, bad = checks.clean_record(header, R_FIELDS)
+    return checks.run_checks(values, R_FIELDS, R_SUM, TODAY, bad_cells=bad)
+
+
+def test_sum_counts_blank_terms_as_zero():
+    out = receipt(vatable_sales="1000", vat_amount="120", total_amount="1200")   # exempt / zero-rated blank
+    assert [f["level"] for f in out] == ["red"]
+    assert [c["key"] for c in out[0]["cells"]] == ["vatable_sales", "vat_amount", "total_amount"]
+    assert receipt(vatable_sales="1000", vat_amount="120", total_amount="1120") == []
+
+
+def test_sum_skips_when_every_term_or_the_target_is_blank():
+    assert receipt(total_amount="1200") == []
+    assert receipt(vatable_sales="1000", vat_amount="120") == []
+
+
+def test_sum_skips_on_an_unreadable_term():
+    out = receipt(vatable_sales="1000", vat_amount="abc", total_amount="1200")
+    assert [f["check_id"] for f in out] == ["unreadable"]
+
+
+def test_rows_sum_blank_rows_count_as_zero_and_unreadable_skips():
+    out = flags({"subtotal": "300"}, [{"amount": "200"}, {"amount": ""}, {"amount": "150"}])
+    rows_sum = [f for f in out if f["cells"][-1]["key"] == "subtotal"]
+    assert rows_sum and [c["row"] for c in rows_sum[0]["cells"][:-1]] == [0, 2]
+    assert flags({"subtotal": "350"}, [{"amount": "200"}, {"amount": ""}, {"amount": "150"}]) == []
+    out = flags({"subtotal": "300"}, [{"amount": "200"}, {"amount": "x"}])
+    assert [f["check_id"] for f in out] == ["unreadable"]
+
+
+def test_atc_ignores_spaces_hyphens_and_case():
+    fs = spec.clean_fields([{"label": "ATC", "type": "code", "scope": "header"}])
+    cs = spec.clean_checks([{"kind": "format", "field": "atc", "pattern": "atc"}], fs)
+    for text in ("WC 158", "wc-158", "Wc158"):
+        values, _ = checks.clean_record({"atc": text}, fs)
+        assert checks.run_checks(values, fs, cs, TODAY) == [], text
+    values, _ = checks.clean_record({"atc": "WC 999"}, fs)
+    assert len(checks.run_checks(values, fs, cs, TODAY)) == 1

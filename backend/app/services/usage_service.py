@@ -3,7 +3,6 @@ Usage tracking + page billing: monthly page counts per firm and budget debits.
 """
 
 import asyncio
-from collections.abc import Sequence
 from datetime import datetime, timezone
 from decimal import Decimal
 from functools import cache
@@ -13,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.api_usage import ApiUsage
-from app.models.accounting import AAFile, AAUpload
+from app.models.accounting import EXTRACT_FILE_PENDING, AAExtractFile, AAExtractRun, AAFile, AAUpload
 from app.models.user import User, UserRole
 
 
@@ -245,13 +244,22 @@ def page_batch_reservation(
     return ((full if free_side else 0) + best) / 100
 
 
-async def assert_pending_page_budget(db: AsyncSession, enterprise: User, extra_pages: Sequence[int] = ()) -> None:
+def extract_pending_pages_query(enterprise_id):
+    """Page counts of the firm's unread Extract files (live runs only): pending pages like unread uploads."""
+    return select(AAExtractFile.page_count).join(AAExtractRun, AAExtractRun.id == AAExtractFile.run_id).where(
+        AAExtractFile.enterprise_id == enterprise_id, AAExtractFile.pages_charged.is_(False),
+        AAExtractFile.status.in_(EXTRACT_FILE_PENDING), AAExtractRun.enterprise_id == enterprise_id,
+        AAExtractRun.deleted_at.is_(None),
+    )
+
+
+async def assert_pending_page_budget(db: AsyncSession, enterprise: User) -> None:
     """Reserve admission headroom through durable uncharged AAFile rows, under the firm row lock.
 
     Caller flushes its accepted/skipped files first and keeps this lock until its audited commit.
     Completion's budget debit and pages_charged flag atomically replace the reservation; errors and
-    duplicates release it. No prepaid charge, duplicate debit, or extra schema is needed. ``extra_pages``: other
-    pending files' page counts, read by the caller under the same lock (the Extract tab's unread files).
+    duplicates release it. No prepaid charge, duplicate debit, or extra schema is needed. Unread Extract files are
+    pending pages too, read under the same lock, so uploads and Extract runs see one pending set.
     """
     await db.refresh(enterprise, with_for_update=True)
     flat, tiers = await get_effective_rate_config(db, enterprise)
@@ -266,7 +274,7 @@ async def assert_pending_page_budget(db: AsyncSession, enterprise: User, extra_p
         AAFile.status.in_(("uploaded", "detected", "extracting")),
         AAUpload.enterprise_id == enterprise.id, AAUpload.status != "failed",
     ))).scalars().all()
-    pages = [*pages, *extra_pages]
+    pages = [*pages, *(await db.execute(extract_pending_pages_query(enterprise.id))).scalars().all()]
     required = await asyncio.to_thread(page_batch_reservation, list(pages), free, flat, tiers)
     if required > (enterprise.budget or 0) or (not pages and (enterprise.budget or 0) <= 0):
         raise ValueError("This batch exceeds the firm's remaining budget after pending uploads. Top up or upload fewer pages.")

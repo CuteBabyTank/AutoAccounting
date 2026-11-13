@@ -9,7 +9,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi import Path as PathParam
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, select, update
@@ -23,7 +23,6 @@ from app.models.accounting import AAExtractDraft, AAExtractFile, AAExtractFormat
 from app.models.user import User, UserRole
 from app.routers.accounting_scope import MANAGER_ROLES, scope_for
 from app.services.accounting import audit, gemini
-from app.services.accounting.assignment import lock_firm
 from app.services.accounting.extract import builder, checks, formats, guard, runner, spec
 from app.services.accounting.pipeline import READER_DOWN_MESSAGE
 from app.services.accounting.storage import (
@@ -373,21 +372,15 @@ async def _file_or_404(db: AsyncSession, ent: uuid.UUID, file_id: str, lock: boo
 
 
 async def _reserve_pages(db: AsyncSession, user: User) -> None:
-    """The upload pipeline's admission check, with the firm's unread Extract files (this run's included) counted
-    as pending pages under the same firm row lock."""
+    """The upload pipeline's admission check; the firm's unread Extract files (this run's, flushed, included) are
+    pending pages there, under the firm row lock."""
     if user.role == UserRole.ADMIN:
         return
     enterprise = await get_enterprise_for_user(db, user)
     if enterprise is None:
         return
-    await lock_firm(db, enterprise.id)  # the reservation's own lock, taken before the Extract pages are read
-    pending = (await db.execute(
-        select(AAExtractFile.page_count).join(AAExtractRun, AAExtractRun.id == AAExtractFile.run_id).where(
-            AAExtractFile.enterprise_id == enterprise.id, AAExtractFile.pages_charged.is_(False),
-            AAExtractFile.status.in_(runner.PENDING), AAExtractRun.enterprise_id == enterprise.id,
-            AAExtractRun.deleted_at.is_(None)))).scalars().all()
     try:
-        await assert_pending_page_budget(db, enterprise, pending)
+        await assert_pending_page_budget(db, enterprise)
     except ValueError as exc:
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, str(exc)) from None
 
@@ -527,7 +520,8 @@ async def list_runs(user: User = Depends(get_current_user), db: AsyncSession = D
 
 @router.get("/runs/{run_id}")
 async def get_run(run_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """A run with its files, records (with flags) and format snapshots; resumes a run whose job died."""
+    """A run with its files, format snapshots and per-format record counts (records are paged by
+    `GET /runs/{id}/records`); resumes a run whose job died."""
     ent = scope_for(user)
     run = await _run_or_404(db, ent, run_id)
     files = list((await db.execute(select(AAExtractFile).where(
@@ -538,17 +532,54 @@ async def get_run(run_id: str, user: User = Depends(get_current_user), db: Async
     files = list((await db.execute(select(AAExtractFile).where(
         AAExtractFile.run_id == run.id, AAExtractFile.enterprise_id == ent,
     ).order_by(AAExtractFile.created_at, AAExtractFile.id).execution_options(populate_existing=True))).scalars())
-    order = {f.id: i for i, f in enumerate(files)}
-    records = sorted((await db.execute(select(AAExtractRecord).where(
-        AAExtractRecord.run_id == run.id, AAExtractRecord.enterprise_id == ent))).scalars(),
-        key=lambda r: (order.get(r.file_id, len(order)), r.position))
+    red = AAExtractRecord.flags.contains([{"level": "red"}])
+    yellow = and_(AAExtractRecord.flags.contains([{"level": "yellow"}]), ~red)
+    counts = {key: (n, r, y) for key, n, r, y in (await db.execute(
+        select(AAExtractFile.format_key, func.count(AAExtractRecord.id), func.count(AAExtractRecord.id).filter(red),
+               func.count(AAExtractRecord.id).filter(yellow))
+        .join(AAExtractFile, AAExtractFile.id == AAExtractRecord.file_id)
+        .where(AAExtractRecord.run_id == run.id, AAExtractRecord.enterprise_id == ent,
+               AAExtractFile.enterprise_id == ent)
+        .group_by(AAExtractFile.format_key))).all()}
     creator = await db.get(User, run.created_by) if run.created_by else None
     may_delete = user.role in MANAGER_ROLES or run.created_by == user.id
+    snapshots = run.snapshots or {}
     return {"id": str(run.id), "format_key": run.format_key, "format_name": run.format_name, "status": run.status,
             "created_at": run.created_at.isoformat(), "created_by": str(run.created_by) if run.created_by else None,
             "created_by_name": _person(creator), "can_delete": may_delete,
-            "snapshots": {k: formats.out({**v, "key": k}) for k, v in (run.snapshots or {}).items()},
-            "files": [_file_out(f) for f in files], "records": [_record_out(r) for r in records]}
+            "snapshots": {k: formats.out({**v, "key": k}) for k, v in snapshots.items()},
+            "files": [_file_out(f) for f in files],
+            "formats": runner.format_summary(snapshots, [f.format_key for f in files], counts)}
+
+
+@router.get("/runs/{run_id}/records")
+async def run_records(run_id: str, format_key: str | None = Query(default=None, max_length=40),
+                      offset: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=200),
+                      review_only: bool = False, user: User = Depends(get_current_user),
+                      db: AsyncSession = Depends(get_db)):
+    """One page of a run's records for one format, in file then position order; `review_only` keeps flagged ones.
+    `format_key` is needed when records were read with more than one format."""
+    ent = scope_for(user)
+    run = await _run_or_404(db, ent, run_id)
+    with_records = list((await db.execute(
+        select(AAExtractFile.format_key).join(AAExtractRecord, AAExtractRecord.file_id == AAExtractFile.id)
+        .where(AAExtractFile.run_id == run.id, AAExtractFile.enterprise_id == ent,
+               AAExtractRecord.enterprise_id == ent).distinct())).scalars())
+    try:
+        key = runner.records_format(format_key, with_records, run.snapshots or {})
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from None
+    where = [AAExtractRecord.run_id == run.id, AAExtractRecord.enterprise_id == ent,
+             AAExtractFile.enterprise_id == ent]
+    if key is not None:
+        where.append(AAExtractFile.format_key == key)
+    if review_only:
+        where.append(func.jsonb_array_length(AAExtractRecord.flags) > 0)
+    joined = select(AAExtractRecord).join(AAExtractFile, AAExtractFile.id == AAExtractRecord.file_id).where(*where)
+    total = (await db.execute(select(func.count()).select_from(joined.subquery()))).scalar_one()
+    rows = (await db.execute(joined.order_by(AAExtractFile.created_at, AAExtractFile.id, AAExtractRecord.position,
+                                             AAExtractRecord.id).offset(offset).limit(limit))).scalars().all()
+    return {"format_key": key, "total": total, "offset": offset, "records": [_record_out(r) for r in rows]}
 
 
 @router.patch("/records/{record_id}")

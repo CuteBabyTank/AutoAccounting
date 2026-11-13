@@ -207,17 +207,32 @@ def _required(check, ctx, row):
     return None
 
 
-def _sum(check, ctx, row):
-    keys = [t["field"] for t in check["terms"]] + [check["target"]]
-    nums = [ctx.num(k, row) for k in keys]
-    if any(n is None for n in nums):
+_UNKNOWN = object()  # an operand we can't know: unreadable, or text that isn't a number
+
+
+def _operand(ctx: _Ctx, key: str, row: int | None):
+    """The cell's number, None when blank, or _UNKNOWN."""
+    if (key, row) in ctx.bad:
+        return _UNKNOWN
+    if not ctx.text(key, row).strip():
         return None
-    total = sum((t["sign"] * n for t, n in zip(check["terms"], nums)), Decimal(0))
-    target = nums[-1]
+    n = ctx.num(key, row)
+    return _UNKNOWN if n is None else n
+
+
+def _sum(check, ctx, row):
+    """Blank terms count as 0 once the target and at least one term are present; unreadable cells skip."""
+    keys = [t["field"] for t in check["terms"]]
+    target = _operand(ctx, check["target"], row)
+    nums = [_operand(ctx, k, row) for k in keys]
+    if target is None or target is _UNKNOWN or any(n is _UNKNOWN for n in nums) or all(n is None for n in nums):
+        return None
+    total = sum((t["sign"] * n for t, n in zip(check["terms"], nums) if n is not None), Decimal(0))
     result = _capped(check, grade(total - target, target))
     if result == "pass":
         return None
-    return _flag(check, ctx, _cells(keys, row), result, f"{_fmt(total)} vs {_fmt(target)}")
+    present = [k for k, n in zip(keys, nums) if n is not None]
+    return _flag(check, ctx, _cells(present + [check["target"]], row), result, f"{_fmt(total)} vs {_fmt(target)}")
 
 
 def _percent_of(check, ctx, row):
@@ -254,12 +269,15 @@ def _row_product(check, ctx, row):
 
 
 def _rows_sum(check, ctx, _row):
-    target = ctx.num(check["target"], None)
-    if target is None:
+    """Rows with a blank value count as 0 once one row has a value; an unreadable cell skips the check."""
+    target = _operand(ctx, check["target"], None)
+    if target is None or target is _UNKNOWN:
         return None
     cells, total = [], Decimal(0)
     for i in range(len(ctx.values["rows"])):
-        n = ctx.num(check["row_field"], i)
+        n = _operand(ctx, check["row_field"], i)
+        if n is _UNKNOWN:
+            return None
         if n is not None:
             total += n
             cells.append({"key": check["row_field"], "row": i})
@@ -301,8 +319,8 @@ def _format(check, ctx, row):
         ok = len(digits) in _TIN_LENGTHS and len(digits) == len(re.sub(r"[\s\-.]", "", text))
     elif check["pattern"] == "zip":
         ok = re.fullmatch(r"\d{4}", text.strip()) is not None
-    else:
-        ok = lookup_atc(text) is not None
+    else:  # "WC 158", "wc-158": spaces and hyphens inside the code are ignored (lookup is case-insensitive)
+        ok = lookup_atc(re.sub(r"[\s\-]", "", text)) is not None
     return None if ok else _flag(check, ctx, _cells([check["field"]], row), detail=text)
 
 

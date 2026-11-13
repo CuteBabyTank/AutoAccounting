@@ -2,6 +2,8 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+from app.models.accounting import EXTRACT_FILE_PENDING
+from app.services import usage_service
 from app.services.accounting.extract import builtins, formats, runner
 from app.services.accounting.jobs import INTERRUPTED_MESSAGE, MAX_INTERRUPTS
 
@@ -24,9 +26,8 @@ def test_run_status():
 
 
 def test_edit_fixes_a_red_total_and_marks_the_cell():
-    # Explicit zeros: Task 3's `sum` skips when any term is blank (see the task-8 report).
     v = values(date="2026-11-01", seller_name="ACME", vatable_sales="1000.00", vat_amount="120.00",
-               vat_exempt_sales="0.00", zero_rated_sales="0.00", total_amount="1200.00")
+               total_amount="1200.00")
     assert any(f["level"] == "red" for f in runner.reflag(v, SNAP, TODAY, 95, []))
     v2, bad, edited = runner.apply_edit(v, SNAP, [{"key": "total_amount", "row": None, "value": "1,120.00"}])
     assert v2["header"]["total_amount"] == "1120.00" and bad == []
@@ -145,3 +146,48 @@ def test_stale_action_maps_reading_and_uses_the_latest_progress():
 def test_records_are_capped_per_file():
     many = [{"page_start": 1}] * (runner.MAX_RECORDS + 5)
     assert len(runner.capped_records([many[:10], many[10:]])) == runner.MAX_RECORDS
+
+
+def test_unread_extract_pages_query_counts_only_live_unread_files_of_the_firm():
+    import uuid
+
+    from sqlalchemy.dialects import postgresql
+
+    firm = uuid.uuid4()
+    stmt = usage_service.extract_pending_pages_query(firm)
+    sql = str(stmt.compile(dialect=postgresql.dialect()))
+    assert "aa_extract_files.page_count" in sql and "JOIN aa_extract_runs" in sql
+    assert "aa_extract_files.pages_charged IS false" in sql
+    assert "aa_extract_runs.deleted_at IS NULL" in sql
+    assert "aa_extract_files.enterprise_id" in sql and "aa_extract_runs.enterprise_id" in sql
+    params = stmt.compile(dialect=postgresql.dialect()).params
+    assert list(params.values()).count(firm) == 2
+    assert any(v == list(EXTRACT_FILE_PENDING) for v in params.values())
+    assert set(EXTRACT_FILE_PENDING) == runner.RUNNING and "choose" not in EXTRACT_FILE_PENDING
+
+
+def test_format_summary_lists_used_formats_with_counts():
+    snaps = {"bir2307": {"name": "BIR 2307"}, "receipt": {"name": "Receipt"}, "invoice": {"name": "Invoice"}}
+    out = runner.format_summary(snaps, ["receipt", None, "bir2307"], {"bir2307": (30, 11, 2)})
+    assert out == [{"format_key": "bir2307", "name": "BIR 2307", "records": 30, "red": 11, "yellow": 2},
+                   {"format_key": "receipt", "name": "Receipt", "records": 0, "red": 0, "yellow": 0}]
+
+
+def test_records_format_needs_a_key_only_when_several_formats_have_records():
+    snaps = {"bir2307": {}, "receipt": {}}
+    assert runner.records_format(None, ["bir2307"], snaps) == "bir2307"
+    assert runner.records_format(None, [], snaps) is None
+    assert runner.records_format("receipt", ["bir2307", "receipt"], snaps) == "receipt"
+    with pytest.raises(ValueError):
+        runner.records_format(None, ["bir2307", "receipt"], snaps)
+    with pytest.raises(ValueError):
+        runner.records_format("invoice", ["bir2307"], snaps)
+
+
+def test_file_errors_are_friendly_and_internal_ones_distinct():
+    from app.services.accounting import gemini, pipeline
+
+    assert runner.file_error(gemini.ReaderUnavailable("quota")) == pipeline.READER_DOWN_MESSAGE
+    assert runner.file_error(ValueError("unreadable_reply")) == runner.UNREADABLE_FILE
+    assert runner.file_error(runner.Unprocessable("format_not_in_snapshot")) == runner.UNPROCESSABLE_FILE
+    assert runner.file_error(RuntimeError("boom")) == runner.FAILED_FILE

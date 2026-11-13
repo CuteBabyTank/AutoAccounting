@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.sql.elements import TextClause
 
-from app.models.accounting import AAAuditEvent, AACompany, AAFile, AAUpload
+from app.models.accounting import AAAuditEvent, AACompany, AAExtractFile, AAExtractRun, AAFile, AAUpload
 from app.models.api_usage import ApiUsage
 from app.routers import accounting
 from app.services import usage_service
@@ -44,7 +44,7 @@ class FailureDB(JobDB):
         self.sql = self.engine.connect()
         # Only the SQL storage is substituted. Use real admission/update WHERE clauses, rather than
         # teaching a fake the intended failed-upload/status filtering and thereby hiding a missing predicate.
-        for model in (AAFile, AAUpload):
+        for model in (AAFile, AAUpload, AAExtractFile, AAExtractRun):  # Extract tables stay empty here
             columns = ", ".join(f'"{c.name}"' for c in model.__table__.columns)
             self.sql.exec_driver_sql(f"CREATE TABLE {model.__tablename__} ({columns})")
 
@@ -63,6 +63,8 @@ class FailureDB(JobDB):
         if isinstance(stmt, TextClause):
             return await super().execute(stmt, params)
         entity = None if getattr(stmt, "is_update", False) else stmt.column_descriptions[0]["entity"]
+        if entity is AAExtractFile:  # unread Extract pages, through the real reservation SQL
+            return Result(self.sql.execute(stmt).scalars().all())
         if entity is AACompany and self.fail_company_read:
             self.fail_company_read = False
             raise ValueError("transient DB failure before processing")

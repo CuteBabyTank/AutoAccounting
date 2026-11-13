@@ -18,7 +18,8 @@ _FIRM_TABLES = ("aa_companies", "aa_uploads", "aa_files", "aa_documents", "aa_pe
                 "aa_bank_lines", "aa_bank_rules", "aa_bank_reconciliations", "aa_contacts", "aa_work_items",
                 "aa_tasks", "aa_firm_settings", "aa_notification_states", "aa_coa_templates",
                 "aa_opening_items", "aa_recurring_entries", "aa_checklist_templates", "aa_import_batches",
-                "aa_assistant_usage", "aa_assistant_actions")
+                "aa_assistant_usage", "aa_assistant_actions", "aa_extract_formats", "aa_extract_drafts",
+                "aa_extract_runs", "aa_extract_files", "aa_extract_records")
 _COMPANY_TABLES = ("aa_supplier_rules", "aa_atc_defaults")  # no enterprise_id: scoped through their company
 _APPEND_ONLY_TABLES = ("aa_audit_events",)  # read and insert only: nobody rewrites history
 
@@ -60,6 +61,10 @@ def rls_statements() -> list[str]:
     statements += [
         "DROP POLICY IF EXISTS aa_assistant_usage_admin_read ON aa_assistant_usage",
         "CREATE POLICY aa_assistant_usage_admin_read ON aa_assistant_usage FOR SELECT USING ("
+        "EXISTS (SELECT 1 FROM users u WHERE u.role = 'admin' AND u.id = "
+        "NULLIF(current_setting('app.current_user_id', true), '')::uuid))",
+        "DROP POLICY IF EXISTS aa_extract_formats_admin_read ON aa_extract_formats",
+        "CREATE POLICY aa_extract_formats_admin_read ON aa_extract_formats FOR SELECT USING ("
         "EXISTS (SELECT 1 FROM users u WHERE u.role = 'admin' AND u.id = "
         "NULLIF(current_setting('app.current_user_id', true), '')::uuid))",
     ]

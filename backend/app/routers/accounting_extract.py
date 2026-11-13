@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, case, func, select, update
+from sqlalchemy import and_, case, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,6 +90,15 @@ async def _charge(db: AsyncSession, ent: uuid.UUID, pages: int) -> None:
     await increment_usage(db, ent, pages)
 
 
+async def _lock_firm_first(db: AsyncSession, user: User, ent: uuid.UUID) -> None:
+    """The firm owner's row lock, taken before a route's first insert. An insert that references the owner (FK
+    `enterprise_id`) takes FOR KEY SHARE on its row, so asking FOR UPDATE after it (the page reservation, the sample
+    charge) deadlocks two overlapping drops. A platform-admin scope is never billed and is skipped, as in
+    `_reserve_pages`."""
+    if user.role != UserRole.ADMIN:
+        await lock_firm(db, ent)
+
+
 async def _draft_or_404(db: AsyncSession, ent: uuid.UUID, user: User, draft_id: uuid.UUID) -> AAExtractDraft:
     """The person's own live draft, locked; anyone else's, another firm's or an expired one is the same 404."""
     row = (await db.execute(select(AAExtractDraft).where(
@@ -154,7 +163,13 @@ def _audit_view(row: AAExtractFormat) -> dict:
 
 @router.get("/formats")
 async def list_formats(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return [formats.out(f) for f in await formats.firm_formats(db, scope_for(user))]
+    """The firm's formats. Also clears the firm's expired drafts, and (at most hourly per instance) sample folders
+    on disk older than a draft's lifetime."""
+    ent = scope_for(user)
+    if await builder.purge_drafts(db, ent):
+        await db.commit()
+    await builder.sweep_draft_folders_hourly()
+    return [formats.out(f) for f in await formats.firm_formats(db, ent)]
 
 
 @router.post("/formats", status_code=status.HTTP_201_CREATED)
@@ -267,6 +282,7 @@ async def create_draft(file: UploadFile = File(...), format_key: str | None = Fo
             logger.warning("extract_draft_unread draft_id=%s error=%s", draft_id, type(exc).__name__)
             raise _reader_error(exc) from None
         proposal = formats.merge_for_edit(current, proposal) if current else formats.fresh_proposal(proposal)
+        await _lock_firm_first(db, user, ent)  # the firm owner before the draft row (see _lock_firm_first)
         db.add(AAExtractDraft(
             id=draft_id, enterprise_id=ent, created_by=user.id,
             format_id=None if current is None or current["builtin"] else uuid.UUID(current["key"]),
@@ -275,7 +291,7 @@ async def create_draft(file: UploadFile = File(...), format_key: str | None = Fo
             proposal=proposal, asks=0, added=0,
         ))
         await db.flush()
-        await _charge(db, ent, min(stored.page_count, builder.SAMPLE_PAGES))
+        await _charge(db, ent, min(stored.page_count, builder.SAMPLE_PAGES))  # re-takes the owner lock it holds
         await db.commit()
     except BaseException:
         await db.rollback()
@@ -470,6 +486,9 @@ async def create_run(files: list[UploadFile] = File(...), format_key: str = Form
                 stored.append(await stream_upload(f, extract_run_dir(run_id)))
         except UploadRejected as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from None
+        # Lock order (runner.py): the firm owner first here, since the run row doesn't exist yet; then the new run
+        # and file rows, invisible to everyone else until commit.
+        await _lock_firm_first(db, user, ent)
         db.add(AAExtractRun(id=run_id, enterprise_id=ent, format_key=runner.AUTO if auto else single,
                             format_name=runner.AUTO_NAME if auto else snapshots[single]["name"],
                             snapshots=snapshots, status="reading", created_by=user.id))
@@ -478,7 +497,7 @@ async def create_run(files: list[UploadFile] = File(...), format_key: str = Form
                                   stored_path=s.stored_path, file_type=s.file_type, sha256=s.sha256,
                                   page_count=s.page_count, status="queued", format_key=single) for s in stored])
         await db.flush()
-        await _reserve_pages(db, user)
+        await _reserve_pages(db, user)                           # re-takes the owner lock it already holds
         await db.commit()
     except BaseException:
         await db.rollback()
@@ -491,13 +510,16 @@ async def create_run(files: list[UploadFile] = File(...), format_key: str = Form
 
 
 @router.get("/runs")
-async def list_runs(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """The firm's latest runs ("Past extracts"), newest first."""
+async def list_runs(offset: int = Query(default=0, ge=0),
+                    limit: int = Query(default=runner.RUNS_LISTED, ge=1, le=runner.RUNS_LISTED),
+                    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """One page of the firm's runs ("Past extracts"), newest first: `{"total", "offset", "runs"}`."""
     ent = scope_for(user)
+    live = [AAExtractRun.enterprise_id == ent, AAExtractRun.deleted_at.is_(None)]
+    total = (await db.execute(select(func.count(AAExtractRun.id)).where(*live))).scalar_one()
     rows = (await db.execute(
-        select(AAExtractRun, User).outerjoin(User, User.id == AAExtractRun.created_by)
-        .where(AAExtractRun.enterprise_id == ent, AAExtractRun.deleted_at.is_(None))
-        .order_by(AAExtractRun.created_at.desc(), AAExtractRun.id).limit(runner.RUNS_LISTED)
+        select(AAExtractRun, User).outerjoin(User, User.id == AAExtractRun.created_by).where(*live)
+        .order_by(AAExtractRun.created_at.desc(), AAExtractRun.id).offset(offset).limit(limit)
     )).all()
     ids = [run.id for run, _ in rows]
     files: dict[uuid.UUID, int] = {}
@@ -521,7 +543,7 @@ async def list_runs(user: User = Depends(get_current_user), db: AsyncSession = D
                     "status": run.status, "created_at": run.created_at.isoformat(),
                     "created_by": str(run.created_by) if run.created_by else None, "created_by_name": _person(creator),
                     "file_count": files.get(run.id, 0), "record_count": n, "red_count": r, "yellow_count": y})
-    return out
+    return {"total": total, "offset": offset, "runs": out}
 
 
 @router.get("/runs/{run_id}")
@@ -678,9 +700,10 @@ async def extract_file_page(file_id: str, page: int = PathParam(ge=1, le=10000),
 
 @router.delete("/runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_run(run_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Delete a run (its creator, an owner or a manager): kept as a tombstone, its stored files removed."""
+    """Delete a run (its creator, an owner or a manager): the run and file rows stay as a tombstone, its records and
+    stored files are removed. Lock order (runner.py): the run row, then its records."""
     ent = scope_for(user)
-    run = await _run_or_404(db, ent, run_id, lock=True)
+    run = await _run_or_404(db, ent, run_id, lock=True)          # 1. run
     if run.created_by != user.id and user.role not in MANAGER_ROLES:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             "Only the person who ran this extract or a manager can delete it")
@@ -690,6 +713,8 @@ async def delete_run(run_id: str, user: User = Depends(get_current_user), db: As
         AAExtractRecord.run_id == run.id, AAExtractRecord.enterprise_id == ent))).scalar_one()
     before = {"format_name": run.format_name, "status": run.status, "files": counts, "records": records}
     run.deleted_at = datetime.now(timezone.utc)
+    await db.execute(delete(AAExtractRecord).where(               # 4. records (the job's final write waits on 1)
+        AAExtractRecord.run_id == run.id, AAExtractRecord.enterprise_id == ent))
     audit.record(db, ent=ent, company_id=None, user=user, entity="extract_run", entity_id=run.id, action="delete",
                  before=before, after=None, label=run.format_name)
     await db.commit()

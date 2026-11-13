@@ -25,6 +25,7 @@ YELLOW_RATE = Decimal("0.001")
 
 _NUMERIC_TYPES = ("money", "number", "percent")
 _PLAIN_NUMBER = re.compile(r"-?(\d+(\.\d*)?|\.\d+)")
+_GROUPED = re.compile(r"\d{1,3}(,\d{3})*(\.\d+)?")  # commas in a number must be thousands groups
 _CURRENCY = re.compile(r"₱|php|\$|%", re.IGNORECASE)
 _EXTRA_DATE_FORMATS = ("%Y/%m/%d", "%d %B %Y", "%d %b %Y", "%B %d %Y", "%b %d %Y", "%m/%d/%y")
 _TRUE = frozenset({"true", "yes", "y", "1"})
@@ -61,9 +62,13 @@ def _parse_number(value: Any) -> Decimal | None:
     else:
         return None
     negative = text.startswith("(") and text.endswith(")")
-    text = _CURRENCY.sub("", text.strip("()")).replace(",", "").replace(" ", "")
+    text = _CURRENCY.sub("", text.strip("()")).replace(" ", "")
     if text.endswith("-"):
         negative, text = True, text[:-1]
+    if "," in text:  # "1.234,50" or "12,34" is not a peso amount we can trust: unreadable, never 1.23
+        if not _GROUPED.fullmatch(text.removeprefix("-")):
+            return None
+        text = text.replace(",", "")
     d = _decimal(text)
     if d is None:
         return None

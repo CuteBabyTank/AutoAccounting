@@ -1,5 +1,8 @@
+import httpx
+import pytest
+
 from app.config import settings
-from app.services.accounting import qwen_reader
+from app.services.accounting import gemini, qwen_reader
 
 
 def payload(monkeypatch, base, **kw):
@@ -28,3 +31,14 @@ def test_unknown_thinking_value_means_high(monkeypatch):
     assert p["reasoning"] == {"enabled": True, "effort": "high"}
     p = payload(monkeypatch, "https://openrouter.ai/api/v1", thinking="low")
     assert p["reasoning"] == {"enabled": True, "effort": "low"}
+
+
+async def test_network_errors_from_the_reader_become_reader_unavailable(monkeypatch):
+    async def broken(*args, **kwargs):
+        raise httpx.RemoteProtocolError("peer closed connection SECRET-DOC-TEXT")
+
+    monkeypatch.setattr(settings, "accounting_reader", "qwen")
+    monkeypatch.setattr(qwen_reader, "read", broken)
+    with pytest.raises(gemini.ReaderUnavailable) as caught:
+        await gemini.call_gemini_raw(b"%PDF", "application/pdf", "prompt", "u1")
+    assert "SECRET" not in str(caught.value) and "RemoteProtocolError" in str(caught.value)

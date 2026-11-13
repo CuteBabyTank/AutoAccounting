@@ -220,3 +220,36 @@ def test_sentence_each_kind():
                          fields) == "−Subtotal should equal Total"
     assert spec.sentence({"kind": "range", "field": "total", "min": "1", "max": None}, fields) \
         == "Total should be at least 1"
+
+
+def _dates(*keys):
+    return spec.clean_fields([{"label": k.replace("_", " "), "type": "date", "scope": "header"} for k in keys])
+
+
+def test_default_checks_skip_forward_looking_dates():
+    fields = _dates("date", "invoice_date", "period_from", "total_date", "due_date", "period_to", "valid_until",
+                    "expiry_date", "delivery_date", "maturity", "deadline")
+    future = {c["field"] for c in spec.default_checks(fields) if c["kind"] == "not_future"}
+    assert future == {"date", "invoice_date", "period_from", "total_date"}  # whole words only: "total" is not "to"
+    assert spec.forward_looking("Date_To") and not spec.forward_looking("todate")
+
+
+def test_required_and_format_are_always_red():
+    fields = spec.clean_fields(F)
+    out = spec.clean_checks([{"kind": "required", "field": "total", "level": "yellow"},
+                             {"kind": "format", "field": "seller_tin", "pattern": "tin", "level": "yellow"},
+                             {"kind": "range", "field": "total", "min": 0, "level": "yellow"}], fields)
+    assert [(c["kind"], c["level"]) for c in out] == [("required", "red"), ("format", "red"), ("range", "yellow")]
+    yellow_req = [{"id": "c_old", "kind": "required", "field": "total", "level": "yellow"}]
+    _, kept = spec.apply_picks(fields, yellow_req, [{"key": "total", "label": "Total", "required": True}], ["c_old"])
+    assert [(c["kind"], c["level"]) for c in kept] == [("required", "red")]
+
+
+def test_apply_picks_keeps_required_checks_ahead_of_the_cap():
+    many = spec.clean_fields([{"label": f"f{i}", "type": "money", "scope": "header"} for i in range(40)])
+    inherited = spec.clean_checks([{"kind": "range", "field": f"f{i}", "min": 0} for i in range(30)], many)
+    picks = [{"key": f["key"], "label": f["label"], "required": i < 5} for i, f in enumerate(many)]
+    _, kept = spec.apply_picks(many, inherited, picks, [c["id"] for c in inherited])
+    assert len(kept) == spec.MAX_CHECKS
+    assert [c["field"] for c in kept if c["kind"] == "required"] == ["f0", "f1", "f2", "f3", "f4"]
+    assert [c["kind"] for c in kept[:5]] == ["required"] * 5

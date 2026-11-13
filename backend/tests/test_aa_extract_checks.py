@@ -221,3 +221,17 @@ def test_atc_ignores_spaces_hyphens_and_case():
 def test_control_characters_are_never_stored():
     assert checks.clean_value("AB\x00C\x07", "text") == ("ABC", True)
     assert checks.clean_value("A\x1fB\tC", "text") == ("A B C", True)
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("1,234.50", ("1234.50", True)), ("1,234", ("1234.00", True)), ("₱ 1,234,567.8", ("1234567.80", True)),
+    ("(12,345.00)", ("-12345.00", True)), ("-1,000", ("-1000.00", True)),
+    ("1.234,50", ("1.234,50", False)), ("12,34", ("12,34", False)), ("1,2345.00", ("1,2345.00", False)),
+    (",123", (",123", False)), ("1,,234", ("1,,234", False))])
+def test_commas_must_be_thousands_groups(text, expected):
+    assert checks.clean_value(text, "money") == expected
+
+
+def test_commas_in_numbers_follow_the_same_rule():
+    assert checks.clean_value("1,234", "number") == ("1234", True)
+    assert checks.clean_value("1.234,5", "number") == ("1.234,5", False)

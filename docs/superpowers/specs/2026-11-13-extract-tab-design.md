@@ -76,7 +76,7 @@ removes the copy.
    the value found) and proposed checks chosen from the catalogue below.
 3. The server cleans the reply (`extract/spec.py`): unknown types / kinds dropped, text sanitized, caps applied,
    checks that name unknown fields dropped, and its own default checks added by field type (every `tin` field gets
-   the TIN format check, dates must not be in the future).
+   the TIN format check, document dates must not be in the future (due / period-end / validity dates are exempt)).
 4. The proposal is stored as a draft (`aa_extract_drafts`). The screen shows field chips with the value found;
    the person switches them on or off, may rename a label and mark a field required, and sees each check as a
    plain sentence with its own switch.

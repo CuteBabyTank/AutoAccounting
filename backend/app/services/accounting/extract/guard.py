@@ -42,6 +42,12 @@ def _instructions(text: str) -> bool:
     return any(p in spaced for p in _SPACED) or any(p in compact for p in _COMPACT)
 
 
+def looks_like_instructions(text: str) -> bool:
+    """The note's phrase check, for other text that ends up quoted in a prompt (model-written descriptions, hints
+    and labels read from a sample)."""
+    return isinstance(text, str) and _instructions(unicodedata.normalize("NFKC", text).translate(_QUOTES))
+
+
 def field_names(note: str) -> list[str]:
     """Plain field names from a note: split on commas, semicolons and " and "; each at most 60 characters, at most
     10. Raises ``ValueError`` (a message for the person) when the note is empty, too long, holds anything but plain

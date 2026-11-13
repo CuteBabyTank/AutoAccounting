@@ -206,3 +206,36 @@ def test_admin_row_shows_prompt_and_deleted_flag():
     out = extract_format_row(r, "Santos CPA", "Ana")
     assert out["firm"] == "Santos CPA" and out["deleted"] and out["updated_by"] == "Ana"
     assert '"total_amount"' in out["prompt"] and out["checks"][0]["sentence"]
+
+
+def test_stale_draft_folders_are_picked_by_age_and_name():
+    now = 1_000_000_000.0
+    day = 24 * 3600
+    old, young, odd = str(uuid.uuid4()), str(uuid.uuid4()), "not-a-draft"
+    entries = [(old, now - day - builder.SWEEP_GRACE_SECONDS - 1), (young, now - day + 60),
+               (odd, now - 10 * day), ("../" + old, now - 10 * day)]
+    assert builder.stale_draft_folders(entries, now) == [old]
+    assert builder.stale_draft_folders([], now) == []
+
+
+def test_sweep_draft_folders_tolerates_a_missing_root(monkeypatch, tmp_path):
+    from app.config import settings
+    monkeypatch.setattr(settings, "accounting_dir", str(tmp_path / "nowhere"))
+    assert builder.sweep_draft_folders_sync() == 0
+
+
+def test_sweep_draft_folders_removes_only_old_ones(monkeypatch, tmp_path):
+    import os
+    import time
+
+    from app.config import settings
+    monkeypatch.setattr(settings, "accounting_dir", str(tmp_path))
+    drafts = tmp_path / "extract" / "drafts"
+    old, young = drafts / str(uuid.uuid4()), drafts / str(uuid.uuid4())
+    for folder in (old, young):
+        folder.mkdir(parents=True)
+        (folder / "sample.pdf").write_bytes(b"x")
+    stamp = time.time() - 3 * 24 * 3600
+    os.utime(old, (stamp, stamp))
+    assert builder.sweep_draft_folders_sync() == 1
+    assert not old.exists() and young.exists()

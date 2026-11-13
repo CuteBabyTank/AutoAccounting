@@ -34,6 +34,10 @@ MAX_DECIMALS = 12
 _PUNCT = frozenset("-/.,()%#&'")
 _NUMERIC = ("money", "number", "percent")
 _PATTERN_WORDS = {"tin": "a valid TIN", "atc": "an ATC code", "zip": "a valid ZIP code"}
+_ALWAYS_RED = ("required", "format")
+# Words in a date field's key that mark a date which may rightly be in the future (due, period end, validity).
+_FORWARD_WORDS = frozenset({"due", "to", "end", "until", "expiry", "expires", "expiration", "valid", "validity",
+                            "maturity", "delivery", "deadline"})
 
 
 def clean_text(value: Any, limit: int) -> str:
@@ -237,7 +241,8 @@ def _check_id(kind: str, params: dict) -> str:
 
 
 def clean_checks(raw: Any, fields: list[Field]) -> list[Check]:
-    """Keep catalogue checks whose fields exist with the right types (max 30, deduped by id)."""
+    """Keep catalogue checks whose fields exist with the right types (max 30, deduped by id). `required` and
+    `format` checks are always red, whatever level was asked for."""
     if not isinstance(raw, list):
         return []
     refs = _Refs(fields)
@@ -254,20 +259,27 @@ def clean_checks(raw: Any, fields: list[Field]) -> list[Check]:
         if cid in seen:
             continue
         seen.add(cid)
-        level = item.get("level") if item.get("level") in LEVELS else "red"
+        level = item.get("level") if item.get("level") in LEVELS and kind not in _ALWAYS_RED else "red"
         out.append({"id": cid, "kind": kind, "level": level, **params})
         if len(out) >= MAX_CHECKS:
             break
     return out
 
 
+def forward_looking(key: str) -> bool:
+    """A date field whose key (split on `_`) holds a word like due, to, end, until or valid: its date may rightly be
+    in the future, so it gets no `not_future` check. Whole words only (`total_date` is not `to`)."""
+    return any(word in _FORWARD_WORDS for word in key.casefold().split("_"))
+
+
 def default_checks(fields: list[Field]) -> list[Check]:
-    """Checks every format gets: TIN format, dates not in the future, required fields filled."""
+    """Checks every format gets: TIN format, document dates not in the future (due / period-end / validity dates
+    are exempt), required fields filled."""
     raw: list[dict] = []
     for f in fields:
         if f["type"] == "tin":
             raw.append({"kind": "format", "field": f["key"], "pattern": "tin"})
-        if f["type"] == "date":
+        if f["type"] == "date" and not forward_looking(f["key"]):
             raw.append({"kind": "not_future", "field": f["key"]})
         if f["required"]:
             raw.append({"kind": "required", "field": f["key"]})
@@ -305,10 +317,8 @@ def apply_picks(fields: list[Field], checks: list[Check], picks: list[dict],
     wanted = set(check_ids)
     inherited = [c for c in checks
                  if c["kind"] != "required" and c["id"] in wanted and all(k in survivors for k in check_fields(c))]
-    old_levels = {c["field"]: c["level"] for c in checks if c["kind"] == "required"}
-    required = [{"kind": "required", "field": f["key"], "level": old_levels.get(f["key"], "red")}
-                for f in kept_fields if f["required"]]
-    return kept_fields, clean_checks(inherited + required, kept_fields)
+    required = [{"kind": "required", "field": f["key"]} for f in kept_fields if f["required"]]
+    return kept_fields, clean_checks(required + inherited, kept_fields)  # required first: the cap never cuts them
 
 
 # ── sentences ─────────────────────────────────────────────────────────────

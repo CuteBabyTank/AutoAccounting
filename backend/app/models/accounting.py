@@ -1095,7 +1095,7 @@ class AAExtractRecord(Base):
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     values: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     edited: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)  # cells a person changed
-    bad_cells: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    bad_cells: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     flags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()

@@ -12,7 +12,7 @@ import uuid
 from urllib.parse import urlparse
 
 import httpx
-from sqlalchemy import delete
+from sqlalchemy import delete, func, select
 
 from app.auth.jwt import create_access_token
 from app.config import settings
@@ -101,6 +101,10 @@ async def main(base: str):
             r = await c.get(f"{base_x}/formats", headers=h_b)
             check("B never lists A's format", [f["name"] for f in r.json() if SECRET in f["name"] and f["key"] != fb["format"]], [])
             check("A reads own records page", await call("GET", f"{base_x}/runs/{fa['run']}/records", h_a), 200)
+            r = await c.get(f"{base_x}/runs", headers=h_a)
+            check("A lists own run", fa["run"] in [x["id"] for x in r.json()["runs"]], True)
+            r = await c.get(f"{base_x}/runs", headers=h_b, params={"limit": 50})
+            check("B never lists A's run", fa["run"] in [x["id"] for x in r.json()["runs"]], False)
 
             # Firm B against firm A's ids: all 404.
             ghost = [
@@ -160,6 +164,21 @@ async def main(base: str):
             check("features reports off for the person", r.json()["enabled"].get("extract"), False)
             check("owner turns it back on", await call("PUT", acc, h_a, json={"off": []}), 200)
             check("employee 200 after access restored", await call("GET", f"{base_x}/formats", h_emp), 200)
+
+            # A deletes its own run: run and file rows stay as a tombstone, the records go.
+            check("A deletes own run", await call("DELETE", f"{base_x}/runs/{fa['run']}", h_a), 204)
+            r = await c.get(f"{base_x}/runs", headers=h_a)
+            check("deleted run leaves the list", fa["run"] in [x["id"] for x in r.json()["runs"]], False)
+            async with async_session() as db:
+                await bind_session_user(db, str(a))
+                run_id = uuid.UUID(fa["run"])
+                left = (await db.execute(select(func.count(AAExtractRecord.id)).where(
+                    AAExtractRecord.run_id == run_id, AAExtractRecord.enterprise_id == a))).scalar_one()
+                kept = (await db.execute(select(func.count(AAExtractFile.id)).where(
+                    AAExtractFile.run_id == run_id, AAExtractFile.enterprise_id == a))).scalar_one()
+                await db.commit()
+            check("deleted run's records removed", left, 0)
+            check("deleted run's file row kept", kept, 1)
         print(f"ALL {passed} CHECKS PASSED")
     finally:
         # Everything hangs off the users (ON DELETE CASCADE): formats, runs, files, records, overrides, audit rows.

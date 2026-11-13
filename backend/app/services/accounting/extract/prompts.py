@@ -11,7 +11,7 @@ import math
 import re
 from typing import Any
 
-from app.services.accounting.extract import checks, spec
+from app.services.accounting.extract import checks, guard, spec
 
 DETECT_THRESHOLD = 60.0
 MAX_DOCUMENTS = 200
@@ -102,6 +102,10 @@ catalogue. In checks, name fields by the exact "label" you listed in STEP 1.
 - not_more_than: {{"kind": "not_more_than", "field": L, "limit_field": L}} - field <= limit_field (e.g. tax
   withheld <= income).
 - differs: {{"kind": "differs", "a": L, "b": L}} - two fields are never equal (e.g. seller TIN and buyer TIN).
+Look for sums: when a table row has component amount columns and a total column (e.g. three monthly amounts and a
+total), propose a row-scoped sum ({{"kind": "sum", "terms": [{{"field": "Month 1", "sign": 1}}, {{"field": "Month 2",
+"sign": 1}}, {{"field": "Month 3", "sign": 1}}], "target": "Total"}}, all row fields); when the document prints a
+subtotal / tax / total chain, propose a header sum (e.g. Subtotal + VAT = Total).
 Every check uses fields of one scope (all header or all row), except rows_sum. Add "level": "yellow" for a check
 that is only worth a look and can be off on a correct document (e.g. quantity x unit price when discounts are
 printed per line); otherwise leave level out. Propose a check only when the fields it needs are on the document.
@@ -300,9 +304,10 @@ def _page(value: Any, default: int) -> int:
     return default if number is None else int(max(0.0, min(number, MAX_PAGE)))
 
 
-def _confidence(value: Any) -> float:
+def _confidence(value: Any) -> float | None:
+    """The reader's certainty, 0-100; None when it gave none (no low-confidence marker then)."""
     number = _finite(value)
-    return 0.0 if number is None else min(100.0, max(0.0, number))
+    return None if number is None else min(100.0, max(0.0, number))
 
 
 def _to_key(name: Any, lookup: dict[str, str]) -> Any:
@@ -336,16 +341,27 @@ def _fields_of(data: Any) -> Any:
     return data if isinstance(data, list) else data.get("fields") if isinstance(data, dict) else None
 
 
+def _model_text(text: str) -> str:
+    """Model-written text that is later quoted into prompts: blank when it reads like instructions."""
+    return "" if guard.looks_like_instructions(text) else text
+
+
+def _safe_fields(fields: list[spec.Field]) -> list[spec.Field]:
+    """Fields read from a sample, minus any whose label reads like instructions; such descriptions are blanked."""
+    return [{**f, "description": _model_text(f["description"])} for f in fields
+            if not guard.looks_like_instructions(f["label"])]
+
+
 def parse_proposal(raw: str) -> dict:
     """The builder's reply as `{"name", "detect_hint", "fields" (with "value"), "checks"}`, cleaned."""
     data = _load(raw)
     if not isinstance(data, (dict, list)):
         raise ValueError("unreadable_reply")
     obj = data if isinstance(data, dict) else {}
-    fields = spec.clean_fields(_fields_of(data))
+    fields = _safe_fields(spec.clean_fields(_fields_of(data)))
     return {
-        "name": spec.clean_text(obj.get("name"), spec.MAX_LABEL),
-        "detect_hint": spec.clean_text(obj.get("detect_hint"), spec.MAX_DESCRIPTION),
+        "name": _model_text(spec.clean_text(obj.get("name"), spec.MAX_LABEL)),
+        "detect_hint": _model_text(spec.clean_text(obj.get("detect_hint"), spec.MAX_DESCRIPTION)),
         "fields": fields,
         "checks": spec.clean_checks(_keyed_checks(obj.get("checks"), fields), fields),
     }
@@ -356,15 +372,17 @@ def parse_missing(raw: str) -> list[spec.Field]:
     data = _load(raw)
     if not isinstance(data, (dict, list)):
         raise ValueError("unreadable_reply")
-    return [f for f in spec.clean_fields(_fields_of(data)) if f.get("value")]
+    return [f for f in _safe_fields(spec.clean_fields(_fields_of(data))) if f.get("value")]
 
 
 def parse_records(raw: str, fields: list[spec.Field], page_offset: int = 0,
                   chunk_pages: int | None = None) -> list[dict]:
-    """Records read from one chunk, with file-global 1-based pages (clamped to the chunk) and cleaned values."""
+    """Records read from one chunk, with file-global 1-based pages (clamped to the chunk) and cleaned values. A
+    reply that is one object without "documents" is a single document only when it carries one of the format's
+    field keys, "page_start" or (for a format with row fields) a "rows" list; `{"error": ...}` or `{}` give none."""
     data = _load(raw)
     if isinstance(data, dict):
-        items = data.get("documents", [data])
+        items = data.get("documents", [data] if _one_document(data, fields) else [])
     elif isinstance(data, list):
         items = data
     else:
@@ -387,6 +405,12 @@ def parse_records(raw: str, fields: list[spec.Field], page_offset: int = 0,
         if len(out) >= MAX_DOCUMENTS:
             break
     return out
+
+
+def _one_document(data: dict, fields: list[spec.Field]) -> bool:
+    if "page_start" in data or any(f["key"] in data for f in fields):
+        return True
+    return isinstance(data.get("rows"), list) and any(f["scope"] == "row" for f in fields)
 
 
 def parse_detection(raw: str, count: int) -> tuple[int | None, float]:

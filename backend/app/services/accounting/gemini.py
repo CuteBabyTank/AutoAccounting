@@ -5,6 +5,7 @@ package's model and thinking level.
 """
 
 import fitz  # PyMuPDF
+import httpx
 from google.genai import types
 
 from app.config import settings
@@ -34,6 +35,8 @@ async def call_gemini_raw(file_bytes: bytes, mime_type: str, prompt: str, user_i
             return await qwen_reader.read(file_bytes, mime_type, prompt, user_id, thinking, model, timeout)
         except qwen_reader.ReaderError as e:
             raise ReaderUnavailable(f"Reader failed: {e}") from None
+        except httpx.HTTPError as e:  # network failures qwen_reader doesn't map (protocol, read, write, pool)
+            raise ReaderUnavailable(f"Reader failed: {type(e).__name__}") from None
     try:
         return await _gemini(file_bytes, mime_type, prompt, user_id, thinking, model)
     except RuntimeError as e:

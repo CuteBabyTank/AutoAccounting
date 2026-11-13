@@ -4,15 +4,17 @@ A run snapshots the formats it may use when it is created (`{key: {"name", "fiel
 reading, re-flagging after a hand edit and export always use that snapshot, never the live format.
 
 The job follows the upload pipeline's rules: its own session bound to the firm owner for RLS, one job slot per firm
-(the pipeline's own `JobSlots`, so uploads and Extract runs share the instance), a commit before every reader call,
-chunks built one at a time inside the reader gate (`pipeline.read_chunks`), resumable after a restart (files left in
-`detecting` / `reading` are requeued on the next read of the run, with interrupts counted), and pages charged once
-per file, only when it was read. One file's failure never stops the others.
+(Extract's own `JobSlots`, two at once per instance, so a firm's Extract run never holds up its uploads), a commit
+before every reader call, chunks built one at a time inside the reader gate (`pipeline.read_chunks`), resumable after
+a restart (files left in `detecting` / `reading` are requeued on the next read of the run, with interrupts counted),
+and pages charged once per file, only when it was read. One file's failure never stops the others.
 
 Lock order, everywhere in Extract (routes and this job): the run row first, then the firm owner's `users` row (the
 budget lock: `lock_firm`, `assert_pending_page_budget`, `charge_for_pages`), then file rows (records last). A
 transaction may skip a level but never takes an earlier one after a later one. Rows a transaction has just inserted
-are invisible to others and don't count.
+are invisible to others and don't count. Creating a run or a draft therefore takes the owner lock first, before its
+first insert (the run row doesn't exist yet): inserting a row that references the owner takes FOR KEY SHARE on the
+owner's row, and asking FOR UPDATE after that deadlocks two overlapping drops.
 """
 
 import asyncio
@@ -35,7 +37,7 @@ from app.models.user import User, UserRole
 from app.services.accounting import gemini, pipeline
 from app.services.accounting.extract import checks, prompts, spec
 from app.services.accounting.jobs import (
-    INTERRUPTED_MESSAGE, MAX_INTERRUPTS, STALE_AFTER, after_interrupt, stale_action,
+    INTERRUPTED_MESSAGE, MAX_INTERRUPTS, STALE_AFTER, JobSlots, after_interrupt, stale_action,
 )
 from app.services.accounting.storage import extract_run_dir, is_stored_path_safe
 from app.services.usage_service import charge_for_pages, increment_usage
@@ -275,6 +277,7 @@ def own_file(run_id: uuid.UUID, stored_path: str) -> bool:
 
 # ── jobs ──────────────────────────────────────────────────────────────────
 
+_SLOTS = JobSlots(total=2)  # Extract's own: one run per firm, two at once per instance, apart from uploads
 _TASKS: set[asyncio.Task] = set()
 _ACTIVE: dict[uuid.UUID, uuid.UUID] = {}      # run -> firm, while queued for a slot or running
 _AGAIN: set[uuid.UUID] = set()                 # runs given more work while their job was running
@@ -344,7 +347,7 @@ async def release_running() -> None:
 
 async def _guarded(run_id: uuid.UUID, user_id: str, firm_id: uuid.UUID) -> None:
     try:
-        async with pipeline._SLOTS.slot(str(firm_id)):
+        async with _SLOTS.slot(str(firm_id)):
             await _job(run_id, user_id, firm_id)
     except Exception:
         logger.exception("extract_job_failed run_id=%s", run_id)

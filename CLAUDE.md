@@ -237,23 +237,33 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   `spec.clean_checks`, an evaluator in `checks`, a `spec.sentence` line, a `BUILDER_PROMPT` mention and the field-param
   mirror in `components/extract/CheckList.tsx` (`FIELD_PARAMS`). Every kind except `rows_sum` needs all its fields in
   one scope. `sum` / `rows_sum` count blank terms as 0 when the target and one term are present, and skip when an
-  operand is unreadable; `format atc` ignores spaces, hyphens and case. Money: difference <= 0.05 passes, <= max(1.00,
-  0.1% of target) is yellow, else red; confidence under 70 is a yellow marker.
+  operand is unreadable; `format atc` ignores spaces, hyphens and case. `required` and `format` checks are always red.
+  Default checks: TIN format, required, and `not_future` on date fields except forward-looking ones (a key word, split
+  on `_`, in `spec._FORWARD_WORDS`: due, to, end, until, valid, expiry...). Money: difference <= 0.05 passes,
+  <= max(1.00, 0.1% of target) is yellow, else red; commas must be thousands groups ("1.234,50" is unreadable);
+  confidence under 70 is a yellow marker (none given = no marker).
   **Missing-fields guard** (`extract/guard.py`): the owner's "what's missing" note (200 chars) only names fields. It is
   an allowlist, and rejects rather than strips (ASCII letters / digits, ñ, space and `- / . , ( ) % # & ' ; :`; newlines
   count as spaces); the phrase check runs on the whole note in a spaced and a compact view and again on the final
   names. Per draft: 5 asks, 10 fields added. Proposals are the default checks first, then the model's, through
-  `spec.clean_checks`. **Drafts** (sample reads, first 5 pages) last 24 h, creator only; formats are written by
+  `spec.clean_checks`. Model-written labels / descriptions / hints / names that read like instructions
+  (`guard.looks_like_instructions`) are dropped or blanked. **Drafts** (sample reads, first 5 pages) last 24 h,
+  creator only (expired rows purged on `create_draft` and `GET /formats`; sample folders older than 25 h swept from
+  disk at startup and at most hourly per instance, `builder.sweep_draft_folders`); formats are written by
   owner / manager only (`MANAGER_ROLES`), any firm role with the `extract` area may use them. Editing an unedited
   built-in needs a sample drop (the firm copy is made from a draft carrying `base_key`). Builder env:
   `EXTRACT_BUILDER_*`. Billing: `usage_service.assert_pending_page_budget` counts unread Extract pages too (uploads and
   Extract share one pending set); a sample is charged `min(pages, 5)` once, a missing-fields ask is free.
   **Runs** (`extract/runner.py`): files live under `<accounting root>/extract/runs/<run id>/` (drafts under
   `extract/drafts/<draft id>/`); a run snapshots its formats and reading, re-flagging after hand edits and export
-  always use the snapshot. `GET /runs/{id}` returns counts; records are paged at `GET /runs/{id}/records` (limit <=
-  200). The job reuses `pipeline.read_chunks` and the pipeline's job slots (one per firm, shared with uploads), resumes
-  on the next `GET /runs/{id}`, and `runner.release_running` dates running files back at shutdown. **Lock order**
-  everywhere: run row, then the firm owner row, then file rows, then records (comment at the top of `runner.py`).
+  always use the snapshot. `GET /runs` pages "Past extracts" (`offset`, `limit` <= 50 → `{"total", "offset",
+  "runs"}`); `GET /runs/{id}` returns counts; records are paged at `GET /runs/{id}/records` (limit <= 200). Deleting a
+  run keeps run + file rows as a tombstone and deletes its records and files. The job reuses `pipeline.read_chunks`
+  with Extract's own job slots (`runner._SLOTS`: one per firm, two per instance, apart from uploads), resumes on the
+  next `GET /runs/{id}`, and `runner.release_running` dates running files back at shutdown. **Lock order**
+  everywhere: run row, then the firm owner row, then file rows, then records (comment at the top of `runner.py`);
+  creating a run or a draft takes the owner lock before its first insert (the FK insert's KEY SHARE then a FOR
+  UPDATE deadlocked overlapping drops).
   Export is capped at 20,000 records and 2,000,000 cells; text is stripped of control characters, then `csv_safe`.
   **Admin**: Platform admin → "Extract formats" (`components/admin/ExtractFormats.tsx`, `GET /api/admin/extract-formats`)
   lists every firm's formats read only, through a SELECT-only admin RLS policy (`aa_extract_formats_admin_read`); the

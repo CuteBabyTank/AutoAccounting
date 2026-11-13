@@ -23,3 +23,16 @@ def test_rls_covers_every_table_and_admin_reads_formats_only():
 def test_switch_and_audit_plumbing():
     assert "extract" in features.KEYS and "extract" in access.PERSONAL_KEYS
     assert {"extract_format", "extract_run"} <= audit.ENTITIES
+
+
+def test_extract_jobs_have_their_own_slots_and_runs_page_by_fifty():
+    import inspect
+
+    from app.routers import accounting_extract
+    from app.services.accounting import pipeline
+    from app.services.accounting.extract import runner
+
+    assert runner._SLOTS is not pipeline._SLOTS and runner._SLOTS._total._value == 2
+    params = inspect.signature(accounting_extract.list_runs).parameters
+    assert params["offset"].default.default == 0 and params["limit"].default.default == runner.RUNS_LISTED == 50
+    assert AAExtractRecord.__table__.c.bad_cells.default.arg.__name__ == "list"

@@ -20,6 +20,7 @@ from app.edge import client_ip, origin_allowed
 from app.logging_config import setup_logging
 from app.routers import accounting, admin, auth, features, team
 from app.services.accounting import pipeline
+from app.services.accounting.extract import builder as extract_builder
 from app.services.accounting.extract import runner as extract_runner
 from app.services.features import feature_gate
 from app.auth.security import global_ip_limiter, should_limit_ip
@@ -42,6 +43,7 @@ setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await startup_migrations.run_all(engine)
+    await extract_builder.sweep_draft_folders()  # Extract samples nobody came back to (never raises)
     try:
         yield
     finally:

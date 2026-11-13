@@ -70,7 +70,7 @@ _BIR2307_CHECKS = [
     {"kind": "format", "field": "atc", "pattern": "atc"},
     {"kind": "format", "field": "payee_zip", "pattern": "zip"},
     {"kind": "format", "field": "payor_zip", "pattern": "zip"},
-    {"kind": "percent_of", "target": "tax_withheld", "base": "total_income", "rates": [1, 2, 5, 10, 15],
+    {"kind": "percent_of", "target": "tax_withheld", "base": "total_income", "rates": [0.5, 1, 2, 5, 10, 15],
      "level": "yellow"},
 ]
 

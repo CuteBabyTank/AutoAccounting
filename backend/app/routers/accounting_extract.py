@@ -5,26 +5,31 @@ A draft belongs to the person who dropped the sample and lives 24 hours. Saving 
 flags and check ids from the browser; definitions come from the stored draft (and the current format on edit).
 """
 
+import asyncio
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi import Path as PathParam
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.security import extract_ask_limiter, extract_draft_limiter, upload_limiter
+from app.auth.security import export_limiter, extract_ask_limiter, extract_draft_limiter, upload_limiter
 from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.models.accounting import AAExtractDraft, AAExtractFile, AAExtractFormat, AAExtractRecord, AAExtractRun
 from app.models.user import User, UserRole
 from app.routers.accounting_scope import MANAGER_ROLES, scope_for
 from app.services.accounting import audit, gemini
-from app.services.accounting.extract import builder, checks, formats, guard, runner, spec
+from app.services.accounting.extract import builder, checks, export, formats, guard, runner, spec
 from app.services.accounting.pipeline import READER_DOWN_MESSAGE
+from app.services.accounting.xlsx_preview import workbook_preview
 from app.services.accounting.storage import (
     UploadRejected, extract_draft_dir, extract_run_dir, read_page_bytes, stream_upload,
 )
@@ -683,3 +688,52 @@ async def delete_run(run_id: str, user: User = Depends(get_current_user), db: As
                  before=before, after=None, label=run.format_name)
     await db.commit()
     await runner.remove_files(run.id)
+
+
+EXPORT_MAX_RECORDS = 20000
+_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@router.get("/runs/{run_id}/xlsx")
+async def run_xlsx(run_id: str, format_key: str | None = Query(default=None, max_length=40), preview: bool = False,
+                   user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """One format's records of a run as a workbook (`preview=true`: the sheets as cells for the in-app preview).
+    `format_key` is needed when the run has records from more than one format."""
+    ent = scope_for(user)
+    if not export_limiter.check_and_record(str(user.id)):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many exports. Please wait a few minutes.")
+    run = await _run_or_404(db, ent, run_id)
+    with_records = list((await db.execute(
+        select(AAExtractFile.format_key).join(AAExtractRecord, AAExtractRecord.file_id == AAExtractFile.id)
+        .where(AAExtractFile.run_id == run.id, AAExtractFile.enterprise_id == ent,
+               AAExtractRecord.enterprise_id == ent).distinct())).scalars())
+    snapshots = run.snapshots or {}
+    try:
+        key = runner.records_format(format_key, with_records, snapshots)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from None
+    snapshot = snapshots.get(key) if key is not None else None
+    if snapshot is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Nothing to export yet")
+    where = [AAExtractRecord.run_id == run.id, AAExtractRecord.enterprise_id == ent,
+             AAExtractFile.enterprise_id == ent, AAExtractFile.format_key == key]
+    joined = select(AAExtractRecord, AAExtractFile.original_name).join(
+        AAExtractFile, AAExtractFile.id == AAExtractRecord.file_id).where(*where)
+    total = (await db.execute(select(func.count()).select_from(joined.subquery()))).scalar_one()
+    if total == 0:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Nothing to export yet")
+    if total > EXPORT_MAX_RECORDS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"This run has {total} records; export at most {EXPORT_MAX_RECORDS} at a time")
+    found = (await db.execute(joined.order_by(AAExtractFile.created_at, AAExtractFile.id, AAExtractRecord.position,
+                                              AAExtractRecord.id))).all()
+    records = [{"position": r.position, "file": name, "page_start": r.page_start, "page_end": r.page_end,
+                "values": r.values or {}, "flags": r.flags or []} for r, name in found]
+    name = snapshot.get("name") or run.format_name or "Extract"
+    data = await asyncio.to_thread(export.workbook, name, snapshot, records)
+    if preview:
+        return JSONResponse({"sheets": await asyncio.to_thread(workbook_preview, data)})
+    safe = re.sub(r"[^A-Za-z0-9 _-]+", "", name).strip() or "Extract"
+    day = datetime.now(ZoneInfo("Asia/Manila")).date().isoformat()
+    return Response(content=data, media_type=_XLSX,
+                    headers={"Content-Disposition": f'attachment; filename="{safe} extract {day}.xlsx"'})

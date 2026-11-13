@@ -104,7 +104,7 @@ export default function ExtractPage() {
 
   return (
     <div className="lp relative min-h-screen">
-      <div className="p-4 sm:p-8 max-w-6xl page-enter">
+      <div className={`p-4 sm:p-8 page-enter ${openRunId ? "max-w-[100rem]" : "max-w-6xl"}`}>
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">Extract</h1>
           <p className="mt-1 text-sm text-[var(--text-secondary)]">
@@ -139,7 +139,16 @@ export default function ExtractPage() {
         )}
 
         {openRunId ? (
-          <RunTable key={openRunId} runId={openRunId} onBack={() => setOpenRunId(null)} onChanged={loadRuns} />
+          <RunTable
+            key={openRunId}
+            runId={openRunId}
+            onBack={(message) => {
+              setOpenRunId(null);
+              setError(message ?? "");
+              loadRuns(); // hand edits change the red / yellow counts
+            }}
+            onChanged={loadRuns}
+          />
         ) : (
           <RunHistory
             runs={runs}

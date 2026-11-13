@@ -58,3 +58,31 @@ def test_row_flag_marks_the_line_cell_and_numbers_run_in_export_order():
     col = [c.value for c in lines[1]].index("Amount") + 1
     assert lines.cell(3, col).fill.fgColor.rgb.endswith("FFF2CC") and lines.cell(3, 1).value == 2
     assert lines.cell(2, col).comment is None
+
+
+def test_control_characters_do_not_break_the_export():
+    r = record(1, "10.00")
+    r["values"]["header"].update(seller_name="A\x00B\x07C\x1f", buyer_name="\x00=HYPERLINK(\"http://x\")")
+    flag = {"check_id": "c_x", "level": "red", "message": "\x00=bad\x07", "cells": [{"key": "seller_name", "row": None}]}
+    r["flags"] = [flag]
+    r["file"] = "a\x00.pdf"
+    wb = load_workbook(io.BytesIO(export.workbook("Invoice", SNAP, [r])))
+    ws = wb["Records"]
+    head = [c.value for c in ws[1]]
+    assert ws.cell(2, head.index("Seller name") + 1).value == "ABC"
+    assert ws.cell(2, head.index("Buyer name") + 1).value.startswith("'=")
+    assert ws.cell(2, head.index("Needs review") + 1).value == "'=bad"
+    assert ws.cell(2, 2).value == "a.pdf"
+
+
+def test_text_is_capped():
+    r = record(1, "10.00")
+    r["values"]["header"]["seller_name"] = "x" * 40000
+    ws = load_workbook(io.BytesIO(export.workbook("Invoice", SNAP, [r])))["Records"]
+    head = [c.value for c in ws[1]]
+    assert len(ws.cell(2, head.index("Seller name") + 1).value) == 32000
+
+
+def test_cell_count():
+    assert export.cell_count(10, 5, 100, 300) == 100 * 14 + 300 * 7
+    assert export.MAX_CELLS == 2_000_000

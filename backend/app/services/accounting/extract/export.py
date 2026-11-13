@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -21,6 +22,19 @@ _FILLS = {"yellow": PatternFill("solid", fgColor="FFF2CC"), "red": PatternFill("
 _MONEY_FORMAT = "#,##0.00"
 _BOLD = Font(bold=True)
 _MAX_NUMBER_CHARS = 30
+MAX_CELLS = 2_000_000
+_TEXT_MAX = 32000  # Excel's cell limit is 32,767 characters
+
+
+def cell_count(header_fields: int, row_fields: int, records: int, lines: int) -> int:
+    """Cells the workbook would hold: each record has its header fields plus #, File, Pages and Needs review; each
+    line its row fields plus Record # and Line."""
+    return records * (header_fields + 4) + lines * (row_fields + 2)
+
+
+def _text(value: Any) -> Any:
+    """A text cell: characters Excel files can't hold removed, capped, then neutralised against formulas."""
+    return csv_safe(ILLEGAL_CHARACTERS_RE.sub("", "" if value is None else str(value))[:_TEXT_MAX])
 
 
 def _number(text: str) -> Decimal | None:
@@ -42,20 +56,20 @@ def _put(ws, row: int, col: int, ftype: str, value: Any) -> None:
         cell.value = float(number) if number != number.to_integral_value() else int(number)
         cell.number_format = _MONEY_FORMAT
     else:
-        cell.value = csv_safe(text)
+        cell.value = _text(text)
 
 
 def _mark(ws, row: int, col: int, level: str, message: str) -> None:
     cell = ws.cell(row, col)
     if level == "red" or cell.fill.fill_type is None:  # red wins over yellow
         cell.fill = _FILLS[level]
-    text = csv_safe(message)
+    text = _text(message)
     cell.comment = Comment(text if cell.comment is None else f"{cell.comment.text}\n{text}", "Extract")
 
 
 def _head(ws, labels: list[str]) -> None:
     for col, label in enumerate(labels, 1):
-        cell = ws.cell(1, col, csv_safe(label))
+        cell = ws.cell(1, col, _text(label))
         cell.font = _BOLD
     ws.freeze_panes = "A2"
 
@@ -96,7 +110,7 @@ def workbook(format_name: str, snapshot: dict, records: list[dict]) -> bytes:
         r = n + 1
         values = rec.get("values") or {}
         ws.cell(r, 1, n)
-        ws.cell(r, 2, csv_safe(str(rec.get("file") or "")))
+        ws.cell(r, 2, _text(rec.get("file") or ""))
         ws.cell(r, 3, _pages(rec))
         head_values = values.get("header") or {}
         for f in header:
@@ -107,7 +121,7 @@ def workbook(format_name: str, snapshot: dict, records: list[dict]) -> bytes:
                 lines.cell(line_at, 1, n)
                 lines.cell(line_at, 2, i)
                 for f in rows:
-                    _put(lines, line_at, row_col[f["key"]], f["type"], (item or {}).get(f["key"]))
+                    _put(lines, line_at, row_col[f["key"]], f["type"], item.get(f["key"]) if isinstance(item, dict) else None)
                 line_at += 1
         messages: list[str] = []
         for flag in rec.get("flags") or []:
@@ -121,7 +135,7 @@ def workbook(format_name: str, snapshot: dict, records: list[dict]) -> bytes:
                     _mark(ws, r, head_col[key], level, message)
                 elif lines is not None and key in row_col and isinstance(at, int) and first_line + at < line_at:
                     _mark(lines, first_line + at, row_col[key], level, message)
-        ws.cell(r, review_col, csv_safe("; ".join(messages)))
+        ws.cell(r, review_col, _text("; ".join(messages)))
     _widths(ws, [6, 28, 8, *[18] * len(header), 40])
     if lines is not None:
         _widths(lines, [10, 6, *[18] * len(rows)])

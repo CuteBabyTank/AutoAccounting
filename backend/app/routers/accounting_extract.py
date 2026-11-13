@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, case, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -731,12 +731,23 @@ async def run_xlsx(run_id: str, format_key: str | None = Query(default=None, max
     if total > EXPORT_MAX_RECORDS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             f"This run has {total} records; export at most {EXPORT_MAX_RECORDS} at a time")
+    lines = (await db.execute(select(func.coalesce(func.sum(case(
+        (func.jsonb_typeof(AAExtractRecord.values["rows"]) == "array",
+         func.jsonb_array_length(AAExtractRecord.values["rows"])), else_=0)), 0)).select_from(AAExtractRecord).join(
+        AAExtractFile, AAExtractFile.id == AAExtractRecord.file_id).where(*where))).scalar_one()
+    fields = snapshot.get("fields") or []
+    if export.cell_count(sum(f.get("scope") == "header" for f in fields), sum(f.get("scope") == "row" for f in fields),
+                         total, lines) > export.MAX_CELLS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "This run is too large to export in one file. Filter it by format or split the drop.")
     found = (await db.execute(joined.order_by(AAExtractFile.created_at, AAExtractFile.id, AAExtractRecord.position,
                                               AAExtractRecord.id))).all()
     records = [{"position": r.position, "file": name, "page_start": r.page_start, "page_end": r.page_end,
                 "values": r.values or {}, "flags": r.flags or []} for r, name in found]
+    del found
     name = snapshot.get("name") or run.format_name or "Extract"
     data = await asyncio.to_thread(export.workbook, name, snapshot, records)
+    del records  # the workbook bytes exist: let the rows go
     if preview:
         return JSONResponse({"sheets": await asyncio.to_thread(workbook_preview, data)})
     safe = re.sub(r"[^A-Za-z0-9 _-]+", "", name).strip() or "Extract"

@@ -216,3 +216,8 @@ def test_atc_ignores_spaces_hyphens_and_case():
         assert checks.run_checks(values, fs, cs, TODAY) == [], text
     values, _ = checks.clean_record({"atc": "WC 999"}, fs)
     assert len(checks.run_checks(values, fs, cs, TODAY)) == 1
+
+
+def test_control_characters_are_never_stored():
+    assert checks.clean_value("AB\x00C\x07", "text") == ("ABC", True)
+    assert checks.clean_value("A\x1fB\tC", "text") == ("A B C", True)

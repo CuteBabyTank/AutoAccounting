@@ -5,6 +5,7 @@ can't be read as its type is kept as text and reported as a bad cell. Checks are
 """
 
 import re
+import unicodedata
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -36,7 +37,8 @@ def _tidy(value: Any) -> str:
     """The original value as one line of text, capped."""
     if value is None or isinstance(value, bool):
         return "" if value is None else str(value).lower()
-    return " ".join(str(value).split())[: spec.MAX_VALUE]
+    text = " ".join(str(value).split())  # whitespace of every kind becomes one space
+    return "".join(ch for ch in text if unicodedata.category(ch) != "Cc")[: spec.MAX_VALUE]  # no control characters
 
 
 def _decimal(text: str) -> Decimal | None:

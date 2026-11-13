@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from sqlalchemy import exists, select, update
 from sqlalchemy.exc import IntegrityError
@@ -45,6 +45,7 @@ from app.services.accounting.matching import (
 from app.services.usage_service import charge_for_pages, increment_usage
 
 logger = logging.getLogger(__name__)
+_T = TypeVar("_T")
 
 # Accounting jobs per instance (each holds a DB session for its run), one per firm.
 _SLOTS = JobSlots(total=4)
@@ -256,18 +257,24 @@ async def _read_chunk(file_id: uuid.UUID, data: bytes, mime: str, start0: int, e
     return start0, pages, None
 
 
-async def _read_file(file_id: uuid.UUID, stored_path: str, file_type: str, prompt: str,
-                     user_id: str, building: asyncio.Lock | None = None) -> list[tuple[int, int, list | None]]:
-    """Every chunk of a file, at most ``chunks_at_once()`` read at a time, in page order. No database."""
+async def read_chunks(stored_path: str, file_type: str,
+                      read: Callable[[bytes, str, int, int], Awaitable[_T]],
+                      building: asyncio.Lock | None = None, done: Callable[[], None] | None = None) -> list[_T]:
+    """``read(data, mime, start0, end0)`` for every chunk of a file, at most ``chunks_at_once()`` at a time, each
+    chunk built inside that gate and one build at a time per ``building`` lock; results in page order. ``done`` is
+    called (synchronously) after each chunk is read. No database. Shared by uploads and the Extract tab."""
     gate = asyncio.Semaphore(aa_gemini.chunks_at_once())
     building = building or asyncio.Lock()  # the job's: one build at a time for all of its files
 
-    async def one(chunk: tuple[str, int, int]) -> tuple[int, int, list | None]:
+    async def one(chunk: tuple[str, int, int]) -> _T:
         mime, start0, end0 = chunk
         async with gate:  # build the chunk inside the gate: at most chunks_at_once() sub-PDFs exist per file
             async with building:
                 data = await _chunk_bytes(stored_path, file_type, start0, end0)
-            return await _read_chunk(file_id, data, mime, start0, end0, prompt, user_id)
+            result = await read(data, mime, start0, end0)
+        if done is not None:
+            done()
+        return result
 
     chunks = await _chunks(stored_path, file_type)
     try:
@@ -276,6 +283,16 @@ async def _read_file(file_id: uuid.UUID, stored_path: str, file_type: str, promp
     except ExceptionGroup as eg:
         raise eg.exceptions[0] from None
     return [t.result() for t in tasks]
+
+
+async def _read_file(file_id: uuid.UUID, stored_path: str, file_type: str, prompt: str,
+                     user_id: str, building: asyncio.Lock | None = None) -> list[tuple[int, int, list | None]]:
+    """Every chunk of a file, at most ``chunks_at_once()`` read at a time, in page order. No database."""
+
+    async def read(data: bytes, mime: str, start0: int, end0: int) -> tuple[int, int, list | None]:
+        return await _read_chunk(file_id, data, mime, start0, end0, prompt, user_id)
+
+    return await read_chunks(stored_path, file_type, read, building)
 
 
 async def _claim_file(db, file_id: uuid.UUID, company_id: uuid.UUID, sha256: str, stored_path: str) -> bool:

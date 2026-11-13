@@ -20,6 +20,7 @@ from app.edge import client_ip, origin_allowed
 from app.logging_config import setup_logging
 from app.routers import accounting, admin, auth, features, team
 from app.services.accounting import pipeline
+from app.services.accounting.extract import runner as extract_runner
 from app.services.features import feature_gate
 from app.auth.security import global_ip_limiter, should_limit_ip
 
@@ -45,6 +46,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await pipeline.release_running()
+        await extract_runner.release_running()
         await engine.dispose()
 
 

@@ -3,6 +3,7 @@ Usage tracking + page billing: monthly page counts per firm and budget debits.
 """
 
 import asyncio
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from decimal import Decimal
 from functools import cache
@@ -244,12 +245,13 @@ def page_batch_reservation(
     return ((full if free_side else 0) + best) / 100
 
 
-async def assert_pending_page_budget(db: AsyncSession, enterprise: User) -> None:
+async def assert_pending_page_budget(db: AsyncSession, enterprise: User, extra_pages: Sequence[int] = ()) -> None:
     """Reserve admission headroom through durable uncharged AAFile rows, under the firm row lock.
 
     Caller flushes its accepted/skipped files first and keeps this lock until its audited commit.
     Completion's budget debit and pages_charged flag atomically replace the reservation; errors and
-    duplicates release it. No prepaid charge, duplicate debit, or extra schema is needed.
+    duplicates release it. No prepaid charge, duplicate debit, or extra schema is needed. ``extra_pages``: other
+    pending files' page counts, read by the caller under the same lock (the Extract tab's unread files).
     """
     await db.refresh(enterprise, with_for_update=True)
     flat, tiers = await get_effective_rate_config(db, enterprise)
@@ -264,6 +266,7 @@ async def assert_pending_page_budget(db: AsyncSession, enterprise: User) -> None
         AAFile.status.in_(("uploaded", "detected", "extracting")),
         AAUpload.enterprise_id == enterprise.id, AAUpload.status != "failed",
     ))).scalars().all()
+    pages = [*pages, *extra_pages]
     required = await asyncio.to_thread(page_batch_reservation, list(pages), free, flat, tiers)
     if required > (enterprise.budget or 0) or (not pages and (enterprise.budget or 0) <= 0):
         raise ValueError("This batch exceeds the firm's remaining budget after pending uploads. Top up or upload fewer pages.")

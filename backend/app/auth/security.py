@@ -93,6 +93,10 @@ export_limiter = RateLimiter(max_attempts=30, window_seconds=600)
 # can flood into the messages table without throttling normal-volume chat.
 chat_limiter = RateLimiter(max_attempts=60, window_seconds=60)
 
+# Extract tab format building: 10 drafts and 20 model questions per person per hour.
+extract_draft_limiter = RateLimiter(max_attempts=10, window_seconds=3600)
+extract_ask_limiter = RateLimiter(max_attempts=20, window_seconds=3600)
+
 # Global: per-IP across all *unauthenticated* endpoints, 200 requests per minute.
 # Applied in main.py unless a protected route has a verified access token,
 # so users sharing one egress IP (corp NAT, CGNAT) don't compete for a bucket.

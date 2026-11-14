@@ -170,6 +170,7 @@ _ACCESS_HELP = {
     "imports": "Import opening balances, open items and journals",
     "atc": "Supplier and account ATC defaults",
     "audit": "The audit log of who changed what",
+    "extract": "Read documents into a table with the firm's extract formats",
 }
 
 

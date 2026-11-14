@@ -961,3 +961,141 @@ class AAAssistantAction(Base):
     undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     undone_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class AAExtractFormat(Base):
+    """A firm's Extract format: the fields to read from a kind of document and the checks to grade them."""
+
+    __tablename__ = "aa_extract_formats"
+    __table_args__ = (
+        Index("uq_aa_extract_format_name", "enterprise_id", text("lower(name)"),
+              unique=True, postgresql_where=text("deleted_at IS NULL")),
+        Index("uq_aa_extract_format_base", "enterprise_id", "base_key",
+              unique=True, postgresql_where=text("deleted_at IS NULL")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    base_key: Mapped[str | None] = mapped_column(String(20), nullable=True)  # the built-in it started from
+    fields: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    checks: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    detect_hint: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AAExtractDraft(Base):
+    """A format being built from a sample file: the stored sample and the model's current proposal."""
+
+    __tablename__ = "aa_extract_drafts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    format_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    base_key: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    stored_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    file_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    page_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    proposal: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    asks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    added: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = _created()
+
+
+class AAExtractRun(Base):
+    """One Extract drop: its files, the formats they were read with (snapshotted) and the overall status."""
+
+    __tablename__ = "aa_extract_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    format_key: Mapped[str] = mapped_column(String(40), nullable=False)  # auto, a built-in key or a format id
+    format_name: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    # {format_key: {"name", "fields", "checks"}}
+    snapshots: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="reading")  # reading | done | failed
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# Extract file statuses still to be read (and charged): their pages are reserved against the firm's budget by every
+# admission path (uploads and Extract runs). "choose" waits on a person, so it holds nothing until a format is picked.
+EXTRACT_FILE_PENDING = ("queued", "detecting", "reading")
+
+
+class AAExtractFile(Base):
+    """A file in an Extract run."""
+
+    __tablename__ = "aa_extract_files"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_extract_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    original_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    file_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    page_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # queued | detecting | choose | reading | done | error
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
+    format_key: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    detect_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    interrupts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    pages_charged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class AAExtractRecord(Base):
+    """One extracted record (a document within a file) with its values, hand edits and review flags."""
+
+    __tablename__ = "aa_extract_records"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enterprise_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_extract_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    file_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("aa_extract_files.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    page_start: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    page_end: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    values: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    edited: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)  # cells a person changed
+    bad_cells: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    flags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()

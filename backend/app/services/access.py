@@ -12,7 +12,7 @@ from collections.abc import Iterable
 PERSONAL_KEYS: tuple[str, ...] = (
     "documents", "upload", "search", "notifications", "work", "companies", "team",
     "filing", "annual", "employees", "books", "close", "recurring", "bank", "subledgers",
-    "reports", "reclassify", "imports", "atc", "audit",
+    "reports", "reclassify", "imports", "atc", "audit", "extract",
 )
 ASSISTANT_LEVELS = ("off", "read", "write")  # missing = the firm default
 

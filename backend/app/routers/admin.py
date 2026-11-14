@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_admin
+from app.models.accounting import AAExtractFormat
 from app.models.api_usage import ApiUsage
 from app.models.feature_toggle import FeatureToggle, FirmFeatureOverride
 from app.models.user import User, UserRole
@@ -19,6 +20,8 @@ from app.schemas.auth import (
 )
 from app.services import features
 from app.services.accounting import audit
+from app.services.accounting.extract import formats as extract_formats
+from app.services.accounting.extract import prompts as extract_prompts
 from app.services.budget_service import compute_new_budget
 
 router = APIRouter()
@@ -341,3 +344,39 @@ async def assistant_usage(
 
     # Bound admin identity uses this table's SELECT-only admin policy under FORCE RLS.
     return await usage.report(db, days)
+
+
+def extract_format_row(row, firm_name: str, editor_name: str) -> dict:
+    """One firm format for the platform admin (pure): its definition, the check sentences and the reading prompt
+    generated from it. Formats hold no sample values, so none are shown."""
+    shown = extract_formats.out({"fields": row.fields or [], "checks": row.checks or []})
+    return {"id": str(row.id), "firm": firm_name, "name": row.name, "base_key": row.base_key,
+            "version": row.version, "deleted": row.deleted_at is not None,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None, "updated_by": editor_name,
+            "fields": shown["fields"], "checks": shown["checks"],
+            "prompt": extract_prompts.extraction_prompt(row.name, row.fields or [])}
+
+
+@router.get("/extract-formats")
+async def extract_formats_overview(
+    firm_id: uuid.UUID | None = None,
+    db: AsyncSession = Depends(get_db), _admin: User = Depends(require_admin),
+):
+    """Every firm's Extract formats, newest edit first, deleted ones included (read only; the admin sees other
+    firms' rows through the SELECT-only admin RLS policy)."""
+    q = select(AAExtractFormat).order_by(AAExtractFormat.updated_at.desc(), AAExtractFormat.id).limit(500)
+    if firm_id is not None:
+        q = q.where(AAExtractFormat.enterprise_id == firm_id)
+    rows = (await db.execute(q)).scalars().all()
+    ids = {r.enterprise_id for r in rows} | {r.updated_by for r in rows if r.updated_by}
+    names = {u.id: u for u in (await db.execute(select(User).where(User.id.in_(ids)))).scalars()} if ids else {}
+
+    def person(uid: uuid.UUID | None) -> str:
+        u = names.get(uid) if uid else None
+        return (u.nickname or u.email) if u is not None else ""
+
+    def firm(uid: uuid.UUID) -> str:
+        u = names.get(uid)
+        return (u.organization_name or u.email) if u is not None else ""
+
+    return [extract_format_row(r, firm(r.enterprise_id), person(r.updated_by)) for r in rows]

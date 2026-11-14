@@ -109,7 +109,8 @@ _BODY_ROUTE_LIMITS = (
      True, 6 * 1024 * 1024),
     ("POST", r"/api/accounting/companies/[^/]+/employees/[0-9]+/import(/preview)?", True, 11 * 1024 * 1024),
     # 60 history messages of up to 4000 characters, including JSON unicode escapes.
-    ("POST", r"/api/accounting/assistant/chat", False, 2 * 1024 * 1024),
+    # 5 MiB of transient files expands to ~6.7 MiB base64, plus bounded history and question.
+    ("POST", r"/api/accounting/assistant/chat", False, 9 * 1024 * 1024),
     # Form previews/saves carry editable field maps; certificate zips carry up to 2000 such maps.
     ("POST", r"/api/accounting/outputs/[^/]+/(preview|edits|2307s/preview)", False, 4 * 1024 * 1024),
     ("POST", r"/api/accounting/companies/[^/]+/employees/[0-9]+/2316/preview", False, 4 * 1024 * 1024),

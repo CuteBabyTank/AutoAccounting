@@ -45,6 +45,8 @@ class Ctx:
     proposals: int = 0
     # The company the person has open and confirmed the question is about (checked to be this firm's).
     focus: "AACompany | None" = None
+    # Transient untrusted context; never persisted or used to authorize changes.
+    attachment_text: str = ""
 
 
 @dataclass

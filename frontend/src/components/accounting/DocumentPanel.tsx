@@ -10,6 +10,7 @@ import AmountInput from "@/components/AmountInput";
 import QuickPicks from "@/components/QuickPicks";
 import MoveDocumentDialog from "@/components/accounting/MoveDocumentDialog";
 import { accountingApi } from "@/lib/accounting-api";
+import { checkDocument, type FieldCheck } from "@/lib/document-checks";
 import { PRESETS } from "@/lib/quick-picks";
 import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, formatPeso, reasonDetail, formatTin, tinBranch } from "@/lib/accounting-format";
 import type { AADocument, Account, AuditEvent, DocumentPatch, DuplicatePair, PaymentLinks } from "@/types/accounting";
@@ -26,6 +27,15 @@ const AMOUNTS = [
 const AMOUNT_KEYS = new Set<string>(AMOUNTS.map(([k]) => k));
 const CATEGORIES = ["sales", "purchases", "expenses", "payroll", "2307", "support", "unsorted"] as const;
 const INPUT = "w-full px-2.5 py-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]";
+// Orange for a blank box, red for one that's wrong (lib/document-checks).
+const FLAG: Record<FieldCheck["level"], string> = {
+  warn: "!border-[var(--alert-warning-border)] bg-[var(--alert-warning-bg)] focus:!border-[var(--alert-warning-icon)]",
+  error: "!border-[var(--alert-error-border)] bg-[var(--alert-error-bg)] focus:!border-[var(--alert-error-icon)]",
+};
+const FLAG_TEXT: Record<FieldCheck["level"], string> = {
+  warn: "text-[var(--alert-warning-text)]",
+  error: "text-[var(--alert-error-text)]",
+};
 const LABEL = "block text-[11px] font-medium text-[var(--text-secondary)] mb-1";
 const BTN = "rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-60";
 
@@ -246,21 +256,41 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
     }
   }
 
-  const field = (key: string, label: string, type = "text") => (
-    <div>
-      <label className={LABEL}>{label}</label>
-      {AMOUNT_KEYS.has(key) ? (
-        <AmountInput className={INPUT} value={draft[key] ?? ""} onValueChange={(v) => setDraft((d) => ({ ...d, [key]: v }))} />
-      ) : (
-        <input
-          type={type}
-          className={INPUT}
-          value={draft[key] ?? ""}
-          onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
-        />
-      )}
-    </div>
-  );
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
+  const checks = checkDocument(draft, { client_role: doc.client_role, doc_type: doc.doc_type, today });
+  const field = (key: string, label: string, type = "text") => {
+    const check = checks[key];
+    const cls = check ? `${INPUT} ${FLAG[check.level]}` : INPUT;
+    const hintId = check ? `check-${key}` : undefined;
+    return (
+      <div>
+        <label className={LABEL}>{label}</label>
+        {AMOUNT_KEYS.has(key) ? (
+          <AmountInput
+            className={cls}
+            aria-invalid={check?.level === "error" || undefined}
+            aria-describedby={hintId}
+            value={draft[key] ?? ""}
+            onValueChange={(v) => setDraft((d) => ({ ...d, [key]: v }))}
+          />
+        ) : (
+          <input
+            type={type}
+            className={cls}
+            aria-invalid={check?.level === "error" || undefined}
+            aria-describedby={hintId}
+            value={draft[key] ?? ""}
+            onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+          />
+        )}
+        {check && (
+          <span id={hintId} className={`mt-0.5 block text-[11px] ${FLAG_TEXT[check.level]}`}>
+            {check.message}
+          </span>
+        )}
+      </div>
+    );
+  };
 
   const needsReview = doc.needs_review && !doc.reviewed;
   const openReasons = doc.needs_review && !doc.reviewed ? doc.review_reasons.filter((r) => !SOFT_REASONS.has(r)) : [];

@@ -8,7 +8,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,8 @@ from app.models.accounting import AACompany
 from app.models.user import User
 from app.routers.accounting_scope import MANAGER_ROLES, scope_for
 from app.services.accounting.assistant import actions, loop, tools, usage
+from app.services.accounting.assistant import attachments as attachment_service, guard
+from app.services.accounting import qwen_reader
 from app.schemas.accounting_assistant import ActionOut
 
 logger = logging.getLogger("assistant")
@@ -41,6 +43,13 @@ class ChatIn(BaseModel):
     history: list[HistoryMessage] = Field(default_factory=list, max_length=60)
     # The company open on screen, sent only after the person confirmed the question is about it.
     company_id: uuid.UUID | None = None
+    attachments: list[attachment_service.AttachmentIn] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode="after")
+    def attachment_budget(self):
+        if sum(file.size for file in self.attachments) > attachment_service.MAX_BYTES:
+            raise ValueError("Attachments must total at most 5 MB per message.")
+        return self
 
 
 def _sse(event: dict) -> str:
@@ -108,25 +117,45 @@ async def assistant_chat(body: ChatIn, user: User = Depends(get_current_user), d
 
     async def stream():
         saved = False
+        deadline = asyncio.get_running_loop().time() + settings.assistant_turn_seconds
         try:
+            attachment_text = ""
+            if body.attachments and not guard.precheck(question):
+                yield _sse({"type": "thought", "text": "Reading your temporary attachments"})
+                try:
+                    async with asyncio.timeout_at(deadline):
+                        attachment_text = await attachment_service.extract(body.attachments, str(user.id), meter)
+                except (ValueError, qwen_reader.ReaderError, TimeoutError):
+                    # Only our own validation errors may reach the UI; reader errors never include content.
+                    yield _sse({"type": "error", "message": "The attachments couldn't be read. Check that they are "
+                                "unlocked, readable and within the safety limits (10 PDF pages, 10,000 spreadsheet "
+                                "cells, 20 megapixels per image). Image reading also requires a configured reader."})
+                    return
+                finally:
+                    # Release encoded uploads before entering the conversation loop.
+                    body.attachments.clear()
             # Its own session: the stream outlives the request's dependencies. RLS binds to the person, as everywhere.
             async with async_session() as db:
                 await bind_session_user(db, str(user.id))
                 ctx = tools.Ctx(db=db, user=user, ent=ent,
-                                write=body.write and (await actions.permission(db, user))["allowed"])
+                                write=body.write and not attachment_text and (await actions.permission(db, user))["allowed"])
+                ctx.attachment_text = attachment_text
                 if body.company_id is not None:
                     # Only this firm's live companies; anything else is quietly ignored (same as no company).
                     focus = (await db.execute(select(AACompany).where(
                         AACompany.id == body.company_id, AACompany.enterprise_id == ent,
                         AACompany.archived_at.is_(None)))).scalar_one_or_none()
                     ctx.focus = focus
-                async for event in loop.run(ctx, question, history, meter=meter):
-                    if event["type"] in {"final", "clarify", "error"}:
-                        meter.update(event.get("usage") or {})
-                        if event["type"] != "error" or meter["calls"]:
-                            await _save_usage(ent, user, dict(meter))
-                        saved = True
-                    yield _sse(event)
+                async with asyncio.timeout_at(deadline):
+                    async for event in loop.run(ctx, question, history, meter=meter):
+                        if event["type"] in {"final", "clarify", "error"}:
+                            meter.update(event.get("usage") or {})
+                            if event["type"] != "error" or meter["calls"]:
+                                await _save_usage(ent, user, dict(meter))
+                            saved = True
+                        yield _sse(event)
+        except TimeoutError:
+            yield _sse({"type": "error", "message": "The assistant took too long; try fewer files or a narrower question."})
         finally:
             if not saved and meter["calls"]:
                 # The person left mid-turn: the calls already made still count. Shielded so the write

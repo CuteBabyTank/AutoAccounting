@@ -25,6 +25,29 @@ export interface HistoryMessage {
 
 /** Messages the server reads back (it keeps the newest that fit its own budget). */
 export const HISTORY_SENT = 12;
+export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+export const ATTACHMENT_ACCEPT = ".xlsx,.pdf,.jpg,.jpeg,.heic";
+
+export function attachmentError(files: File[]): string | null {
+  if (files.length > 5) return "Attach at most 5 files per message.";
+  if (files.some((file) => !/\.(xlsx|pdf|jpe?g|heic)$/i.test(file.name))) {
+    return "Choose XLSX, PDF, JPG/JPEG or HEIC files.";
+  }
+  if (files.some((file) => file.size === 0)) return "Empty files can't be attached.";
+  if (files.reduce((sum, file) => sum + file.size, 0) > ATTACHMENT_MAX_BYTES) {
+    return "Attachments must total at most 5 MB per message.";
+  }
+  return null;
+}
+
+async function encodeAttachment(file: File): Promise<{ name: string; data: string }> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 8192) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  }
+  return { name: file.name, data: btoa(binary) };
+}
 
 async function errorText(res: Response): Promise<string> {
   try {
@@ -44,12 +67,21 @@ export async function streamChat(
   signal: AbortSignal,
   write = false,
   companyId: string | null = null,
+  files: File[] = [],
 ): Promise<void> {
+  const invalid = attachmentError(files);
+  if (invalid) throw new Error(invalid);
   const token = typeof window !== "undefined" ? sessionStorage.getItem(TOKEN_KEY) : null;
+  const attachments = await Promise.all(files.map(encodeAttachment));
+  signal.throwIfAborted();
+  if (typeof window !== "undefined" && sessionStorage.getItem(TOKEN_KEY) !== token) {
+    throw new Error("Your account changed while preparing the message. Send it again from the current account.");
+  }
   const res = await fetch(`${API_URL}/api/accounting/assistant/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ question, history: history.slice(-HISTORY_SENT), write, ...(companyId ? { company_id: companyId } : {}) }),
+    body: JSON.stringify({ question, history: history.slice(-HISTORY_SENT), write,
+      ...(attachments.length ? { attachments } : {}), ...(companyId ? { company_id: companyId } : {}) }),
     signal,
   });
   if (!res.ok || !res.body) {

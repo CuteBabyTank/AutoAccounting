@@ -13,7 +13,7 @@ import type { CasperNotice, CasperOutcome } from "@/components/assistant/casper-
 import ThinkingTrail from "@/components/assistant/ThinkingTrail";
 import useBotMascotState from "@/components/assistant/useBotMascotState";
 import { SearchRow } from "@/components/search/SearchResults";
-import { assistantInfo, modelLabel, streamChat } from "@/lib/assistant-api";
+import { assistantInfo, attachmentError, ATTACHMENT_ACCEPT, modelLabel, streamChat } from "@/lib/assistant-api";
 import { openResult } from "@/lib/search-nav";
 import { useAuth } from "@/lib/auth";
 import { useFeatures } from "@/lib/features";
@@ -106,6 +106,11 @@ export default function AssistantDock() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [text, setText] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [temporaryChat, setTemporaryChat] = useState(false);
+  const temporaryChatRef = useRef(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [casperNotice, setCasperNotice] = useState<CasperNotice | null>(null);
   // Write mode: off every time the dock opens; Casper may then propose changes, each needing Confirm.
@@ -133,6 +138,11 @@ export default function AssistantDock() {
   }, []);
   useEffect(() => {
     // Load this person's chat (and only theirs) whenever who is signed in changes.
+    abort.current?.abort();
+    setFiles([]);
+    setFileError(null);
+    setTemporaryChat(false);
+    temporaryChatRef.current = false;
     try {
       sessionStorage.removeItem("aa:assistant:messages");  // the old key shared by everyone on this browser
       localStorage.removeItem("aa:assistant:messages");
@@ -153,7 +163,7 @@ export default function AssistantDock() {
     else setWriteMode(false);
   }, [open, mounted]);
   useEffect(() => {
-    if (!busy && mounted && userId && loadedFor === userId) {
+    if (!temporaryChatRef.current && !busy && mounted && userId && loadedFor === userId) {
       write(storeKey(userId), messages.filter((m) => !m.pending).slice(-KEPT), true);
     }
   }, [messages, busy, mounted, userId, loadedFor]);
@@ -195,12 +205,15 @@ export default function AssistantDock() {
     async (raw: string, opts: { companyId?: string | null; askedAlready?: boolean } = {}) => {
       const question = raw.trim();
       if (!question || busy) return;
-      const writing = writeMode;
+      const invalid = attachmentError(files);
+      if (invalid) { setFileError(invalid); return; }
+      const turnFiles = files;
+      const writing = writeMode && !turnFiles.length && !temporaryChatRef.current;
       let companyId = opts.companyId;
       if (companyId === undefined) {
         companyId = null;
         const pc = pageCompany;
-        if (pc) {
+        if (pc && !turnFiles.length) {
           const said = companyAnswers[pc.id];
           const verdict = companyQuestion(question, pc);
           if (said === "yes" && verdict !== "skip") companyId = pc.id;
@@ -220,6 +233,19 @@ export default function AssistantDock() {
           }
         }
       }
+      if (turnFiles.length) {
+        temporaryChatRef.current = true;
+        setTemporaryChat(true);
+        setWriteMode(false);
+        if (userId) {
+          try {
+            localStorage.removeItem(storeKey(userId));
+            sessionStorage.removeItem(storeKey(userId));
+          } catch { /* blocked storage */ }
+        }
+      }
+      setFiles([]);
+      setFileError(null);
       startMascot();
       const said = opts.askedAlready ? messages.slice(0, -2) : messages; // the asked question is already on screen
       const history = said.filter((m) => !m.error && m.text && !m.ask).map((m) => ({ role: m.role, text: m.text }));
@@ -280,7 +306,7 @@ export default function AssistantDock() {
         }
       };
       try {
-        await streamChat(question, history, onEvent, ctrl.signal, writing, companyId);
+        await streamChat(question, history, onEvent, ctrl.signal, writing, companyId, turnFiles);
       } catch {
         if (!ctrl.signal.aborted) onEvent({ type: "error", message: "Lost the connection. Send the question again." });
       } finally {
@@ -294,7 +320,7 @@ export default function AssistantDock() {
         abort.current = null;
       }
     },
-    [busy, info?.model, messages, update, startMascot, finishMascot, resetMascot, writeMode, pageCompany, companyAnswers],
+    [busy, info?.model, messages, update, startMascot, finishMascot, resetMascot, writeMode, pageCompany, companyAnswers, files, userId],
   );
 
   /** One click on "Is this about …?": remember it for this chat and run the question. */
@@ -316,6 +342,10 @@ export default function AssistantDock() {
     abort.current?.abort();
   };
   const newChat = () => {
+    temporaryChatRef.current = false;
+    setTemporaryChat(false);
+    setFiles([]);
+    setFileError(null);
     resetMascot();
     abort.current?.abort();
     setMessages([]);
@@ -330,7 +360,7 @@ export default function AssistantDock() {
 
   const model = info?.model ? modelLabel(info.model) : "";
   const canWrite = !!info?.write?.allowed && features.on("assistant_write");
-  const writing = writeMode && canWrite;
+  const writing = writeMode && canWrite && !temporaryChat && !files.length;
 
   return (
     <>
@@ -372,11 +402,11 @@ export default function AssistantDock() {
             {showHelp ? (
               <CasperHelp
                 company={pageCompany}
-                canWrite={canWrite}
-                writeReason={info?.write?.reason ?? ""}
+                canWrite={canWrite && !temporaryChat && !files.length}
+                writeReason={temporaryChat || files.length ? "Record changes are off while working with temporary files." : info?.write?.reason ?? ""}
                 onBack={() => setShowHelp(false)}
                 onPick={(example, needsWrite) => {
-                  if (needsWrite) setWriteMode(true);
+                  if (needsWrite && !temporaryChat && !files.length) setWriteMode(true);
                   setShowHelp(false);
                   setText(example);
                   setTimeout(() => input.current?.focus(), 0);
@@ -513,6 +543,27 @@ export default function AssistantDock() {
             }}
             className="m-3 mt-0 shrink-0 rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)] shadow-[0_1px_2px_rgba(16,24,40,0.04)] focus-within:border-[var(--accent)]"
           >
+            <input ref={fileInput} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden"
+              aria-label="Attach files to Casper" disabled={busy}
+              onChange={(e) => {
+                const next = [...files, ...Array.from(e.target.files ?? [])];
+                const error = attachmentError(next);
+                setFileError(error);
+                if (!error) { setFiles(next); if (next.length) setWriteMode(false); }
+                e.target.value = "";
+              }} />
+            {files.length > 0 && <ul className="space-y-1 px-4 pt-3 text-xs text-[var(--text-secondary)]">
+              {files.map((file, i) => <li key={`${file.name}-${i}`} className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                <button type="button" disabled={busy} aria-label={`Remove ${file.name}`}
+                  onClick={() => { setFiles((current) => current.filter((_, at) => at !== i)); setFileError(null); }}>Remove</button>
+              </li>)}
+            </ul>}
+            {fileError && <p role="alert" className="px-4 pt-2 text-xs text-[var(--alert-error-text)]">{fileError}</p>}
+            <p className="px-4 pt-2 text-[11px] text-[var(--text-tertiary)]">
+              {temporaryChat || files.length ? "Temporary chat. Files and this chat aren't saved in the app. Reattach files for follow-up questions. Changes are off."
+                : "XLSX, PDF, JPG or HEIC. 5 MB total. Files aren't saved in the app."}
+            </p>
             <textarea
               ref={input}
               value={text}
@@ -530,11 +581,15 @@ export default function AssistantDock() {
               className="block max-h-40 w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[14.5px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none"
             />
             <div className="flex items-center gap-2 px-2.5 pb-2.5 pt-1">
+              <button type="button" disabled={busy} onClick={() => fileInput.current?.click()}
+                aria-label="Attach files" title="Attach files, up to 5 MB total"
+                className="aa-icon-btn disabled:opacity-35"><Plus size={16} /></button>
               {canWrite ? (
                 <button
                   type="button"
                   role="switch"
                   aria-checked={writeMode}
+                  disabled={temporaryChat || files.length > 0}
                   onClick={() => setWriteMode((v) => !v)}
                   title={writeMode ? "Casper can propose changes for you to confirm. Click to go back to read-only." : "Let Casper propose changes (each needs your confirm)"}
                   className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors ${

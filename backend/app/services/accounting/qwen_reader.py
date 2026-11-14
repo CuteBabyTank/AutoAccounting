@@ -111,7 +111,7 @@ def _strip_fences(text: str) -> str:
 
 
 async def read(file_bytes: bytes, mime_type: str, prompt: str, user_id: str, thinking: str | None = None,
-               model: str | None = None, timeout: float | None = None) -> str:
+               model: str | None = None, timeout: float | None = None, meter: dict | None = None) -> str:
     if not configured():
         raise ReaderError("reader_not_configured")
     headers = {"Authorization": f"Bearer {_key()}"}
@@ -121,6 +121,8 @@ async def read(file_bytes: bytes, mime_type: str, prompt: str, user_id: str, thi
         for attempt in range(3):
             retry = attempt < 2
             try:
+                if meter is not None:
+                    meter["calls"] += 1
                 r = await client.post(f"{_base()}/chat/completions", json=payload, headers=headers)
             except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as e:
                 if not retry:
@@ -142,9 +144,15 @@ async def read(file_bytes: bytes, mime_type: str, prompt: str, user_id: str, thi
             if isinstance(text, list):  # some providers return content parts
                 text = "".join(p.get("text", "") for p in text if isinstance(p, dict))
             usage = body.get("usage") or {}
+            if meter is not None:
+                meter["prompt"] += int(usage.get("prompt_tokens") or 0)
+                meter["completion"] += int(usage.get("completion_tokens") or 0)
+                meter["cached"] += int((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0)
             logger.info("reader_call model=%s user_id=%s prompt_tokens=%s completion_tokens=%s finish=%s",
                         payload["model"], user_id, usage.get("prompt_tokens"),
                         usage.get("completion_tokens"), choice.get("finish_reason"))
+            if meter is not None and choice.get("finish_reason") != "stop":
+                raise ReaderError("reader_incomplete_reply")
             if not text.strip():
                 if retry:
                     continue

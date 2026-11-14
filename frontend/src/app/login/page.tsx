@@ -103,13 +103,18 @@ export default function LoginPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- go only depends on embed, read before this matters
   }, [authLoading, user]);
 
-  // In the pop-up the frame is exactly the card: no page background, no scrollbars.
+  // In the pop-up the frame is the card's height, capped at the screen by the homepage's CSS. No page background;
+  // when the card is taller than the screen (the consent box on a laptop or phone) the frame scrolls, and the
+  // consent actions stay pinned at its bottom edge, so the checkbox and buttons are always reachable.
   useEffect(() => {
     if (!embed) return;
-    for (const el of [document.documentElement, document.body]) {
-      el.style.background = "transparent";
-      el.style.overflow = "hidden";
-    }
+    const html = document.documentElement;
+    html.style.background = "transparent";
+    html.style.overflowX = "hidden";
+    html.style.overflowY = "auto";
+    html.style.scrollbarWidth = "thin";
+    // The body must not get an overflow of its own: that makes it the scroll box and the pinned actions stop pinning.
+    document.body.style.background = "transparent";
   }, [embed]);
 
   // The pop-up grows and shrinks with the card.
@@ -298,7 +303,7 @@ export default function LoginPage() {
   const body = (
     <div
       ref={card}
-      className={`relative w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)] p-8 ${embed ? "" : "shadow-2xl page-enter"}`}
+      className={`relative w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)] p-6 sm:p-8 ${embed ? "" : "shadow-2xl page-enter"}`}
     >
       {embed && (
         <button type="button" onClick={close} aria-label="Close" className="aa-icon-btn absolute right-3 top-3">
@@ -356,10 +361,17 @@ export default function LoginPage() {
               ))}
             </div>
           )}
-          <LegalText doc={legalDoc} className="mb-4 max-h-64" />
+          <LegalText doc={legalDoc} className="max-h-64" />
+          {/* Pinned to the bottom of the screen while the policy is taller than it, so the checkbox and buttons
+              never end up out of reach. */}
+          <div className="sticky bottom-0 z-10 -mx-4 -mb-4 mt-4 rounded-b-xl border-t border-[var(--border)] bg-[var(--bg-tertiary)] px-4 pb-4 pt-3">
           {consentIsNew && (
-            <label className="mb-4 flex cursor-pointer items-start gap-2.5 text-sm text-[var(--text-primary)]">
-              <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} disabled={busy} />
+            <label
+              className={`mb-3 flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 text-sm text-[var(--text-primary)] transition-colors ${
+                agreed ? "border-[var(--accent)] bg-[var(--bg-card)]" : "border-[var(--border)] bg-[var(--bg-secondary)]"
+              }`}
+            >
+              <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-[var(--accent)]" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} disabled={busy} />
               <LegalAgree />
             </label>
           )}
@@ -372,6 +384,7 @@ export default function LoginPage() {
               className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-60">
               {consentIsNew ? "Create account" : "OK"}
             </button>
+          </div>
           </div>
         </div>
       ) : view === "signin" ? (

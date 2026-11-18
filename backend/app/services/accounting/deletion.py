@@ -89,6 +89,23 @@ async def safe_line_ids(db: AsyncSession, company: AACompany) -> set[uuid.UUID]:
     return (await _retained_lines(db, company))[3]
 
 
+async def rematchable_line_ids(db: AsyncSession, company: AACompany) -> set[uuid.UUID]:
+    """``safe_line_ids`` plus lines that post nothing yet (unmatched / ambiguous / suggested) outside a live
+    reconciliation: new statement lines or documents can still find their matches (in a closed month that posts
+    forward through ``apply_closes``), but no line that already posts in retained history is changed."""
+    from app.services.accounting.books.bank import live_line
+    if (await db.execute(select(AABankLine.id).where(
+            AABankLine.enterprise_id == company.enterprise_id, AABankLine.company_id == company.id,
+            AABankLine.account_code != "", live_line()).limit(1))).scalars().all() == []:
+        return set()  # no bank lines: nothing to rematch, and no history to read
+    _, _, lines, safe = await _retained_lines(db, company)
+    if not lines:
+        return safe
+    recs = await _live_reconciliations(db, company)
+    return safe | {l.id for l in lines if l.match_status in ("unmatched", "ambiguous", "suggested", "")
+                   and not any(r.account_code == l.account_code and l.line_date <= r.month_end for r in recs)}
+
+
 def _held(lines: list[AABankLine], safe: set[uuid.UUID]) -> list[AABankLine]:
     """Matched document lines a guarded rematch keeps as they are (outside the safe set)."""
     return [l for l in lines if l.id not in safe and l.account_code and l.match_kind == "document"
@@ -186,7 +203,8 @@ async def protect_entry(db: AsyncSession, company: AACompany, row: AAJournalEntr
     return lines
 
 
-async def protect_opening_item(db: AsyncSession, company: AACompany, row: AAOpeningItem) -> list[AABankLine]:
+async def protect_opening_item(db: AsyncSession, company: AACompany, row: AAOpeningItem,
+                               *, doing: str = "deleting it") -> list[AABankLine]:
     from app.services.accounting.books.bank import live_line
     from app.services.accounting.books.subledger import writeoff_rows
     from app.services.accounting.compute.books import CASH_KEYS
@@ -199,8 +217,8 @@ async def protect_opening_item(db: AsyncSession, company: AACompany, row: AAOpen
             AABankLine.match_status.notin_(("confirmed", "excluded")) &
             AABankLine.candidates.contains([{"kind": "document", "ref": ref}]))))).scalars().all())
     # Opening items never post themselves; only their payments affect retained books and returns.
-    await protect_history(db, company, [row.paid_on, *[l.line_date for l in lines]])
-    await protect_bank_links(db, company, lines)
+    await protect_history(db, company, [row.paid_on, *[l.line_date for l in lines]], doing=doing)
+    await protect_bank_links(db, company, lines, doing=doing)
     if row.paid_on is not None:
         matched_dates = [l.line_date for l in lines if l.match_kind == "document" and l.matched_ref == ref
                          and l.account_code and l.match_status in ("matched", "confirmed")]
@@ -216,7 +234,7 @@ async def protect_opening_item(db: AsyncSession, company: AACompany, row: AAOpen
             *([AABankReconciliation.month_end < min(matched_dates)] if matched_dates else []),
         ).limit(1))).first()
         if reconciled:
-            refuse("This item's payment supports a bank reconciliation. Clear the reconciliation before deleting it.")
+            refuse(f"This item's payment supports a bank reconciliation. Clear the reconciliation before {doing}.")
     if any(str(i.get("id")) == ref for _, _, items in await writeoff_rows(db, company) for i in items):
-        refuse("This item is part of a write-off. Undo the write-off before deleting it.")
+        refuse(f"This item is part of a write-off. Undo the write-off before {doing}.")
     return lines

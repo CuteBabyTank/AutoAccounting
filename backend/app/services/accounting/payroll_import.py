@@ -98,8 +98,21 @@ def parse_sheet(data: bytes, filename: str) -> tuple[list[str], list[list[str]]]
             ws = wb.worksheets[0]
             raw: list[list[str]] = []
             total = 0
+            # Shared strings come back as one object per string, referenced from many cells; strip() would
+            # copy it for every reference (a few KB of XML could then hold hundreds of MiB). Clean each
+            # string object once and reuse the result.
+            seen: dict[int, tuple[str, str]] = {}
+
+            def clean(v: object) -> str:
+                if not isinstance(v, str):
+                    return _cell(v)
+                hit = seen.get(id(v))
+                if hit is None or hit[0] is not v:
+                    hit = seen[id(v)] = (v, _cell(v))
+                return hit[1]
+
             for row in ws.iter_rows(values_only=True, max_row=MAX_READ_ROWS, max_col=MAX_COLUMNS):
-                cells = [_cell(v) for v in row]
+                cells = [clean(v) for v in row]
                 total += sum(len(c) for c in cells)
                 if total > MAX_SHEET_CHARS:
                     raise ValueError("That sheet holds too much text; save just the rows you need.")

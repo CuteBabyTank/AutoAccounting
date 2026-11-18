@@ -184,6 +184,22 @@ async def update_company(
     await lock_firm(db, ent)
     company = await _company_or_404(db, ent, company_id)
     fiscal_year_changed = body.fiscal_year_end_month != company.fiscal_year_end_month
+    refiled: list[tuple[AADocument, tuple]] = []
+    if fiscal_year_changed:
+        # Stored periods were computed with the old year end; unlocked documents are re-filed below. Moving a
+        # document out of (or into) a closed month or filed quarter rewrites retained history, so those refuse.
+        docs = (await db.execute(
+            select(AADocument).where(AADocument.company_id == company.id, AADocument.period_locked.is_(False))
+        )).scalars().all()
+        for doc in docs:
+            new = period_fields(doc.doc_date, body.fiscal_year_end_month)
+            if new != (doc.period_year, doc.period_quarter, doc.period_month):
+                refiled.append((doc, new))
+        moved = [d for d, _ in refiled]
+        await deletion.protect_history(
+            db, company, [d.doc_date for d in moved],
+            [(d.period_year, d.period_quarter) for d in moved if d.period_year and d.period_quarter],
+            doing="changing the fiscal year end")
     changed = {name: value for name, value in body.model_dump().items() if getattr(company, name) != value}
     before = audit.snapshot(company, changed)
     for name, value in changed.items():
@@ -199,15 +215,8 @@ async def update_company(
         await db.execute(update(AAJournalEntry).where(
             AAJournalEntry.company_id == company.id, AAJournalEntry.kind == "opening",
         ).values(entry_date=company.books_start))
-    if fiscal_year_changed:
-        # Stored periods were computed with the old year end; re-file unlocked documents.
-        docs = (await db.execute(
-            select(AADocument).where(AADocument.company_id == company.id, AADocument.period_locked.is_(False))
-        )).scalars().all()
-        for doc in docs:
-            doc.period_year, doc.period_quarter, doc.period_month = period_fields(
-                doc.doc_date, company.fiscal_year_end_month
-            )
+    for doc, new in refiled:
+        doc.period_year, doc.period_quarter, doc.period_month = new
     try:
         await db.commit()
     except IntegrityError:
@@ -1147,6 +1156,10 @@ async def patch_document(
                 raise HTTPException(status.HTTP_400_BAD_REQUEST,
                                     "A receipt can only pay a sale, purchase, expense or payroll document of the "
                                     "same company and side")
+            if target_id != doc.settles_document_id:
+                # Linking a receipt replaces the target's own payment (its paid_on / bank match) with this one,
+                # so the target's retained history goes through the same guard as editing it directly.
+                await deletion.protect_document(db, company, target, doing="linking a payment to it")
         doc.settles_document_id = target_id
         doc.settles_source = "user"   # never re-linked automatically after a person decides
         if "possible_payment" in (doc.review_reasons or []):
@@ -1497,7 +1510,8 @@ async def file_page(
     from app.services.accounting.render_pool import RenderBusy, run_pdf_work
 
     try:
-        result = await run_pdf_work(read_page_bytes, f.stored_path, f.file_type, page, owner=str(user.id))
+        result = await run_pdf_work(read_page_bytes, f.stored_path, f.file_type, page, owner=str(user.id),
+                                    firm=str(ent))
     except RenderBusy as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Page unavailable: renderer is busy") from exc
     except ValueError as exc:

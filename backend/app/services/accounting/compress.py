@@ -8,6 +8,8 @@ The upload's sha256 stays the original's, so dropping the same file again is sti
 """
 
 import io
+from contextlib import contextmanager
+import threading
 import logging
 import os
 import subprocess
@@ -39,9 +41,25 @@ class Compressed:
     original_size: int
 
 
+# Decoding a large image in this process costs ~13-18 bytes per pixel (about 0.8 GiB at the 60 MP cap), outside
+# the PDF children's memory budget. Big decodes go one at a time across every firm; small photos are not held up.
+BIG_IMAGE_PIXELS = 12_000_000
+_BIG_IMAGE = threading.BoundedSemaphore(1)
+
+
+@contextmanager
+def image_decode_slot(pixels: int):
+    """Hold the one big-image slot while decoding an image of ``pixels`` (no wait for small ones)."""
+    if pixels <= BIG_IMAGE_PIXELS:
+        yield
+        return
+    with _BIG_IMAGE:
+        yield
+
+
 def _image_bytes(data: bytes) -> tuple[bytes, str] | None:
     """A photo / screenshot as a smaller JPEG (or PNG for few-colour images), orientation applied, metadata dropped."""
-    with Image.open(io.BytesIO(data)) as img:
+    with Image.open(io.BytesIO(data)) as img, image_decode_slot(img.size[0] * img.size[1]):
         img = ImageOps.exif_transpose(img)
         if img.mode in ("RGBA", "LA", "P"):
             rgba = img.convert("RGBA")

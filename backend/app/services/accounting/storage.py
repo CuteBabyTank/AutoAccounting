@@ -53,7 +53,9 @@ def _image_problem(path: Path) -> str | None:
             width, height = img.size
             if width * height > MAX_IMAGE_PIXELS:
                 return "too_large"
-            img.load()
+            from app.services.accounting.compress import image_decode_slot
+            with image_decode_slot(width * height):
+                img.load()
         return None
     except Image.DecompressionBombError:
         return "too_large"

@@ -58,9 +58,11 @@ async def auth_config(db: AsyncSession = Depends(get_db)):
             "password_signup": signup}
 
 
-def _throttle_email(email: str) -> bool:
-    """False once this address has had its emails for the hour (the answer stays the same; nothing is sent)."""
-    return email_send_limiter.check_and_record(password_auth.normalize_email(email))
+def _throttle_email(http: Request, email: str) -> bool:
+    """False once this source has asked for this address's emails 3 times this hour (the answer stays the same;
+    nothing is sent). Keyed by client IP and address, so a stranger can't use up the owner's allowance."""
+    ip = client_ip(http.headers, http.client.host if http.client else None, settings.origin_secret)
+    return email_send_limiter.check_and_record(f"{ip}|{password_auth.normalize_email(email)}")
 
 
 @router.post("/password/login", response_model=TokenResponse)
@@ -74,7 +76,7 @@ async def auth_password_login(request: PasswordLoginRequest, http: Request, db: 
 async def auth_password_register(request: RegisterRequest, http: Request, db: AsyncSession = Depends(get_db)):
     password_auth.require_email()
     _throttle_login(http)
-    if _throttle_email(request.email):
+    if _throttle_email(http, request.email):
         await password_auth.register(db, request.email, request.password, request.accept_privacy, _record_consent)
     return {"detail": password_auth.CHECK_EMAIL}
 
@@ -90,7 +92,7 @@ async def auth_password_verify(request: TokenRequest, http: Request, db: AsyncSe
 async def auth_password_resend(request: EmailRequest, http: Request, db: AsyncSession = Depends(get_db)):
     password_auth.require_email()
     _throttle_login(http)
-    if _throttle_email(request.email):
+    if _throttle_email(http, request.email):
         await password_auth.resend_verification(db, request.email)
     return {"detail": password_auth.CHECK_EMAIL}
 
@@ -99,7 +101,7 @@ async def auth_password_resend(request: EmailRequest, http: Request, db: AsyncSe
 async def auth_password_forgot(request: EmailRequest, http: Request, db: AsyncSession = Depends(get_db)):
     password_auth.require_email()
     _throttle_login(http)
-    if _throttle_email(request.email):
+    if _throttle_email(http, request.email):
         await password_auth.forgot_password(db, request.email)
     return {"detail": password_auth.CHECK_EMAIL}
 

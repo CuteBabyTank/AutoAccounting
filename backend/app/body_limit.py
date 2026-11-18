@@ -14,8 +14,12 @@ class _BodyTooLarge(Exception):
 
 class BodySizeLimitMiddleware:
     def __init__(self, app, max_bytes: int, multipart_max_bytes: int,
-                 route_limits: tuple[tuple[str, str, bool, int], ...] = ()) -> None:
+                 route_limits: tuple[tuple[str, str, bool, int], ...] = (),
+                 authorized: Callable[[str], bool] | None = None) -> None:
         self.app = app
+        # Route allowances above max_bytes need a signature-valid bearer token: an anonymous request is otherwise
+        # received and parsed in full before the route's own authentication rejects it.
+        self.authorized = authorized
         self.max_bytes = max_bytes
         self.multipart_max_bytes = multipart_max_bytes
         self.route_limits = [(method, re.compile(path), multipart, limit)
@@ -40,6 +44,10 @@ class BodySizeLimitMiddleware:
                     and path.fullmatch(scope.get("path", ""))):
                 limit = allowance
                 break
+        if limit > self.max_bytes and self.authorized is not None:
+            auth = next((v for k, v in scope.get("headers", []) if k.lower() == b"authorization"), b"")
+            if not self.authorized(auth.decode("latin-1")):
+                limit = self.max_bytes
         received = 0
         exceeded = rejected = started = False
 

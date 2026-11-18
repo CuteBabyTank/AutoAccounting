@@ -80,8 +80,15 @@ class RateLimiter:
 # Sign-in: per IP, 20 attempts per 5 minutes. Enough for a whole office behind one NAT signing in at once;
 # Google verifies the credential, so this only slows token replay and floods of the user-creating path.
 login_limiter = RateLimiter(max_attempts=20, window_seconds=300)
-# Emails we send to one address (sign-up, resend, forgot password): stops anyone flooding an inbox.
+# Email requests (sign-up, resend, forgot password) per (client IP, address): one source can't use up an
+# address's allowance and block its owner's own reset or verification email.
 email_send_limiter = RateLimiter(max_attempts=3, window_seconds=3600)
+# Emails actually sent to one address from any source: stops anyone flooding an inbox. Counted only when a
+# link really goes out (password_auth._send_link), so requests that send nothing never use it up.
+email_address_limiter = RateLimiter(max_attempts=10, window_seconds=3600)
+# Wrong passwords for addresses with no account, so they lock exactly like real accounts do (MAX_FAILS per
+# LOCK_FOR); otherwise a 429 after 10 tries would reveal which addresses have accounts.
+unknown_login_limiter = RateLimiter(max_attempts=10, window_seconds=900)
 
 # Expensive ops: file upload, 20 batches per 10 minutes per user
 upload_limiter = RateLimiter(max_attempts=20, window_seconds=600)

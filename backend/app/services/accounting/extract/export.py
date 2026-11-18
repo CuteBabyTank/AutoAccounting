@@ -22,6 +22,7 @@ _FILLS = {"yellow": PatternFill("solid", fgColor="FFF2CC"), "red": PatternFill("
 _MONEY_FORMAT = "#,##0.00"
 _BOLD = Font(bold=True)
 _MAX_NUMBER_CHARS = 30
+_MAX_EXPONENT = 15  # digits before / after the point a number cell may have; beyond it the value stays text
 MAX_CELLS = 2_000_000
 _TEXT_MAX = 32000  # Excel's cell limit is 32,767 characters
 
@@ -45,7 +46,11 @@ def _number(text: str) -> Decimal | None:
         value = Decimal(clean)
     except InvalidOperation:
         return None
-    return value if value.is_finite() else None
+    # Excel holds about 15 significant digits; an exponent like 9E999999 would also make int() build a
+    # million-digit number on the shared event loop. Such values stay text.
+    if not value.is_finite() or abs(value.adjusted()) > _MAX_EXPONENT:
+        return None
+    return value
 
 
 def _put(ws, row: int, col: int, ftype: str, value: Any) -> None:

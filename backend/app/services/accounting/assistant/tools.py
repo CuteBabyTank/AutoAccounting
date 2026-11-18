@@ -318,6 +318,10 @@ _ALL = frozenset({"", "all", "every", "any", "none", "null", "firm", "all compan
 
 async def firm_review_summary(ctx: Ctx) -> Result:
     """Every company in the firm with its count of documents waiting for review (one firm-scoped query)."""
+    from app.services import features
+    if not (await features.effective_for(ctx.db, ctx.user)).get("documents", True):
+        raise ToolError("This person doesn't have access to Documents, so you can't look up review counts for them. "
+                        "Say so and suggest asking the firm owner.")
     d = AADocument
     waiting = func.count(d.id).filter(d.needs_review.is_(True), d.reviewed.is_(False), d.excluded.is_(False),
                                       d.deleted_at.is_(None))

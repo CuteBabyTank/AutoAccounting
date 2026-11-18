@@ -78,6 +78,10 @@ async def list_members(
     return [_member_response(m, ctx.caller) for m in members]
 
 
+_NOT_ADDABLE = ("We couldn't add that person. Ask them to sign up (Google or email), confirm their email, "
+                "then try again. People who already belong to a firm can't be added.")
+
+
 @router.post("/members", response_model=MemberResponse, status_code=status.HTTP_201_CREATED)
 async def add_member(
     req: AddMemberRequest,
@@ -87,23 +91,11 @@ async def add_member(
     """Attach an existing UNVERIFIED signup to this firm as an employee."""
     target = (await db.execute(select(User).where(func.lower(User.email) == req.email.strip().lower())
                               .with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
-    if target is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No account found with that email. Ask them to sign in with Google first.",
-        )
-    if target.platform_disabled_at is not None:
-        raise HTTPException(status_code=403, detail="Account is deactivated by the platform administrator")
-    if target.email_verified_at is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="That person hasn't confirmed their email yet. Ask them to open the link we sent, then add them.",
-        )
-    if target.role != UserRole.UNVERIFIED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"That user is already a {target.role.value}, not an unverified signup.",
-        )
+    # One answer for every target that isn't an addable signup, so a firm can't learn whether an
+    # address has an account, which firm role it holds, or whether the platform disabled it.
+    if (target is None or target.platform_disabled_at is not None or target.email_verified_at is None
+            or target.role != UserRole.UNVERIFIED):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_NOT_ADDABLE)
     target.role = UserRole.EMPLOYEE
     target.enterprise_id = ctx.enterprise.id
     target.is_active = True

@@ -21,6 +21,9 @@ PDF_WORKERS = 3
 BACKGROUND_WORKERS = PDF_WORKERS - 1
 # Duplicate comparison legitimately loads two documents side by side.
 VIEWER_PER_OWNER = 2
+# One firm (however many member accounts it has) may hold at most half of the shared pending slots, so another
+# firm's page viewer is always admitted (the pool is shared by every firm on the instance).
+VIEWER_PER_FIRM = 3
 # Each 768 MiB child also needs a shared pdf_budget permit: compression and rendering
 # together leave explicit parent/buffer headroom, regardless of the two pools' worker counts.
 PDF_CPU_S = 10
@@ -33,6 +36,7 @@ _BACKGROUND = BoundedSemaphore(BACKGROUND_WORKERS)
 _THREAD = local()  # marks the pool thread's current job as background work for render_page
 _LOCK = Lock()
 _OWNERS: dict[str, int] = {}
+_FIRMS: dict[str, int] = {}
 _APP_ROOT = str(Path(__file__).resolve().parents[3])
 _T = TypeVar("_T")
 
@@ -46,14 +50,15 @@ class RenderBusy(ValueError):
     """The render queue or this viewer's concurrency allowance is full."""
 
 
-async def run_pdf_work(fn: Callable[..., _T], *args: object, owner: str | None = None, wait: bool = False) -> _T:
+async def run_pdf_work(fn: Callable[..., _T], *args: object, owner: str | None = None, firm: str | None = None,
+                       wait: bool = False) -> _T:
     """Bound submitted work; background readers wait cancellably, viewers fail promptly when full.
 
     Background work is limited to BACKGROUND_WORKERS of the pool and two of the three PDF children,
     so interactive renders keep capacity while extraction or compression runs."""
     while True:
         try:
-            return await _submit_pdf_work(fn, *args, owner=owner, background=wait)
+            return await _submit_pdf_work(fn, *args, owner=owner, firm=firm, background=wait)
         except RenderBusy:
             if not wait:
                 raise
@@ -61,10 +66,12 @@ async def run_pdf_work(fn: Callable[..., _T], *args: object, owner: str | None =
 
 
 async def _submit_pdf_work(fn: Callable[..., _T], *args: object, owner: str | None,
-                           background: bool = False) -> _T:
+                           background: bool = False, firm: str | None = None) -> _T:
     with _LOCK:
         if owner is not None and _OWNERS.get(owner, 0) >= VIEWER_PER_OWNER:
             raise RenderBusy("Page unavailable: another page is still rendering")
+        if firm is not None and _FIRMS.get(firm, 0) >= VIEWER_PER_FIRM:
+            raise RenderBusy("Page unavailable: your firm's pages are still rendering")
         if background and not _BACKGROUND.acquire(blocking=False):
             raise RenderBusy("Background renders are at their share")
         if not _PENDING.acquire(blocking=False):
@@ -73,6 +80,8 @@ async def _submit_pdf_work(fn: Callable[..., _T], *args: object, owner: str | No
             raise RenderBusy("Page unavailable: renderer is busy")
         if owner is not None:
             _OWNERS[owner] = _OWNERS.get(owner, 0) + 1
+        if firm is not None:
+            _FIRMS[firm] = _FIRMS.get(firm, 0) + 1
 
     def release(_future: Future[_T] | None) -> None:
         with _LOCK:
@@ -85,6 +94,12 @@ async def _submit_pdf_work(fn: Callable[..., _T], *args: object, owner: str | No
                     _OWNERS[owner] = remaining
                 else:
                     del _OWNERS[owner]
+            if firm is not None:
+                left = _FIRMS[firm] - 1
+                if left:
+                    _FIRMS[firm] = left
+                else:
+                    del _FIRMS[firm]
 
     try:
         future = PDF_POOL.submit(_run_marked, background, fn, *args)

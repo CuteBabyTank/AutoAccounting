@@ -99,15 +99,16 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
-    user = await _get_active_user(db, payload)
-
-    # Per-user global rate limit (prevents scraping / excessive polling)
-    if not global_user_limiter.check_and_record(str(user.id)):
+    # Per-user global rate limit (prevents scraping / excessive polling). Counted on the
+    # signature-verified subject before any DB work: tokens of revoked, disabled or deleted
+    # accounts skip the per-IP bucket (should_limit_ip) and must not escape both limiters.
+    if not global_user_limiter.check_and_record(str(payload.get("sub"))):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many requests. Please slow down.",
             headers={"Retry-After": "60"},
         )
+    user = await _get_active_user(db, payload)
 
     # Bind identity to the DB session so RLS policies on the aa_* tables
     # can filter to the current user's firm. Done after the user lookup

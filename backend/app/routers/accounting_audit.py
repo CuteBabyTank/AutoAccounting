@@ -12,6 +12,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.accounting import AAAuditEvent
 from app.models.user import User
 from app.routers.accounting_scope import scope_for
+from app.services import features
 from app.schemas.accounting_audit import AuditEventOut, AuditPageOut, AuditUserOut
 
 router = APIRouter()
@@ -26,8 +27,36 @@ def day_bounds(start: date | None, end: date | None) -> tuple[datetime | None, d
     return lo, hi
 
 
-def _filters(ent: uuid.UUID, company_id: uuid.UUID | None, entity: str | None, entity_id: str | None) -> list:
+# The area each audited entity belongs to: a person refused an area (Team page → Access) must not read its
+# records through the audit log either. Entities not listed here show to anyone with the audit area.
+ENTITY_AREA: dict[str, str] = {
+    "company": "companies", "coa_template": "companies",
+    "document": "documents", "upload": "upload",
+    "account": "books", "journal_entry": "books", "asset": "books",
+    "books_month": "close",
+    "period": "filing", "output": "filing",
+    "employee": "employees",
+    "atc": "atc",
+    "bank_statement": "bank", "bank_line": "bank", "bank_rule": "bank", "bank_reconciliation": "bank",
+    "contact": "subledgers",
+    "work_item": "work", "task": "work", "checklist_template": "work",
+    "firm_settings": "team", "team_member": "team",
+    "opening_item": "imports", "import_batch": "imports",
+    "recurring_entry": "recurring",
+    "extract_format": "extract", "extract_run": "extract",
+}
+
+
+def hidden_entities(effective: dict[str, bool]) -> list[str]:
+    """Audited entities whose area this person can't use."""
+    return sorted(e for e, area in ENTITY_AREA.items() if not effective.get(area, True))
+
+
+def _filters(ent: uuid.UUID, company_id: uuid.UUID | None, entity: str | None, entity_id: str | None,
+             hidden: list[str] | None = None) -> list:
     conds = [AAAuditEvent.enterprise_id == ent]
+    if hidden:
+        conds.append(AAAuditEvent.entity.not_in(hidden))
     if company_id is not None:
         conds.append(AAAuditEvent.company_id == company_id)
     if entity:
@@ -39,9 +68,9 @@ def _filters(ent: uuid.UUID, company_id: uuid.UUID | None, entity: str | None, e
 
 def events_query(ent: uuid.UUID, *, company_id: uuid.UUID | None = None, user_id: uuid.UUID | None = None,
                  start: date | None = None, end: date | None = None, entity: str | None = None,
-                 entity_id: str | None = None) -> Select:
+                 entity_id: str | None = None, hidden: list[str] | None = None) -> Select:
     """The firm's events, newest first, narrowed by whichever filters are given."""
-    conds = _filters(ent, company_id, entity, entity_id)
+    conds = _filters(ent, company_id, entity, entity_id, hidden)
     if user_id is not None:
         conds.append(AAAuditEvent.user_id == user_id)
     lo, hi = day_bounds(start, end)
@@ -72,12 +101,13 @@ async def list_audit_events(
     db: AsyncSession = Depends(get_db),
 ):
     ent = scope_for(user)
+    hidden = hidden_entities(await features.effective_for(db, user))
     stmt = events_query(ent, company_id=company_id, user_id=user_id, start=start, end=end, entity=entity,
-                        entity_id=entity_id)
+                        entity_id=entity_id, hidden=hidden)
     total = (await db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))).scalar_one()
     rows = (await db.execute(stmt.limit(limit).offset(offset))).scalars().all()
     people_ids = (await db.execute(select(AAAuditEvent.user_id).where(
-        *_filters(ent, company_id, entity, entity_id), AAAuditEvent.user_id.is_not(None)).distinct())).scalars().all()
+        *_filters(ent, company_id, entity, entity_id, hidden), AAAuditEvent.user_id.is_not(None)).distinct())).scalars().all()
     wanted = set(people_ids) | {r.user_id for r in rows if r.user_id}
     people = {u.id: u for u in (await db.execute(select(User).where(User.id.in_(wanted)))).scalars()} if wanted else {}
     return AuditPageOut(

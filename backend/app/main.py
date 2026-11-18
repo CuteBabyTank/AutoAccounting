@@ -221,8 +221,17 @@ async def abuse_protection_middleware(request: Request, call_next) -> Response:
 
 # ---------------------------------------------------------------------------
 # Count bytes outside the HTTP middleware stack, including multipart parser reads.
+def _bearer_ok(authorization: str) -> bool:
+    """A signature-valid, unexpired, unscoped access token (no DB work): enough to earn a route's bulk allowance."""
+    from app.auth.jwt import verify_token
+    scheme, _, token = authorization.partition(" ")
+    payload = verify_token(token) if scheme.lower() == "bearer" and token else None
+    return payload is not None and payload.get("scope") is None
+
+
 app.add_middleware(BodySizeLimitMiddleware, max_bytes=_JSON_BODY_MAX_BYTES,
-                   multipart_max_bytes=_JSON_BODY_MAX_BYTES, route_limits=_BODY_ROUTE_LIMITS)
+                   multipart_max_bytes=_JSON_BODY_MAX_BYTES, route_limits=_BODY_ROUTE_LIMITS,
+                   authorized=_bearer_ok)
 
 # CORS: must be added LAST to be the outermost middleware (processed first for requests)
 # ---------------------------------------------------------------------------

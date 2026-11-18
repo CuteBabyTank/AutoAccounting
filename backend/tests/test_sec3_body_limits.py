@@ -14,6 +14,13 @@ from app.routers import auth
 MIB = 1024 * 1024
 
 
+def bearer() -> tuple[tuple[bytes, bytes], ...]:
+    """A signature-valid access token: bulk route allowances apply only to requests carrying one."""
+    import uuid
+    from app.auth.jwt import create_access_token
+    return ((b"authorization", f"Bearer {create_access_token(str(uuid.uuid4()))}".encode()),)
+
+
 def middleware(app):
     # Exercise the limits actually installed by production, without starting its lifespan.
     from app.main import app as production
@@ -94,7 +101,7 @@ async def test_avatar_aggregate_cap_cleans_up_spooled_files(monkeypatch, many_pa
         chunks += [b"x" * (2 * MIB)] * 2
     chunks += [b"\r\n--x--\r\n"]
     result = await request(middleware(app), "/api/auth/me/avatar", chunks, method="PUT",
-                           content_type="multipart/form-data; boundary=x")
+                           content_type="multipart/form-data; boundary=x", headers=bearer())
     assert result.status == 413 and not reached_db
     assert files and all(file.closed for file in files)
 
@@ -118,13 +125,21 @@ async def consume(scope, receive, send):
     ("POST", "/api/accounting/companies/id/employees/2026/2316.zip", "application/json", 20 * MIB),
 ])
 async def test_explicit_bulk_allowances_accept_larger_bodies_but_still_have_a_cap(method, path, content_type, size):
-    allowed = await request(middleware(consume), path, [b"x" * size], method=method, content_type=content_type)
+    allowed = await request(middleware(consume), path, [b"x" * size], method=method, content_type=content_type,
+                            headers=bearer())
     assert allowed.status == 200
+    # Without a valid token the same body gets only the default 1 MiB (refused before any parse or DB work).
+    anonymous = await request(middleware(consume), path, [b"x" * size], method=method, content_type=content_type)
+    assert anonymous.status == 413
+    forged = await request(middleware(consume), path, [b"x" * size], method=method, content_type=content_type,
+                           headers=((b"authorization", b"Bearer not-a-token"),))
+    assert forged.status == 413
     unrelated = await request(middleware(consume), "/api/auth/me", [b"x" * size],
                               method="PATCH", content_type=content_type)
     assert unrelated.status == 413  # this exception must not leak to other routes
     # An allowance is finite, including upload routes.
-    denied = await request(middleware(consume), path, [b"x" * MIB] * 300, method=method, content_type=content_type)
+    denied = await request(middleware(consume), path, [b"x" * MIB] * 300, method=method, content_type=content_type,
+                           headers=bearer())
     assert denied.status == 413
 
 

@@ -1,5 +1,6 @@
 """Transient attachment input. No storage, multipart spooling, provider file uploads or content logs."""
 import asyncio
+import os
 import base64
 import binascii
 from contextlib import asynccontextmanager
@@ -18,6 +19,10 @@ from app.config import settings
 MAX_BYTES = 5 * 1024 * 1024
 MAX_ENCODED = 4 * ((MAX_BYTES + 2) // 3)
 _slots = asyncio.Semaphore(2)
+# Attachment turns waiting for a parse slot. Past this many, a new one is refused at once instead of holding its
+# whole chat body in memory for up to the turn deadline (the queue is shared by every firm on the instance).
+MAX_WAITING = 6
+_waiting = 0
 
 
 @asynccontextmanager
@@ -59,11 +64,32 @@ class AttachmentIn(BaseModel):
         return len(self.data) // 4 * 3 - (len(self.data) - len(self.data.rstrip("=")))
 
 
+def _worker_env() -> dict[str, str]:
+    """The decoder child gets no secrets (JWT, database URL, provider and AWS keys): only what Python needs."""
+    keep = ("PATH", "LANG", "LC_ALL", "TZ")
+    return {"PYTHONDONTWRITEBYTECODE": "1", "HOME": "/tmp", **{k: os.environ[k] for k in keep if k in os.environ}}
+
+
 async def _parse(file: AttachmentIn) -> dict:
-    async with _slots, _permit(BACKGROUND_CHILD_SLOTS), _permit(PDF_CHILD_SLOTS):
+    global _waiting
+    if _waiting >= MAX_WAITING:
+        raise ValueError("Casper is reading other attachments right now. Try again in a minute.")
+    _waiting += 1
+    try:
+        await _slots.acquire()
+    finally:
+        _waiting -= 1
+    try:
+        return await _parse_admitted(file)
+    finally:
+        _slots.release()
+
+
+async def _parse_admitted(file: AttachmentIn) -> dict:
+    async with _permit(BACKGROUND_CHILD_SLOTS), _permit(PDF_CHILD_SLOTS):
         process = await asyncio.create_subprocess_exec(
             sys.executable, "-B", "-m", "app.services.accounting.assistant.attachments_worker",
-            cwd=str(Path(__file__).resolve().parents[4]),
+            cwd=str(Path(__file__).resolve().parents[4]), env=_worker_env(),
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
         try:
             async with asyncio.timeout(20):

@@ -685,7 +685,8 @@ async def extract_file_page(file_id: str, page: int = PathParam(ge=1, le=10000),
     from app.services.accounting.render_pool import RenderBusy, run_pdf_work
 
     try:
-        result = await run_pdf_work(read_page_bytes, stored_path, file_type, page, owner=str(user.id))
+        result = await run_pdf_work(read_page_bytes, stored_path, file_type, page, owner=str(user.id),
+                                    firm=str(ent))
     except RenderBusy as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Page unavailable: renderer is busy") from exc
     except ValueError as exc:

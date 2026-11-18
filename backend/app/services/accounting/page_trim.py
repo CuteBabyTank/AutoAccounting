@@ -49,7 +49,8 @@ def content_box(img: Image.Image) -> tuple[int, int, int, int] | None:
 def trimmed_image(data: bytes) -> tuple[bytes, str] | None:
     """A photo / scan with its blank margins cut off, as (bytes, media type); None to show the original."""
     try:
-        with Image.open(io.BytesIO(data)) as img:
+        from app.services.accounting.compress import image_decode_slot
+        with Image.open(io.BytesIO(data)) as img, image_decode_slot(img.size[0] * img.size[1]):
             img.load()
             box = content_box(img)
             if box is None:

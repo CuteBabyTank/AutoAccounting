@@ -356,6 +356,26 @@ async def company_health(company_id: uuid.UUID, user: User = Depends(get_current
         notes.append(f"The books start on {company.books_start:%d %B %Y}, so balances aren't checked yet.")
     await db.commit()  # load_subledger may have synced contacts
 
+    # This route is always on (the Overview card), so it must not show what the person's own access refuses
+    # (Team page → Access). Casper's company_health tool reads this same route as the asking person.
+    from app.services import features
+    can = await features.effective_for(db, user)
+    hidden = [label for key, label in (("documents", "documents"), ("bank", "bank"), ("close", "month close"),
+                                       ("subledgers", "customers & suppliers"), ("books", "balances"))
+              if not can.get(key, True)]
+    if not can.get("documents", True):
+        reasons, flagged = {}, []
+    if not can.get("bank", True):
+        accounts, unassigned, unmatched, unrec = [], 0, 0, []
+    if not can.get("close", True):
+        not_closed = []
+    if not can.get("subledgers", True):
+        pending, recoveries, ar90, ap90 = [], [], (0, Decimal("0.00")), (0, Decimal("0.00"))
+    if not can.get("books", True):
+        negative, parked = [], []
+    if hidden:
+        notes.append("Not shown because your access doesn't include them: " + ", ".join(hidden) + ".")
+
     issues = sum(1 for n in (sum(reasons.values()), unmatched, len(unrec), unassigned, len(pending), len(not_closed),
                              ar90[0], ap90[0], len(negative), len(parked), len(recoveries)) if n)
     return HealthOut(

@@ -50,7 +50,7 @@ async def test_team_cannot_add_a_platform_disabled_signup():
     ctx = SimpleNamespace(enterprise=SimpleNamespace(id=uuid.uuid4()), caller=SimpleNamespace(role=UserRole.ENTERPRISE))
     with pytest.raises(HTTPException) as exc:
         await team.add_member(AddMemberRequest(email=user.email), db=db, ctx=ctx)
-    assert exc.value.status_code == 403
+    assert exc.value.status_code == 400 and exc.value.detail == team._NOT_ADDABLE  # same answer as any other target
     assert user.role == UserRole.UNVERIFIED and not user.is_active and db.commits == 0
 
 
@@ -110,7 +110,7 @@ async def test_removing_a_member_preserves_platform_restriction(monkeypatch):
     # Removal must never turn a platform-disabled account into an addable signup.
     with pytest.raises(HTTPException) as exc:
         await team.add_member(AddMemberRequest(email=user.email), db=Session(user), ctx=ctx)
-    assert exc.value.status_code == 403 and user.platform_disabled_at == stamp
+    assert exc.value.status_code == 400 and user.platform_disabled_at == stamp
 
 
 @pytest.mark.parametrize("issuer", ["password", "google", "dev"])

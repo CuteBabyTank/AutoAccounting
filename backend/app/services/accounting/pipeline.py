@@ -554,7 +554,10 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str, firm_id: uuid.UUID)
                 await duplicates.refresh_flags(db, company_id)  # copies dropped in earlier uploads too
                 company = await db.get(AACompany, company_id)
                 if company is not None:
-                    await bank.rematch(db, company)  # new statement lines, or new documents they pay
+                    # New statement lines, or new documents they pay; lines already posting in retained history
+                    # (closed / filed / reconciled) keep their matches.
+                    from app.services.accounting import deletion
+                    await bank.rematch(db, company, line_ids=await deletion.rematchable_line_ids(db, company))
                 await db.commit()
             except Exception:  # linking is a convenience; never fail the upload over it
                 logger.exception("accounting_relink_failed company_id=%s", company_id)

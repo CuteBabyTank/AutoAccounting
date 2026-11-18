@@ -5,7 +5,7 @@ from itertools import permutations
 
 import pytest
 
-from app.models.accounting import AAFile
+from app.models.accounting import AAExtractFile, AAFile
 from app.models.api_usage import ApiUsage
 from app.models.user import User
 from app.services import usage_service as billing
@@ -26,8 +26,9 @@ class Rows:
 
 
 class BillingDb:
-    def __init__(self, pages: list[int]) -> None:
+    def __init__(self, pages: list[int], extract_pages: list[int] | None = None) -> None:
         self.pages = pages
+        self.extract_pages = extract_pages or []
         self.usage = ApiUsage(pages_used=0)
 
     async def refresh(self, row: User, **kwargs) -> None:
@@ -37,7 +38,10 @@ class BillingDb:
         pass
 
     async def execute(self, stmt) -> Rows:
-        return Rows(self.pages if stmt.column_descriptions[0]["entity"] is AAFile else [self.usage])
+        entity = stmt.column_descriptions[0]["entity"]
+        if entity is AAExtractFile:
+            return Rows(self.extract_pages)
+        return Rows(self.pages if entity is AAFile else [self.usage])
 
 
 async def test_tier_admission_accepts_batch_whose_worst_completion_order_fits_budget() -> None:

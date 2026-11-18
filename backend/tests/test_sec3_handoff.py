@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from fastapi import HTTPException, UploadFile
 
-from app.models.accounting import AACompany, AAFile
+from app.models.accounting import AACompany, AAExtractFile, AAFile
 from app.models.user import User, UserRole
 from app.routers import accounting, accounting_employees
 from app.services import usage_service as billing
@@ -66,6 +66,8 @@ async def test_retry_admits_flushed_pages_under_firm_lock(
             assert self.locked
             if column["entity"] is AACompany:
                 return SimpleNamespace(first=lambda: None)
+            if column["entity"] is AAExtractFile:  # unread Extract pages: none here
+                return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))
             assert column["entity"] is AAFile
             if column["name"] == "page_count":
                 events.append("budget")

@@ -80,6 +80,8 @@ def test_routes_only_name_known_features():
     ("GET", "/api/accounting/companies/{company_id}/kpis", "reports"),
     ("GET", "/api/accounting/notifications", "notifications"),
     ("GET", "/api/team/members", "team"),
+    ("POST", "/api/accounting/extract/runs", "extract"),
+    ("GET", "/api/accounting/extract/formats", "extract"),
 ])
 def test_route_mapping(method, path, key):
     assert f.feature_for_route(method, path) == key

@@ -105,6 +105,9 @@ class Settings(BaseSettings):
     accounting_reader_timeout_seconds: float = 180
     accounting_reader_pages_per_chunk: int = 2  # Qwen only: pages per call
     accounting_reader_parallel: int = 8  # Qwen only: calls in flight per file
+    extract_builder_model: str = ""  # Extract tab format building; empty = the reader model
+    extract_builder_thinking: str = "high"  # low / medium / high; anything else counts as high
+    extract_builder_timeout_seconds: float = 300
     # Firm assistant only: native Ollama locally, OpenAI-compatible hosted Qwen later.
     assistant_llm_provider: Literal["ollama", "openai"] = "ollama"
     assistant_llm_base_url: str = "http://host.docker.internal:11434"

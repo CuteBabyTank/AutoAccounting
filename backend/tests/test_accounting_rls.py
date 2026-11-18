@@ -1,6 +1,7 @@
 from app.models.accounting import (
     AAAssistantAction, AAAssistantUsage, AAAccount, AAAsset, AAAtcDefault, AAAuditEvent, AABankLine, AABankReconciliation, AABankRule, AABankStatement, AABookClose, AACompany, AAContact, AAEmployee, AADocument, AAFile, AAJournalEntry, AAOutput, AAPeriod, AASupplierRule, AAUpload,
     AAWorkItem, AATask, AAFirmSettings, AANotificationState, AACoaTemplate, AAOpeningItem, AARecurringEntry, AAChecklistTemplate, AAImportBatch,
+    AAExtractDraft, AAExtractFile, AAExtractFormat, AAExtractRecord, AAExtractRun,
 )
 from app.services.accounting.rls import rls_statements
 
@@ -9,7 +10,9 @@ TABLES = [m.__tablename__ for m in (AACompany, AAUpload, AAFile, AADocument, AAS
                                            AABankStatement, AABankLine, AABankRule, AABankReconciliation, AAContact,
                                            AAWorkItem, AATask, AAFirmSettings, AANotificationState,
                                            AACoaTemplate, AAOpeningItem, AARecurringEntry, AAChecklistTemplate,
-                                           AAImportBatch, AAAssistantUsage, AAAssistantAction)]
+                                           AAImportBatch, AAAssistantUsage, AAAssistantAction,
+                                           AAExtractFormat, AAExtractDraft, AAExtractRun, AAExtractFile,
+                                           AAExtractRecord)]
 
 
 def test_every_accounting_table_is_forced_under_rls_with_one_policy():

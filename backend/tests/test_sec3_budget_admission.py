@@ -5,9 +5,16 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
+from app.models.accounting import AAExtractFile
 from app.models.user import UserRole
 from app.services import usage_service as billing
 from app.routers import accounting
+
+
+def pages_of(stmt, upload_pages, extract_pages=()):
+    """Reservation reads: unread upload pages, then unread Extract pages (a separate query)."""
+    rows = list(extract_pages) if stmt.column_descriptions[0]["entity"] is AAExtractFile else list(upload_pages)
+    return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: rows))
 
 
 async def test_positive_budget_cannot_admit_a_larger_page_batch(monkeypatch):
@@ -20,7 +27,7 @@ async def test_positive_budget_cannot_admit_a_larger_page_batch(monkeypatch):
             locks.append(kwargs.get('with_for_update'))
 
         async def execute(self, stmt):
-            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: pending))
+            return pages_of(stmt, pending)
 
     async def owner(*args):
         return enterprise
@@ -52,7 +59,7 @@ async def test_pending_batches_compete_for_the_same_remaining_balance(monkeypatc
             pass
 
         async def execute(self, stmt):
-            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: list(pending)))
+            return pages_of(stmt, pending)
 
     async def config(*args):
         return 1.0, None
@@ -68,6 +75,35 @@ async def test_pending_batches_compete_for_the_same_remaining_balance(monkeypatc
     with pytest.raises(ValueError, match='budget'):
         await billing.assert_pending_page_budget(DB(), enterprise)
     assert enterprise.budget == 5.0
+
+
+async def test_unread_extract_pages_hold_budget_for_uploads_too(monkeypatch):
+    """Uploads and Extract runs share one pending set: an upload can't take budget an Extract run has reserved."""
+    enterprise = SimpleNamespace(id=uuid.uuid4(), budget=5.0, usage_cap=None, global_usage_cap=None)
+
+    class DB:
+        def __init__(self, uploads, extracts):
+            self.uploads, self.extracts = uploads, extracts
+
+        async def refresh(self, row, **kwargs):
+            assert kwargs.get('with_for_update')
+
+        async def execute(self, stmt):
+            return pages_of(stmt, self.uploads, self.extracts)
+
+    async def config(*args):
+        return 1.0, None
+
+    async def usage(*args):
+        return SimpleNamespace(pages_used=0)
+
+    monkeypatch.setattr(billing, 'get_effective_rate_config', config)
+    monkeypatch.setattr(billing, 'get_or_create_usage', usage)
+    await billing.assert_pending_page_budget(DB([3], []), enterprise)
+    with pytest.raises(ValueError, match='budget'):
+        await billing.assert_pending_page_budget(DB([3], [3]), enterprise)   # an upload after an Extract run
+    with pytest.raises(ValueError, match='budget'):
+        await billing.assert_pending_page_budget(DB([], [3, 3]), enterprise)  # two Extract runs
 
 
 def test_tier_reservation_covers_any_order_of_free_page_consumption():
@@ -88,7 +124,7 @@ async def test_billing_off_or_free_allowance_allows_zero_balance(monkeypatch, fl
             pass
 
         async def execute(self, stmt):
-            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [8]))
+            return pages_of(stmt, [8])
 
     async def owner(*args):
         return enterprise
@@ -128,7 +164,7 @@ async def test_create_upload_refuses_before_commit_or_detection(monkeypatch, tmp
 
         async def execute(self, stmt):
             pages = [row.page_count for row in rows if isinstance(row, AAFile) and row.status == 'uploaded']
-            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: pages))
+            return pages_of(stmt, pages)
 
     async def config(*args):
         return 1.0, None
@@ -179,6 +215,8 @@ async def test_confirm_rechecks_budget_before_extraction(monkeypatch):
             column = stmt.column_descriptions[0]
             if column['entity'] is AACompany:
                 return SimpleNamespace(scalars=lambda: [company_id])
+            if column['entity'] is AAExtractFile:
+                return pages_of(stmt, [], [])
             rows = [8] if column['name'] == 'page_count' else [file]
             return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: rows))
 

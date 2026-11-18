@@ -20,6 +20,8 @@ from app.edge import client_ip, origin_allowed
 from app.logging_config import setup_logging
 from app.routers import accounting, admin, auth, features, team
 from app.services.accounting import pipeline
+from app.services.accounting.extract import builder as extract_builder
+from app.services.accounting.extract import runner as extract_runner
 from app.services.features import feature_gate
 from app.auth.security import global_ip_limiter, should_limit_ip
 
@@ -41,10 +43,12 @@ setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await startup_migrations.run_all(engine)
+    await extract_builder.sweep_draft_folders()  # Extract samples nobody came back to (never raises)
     try:
         yield
     finally:
         await pipeline.release_running()
+        await extract_runner.release_running()
         await engine.dispose()
 
 
@@ -98,6 +102,9 @@ _MULTIPART_BODY_MAX_BYTES = min(
 _BODY_ROUTE_LIMITS = (
     ("PUT", r"/api/auth/me/avatar", True, 5 * 1024 * 1024 + 64 * 1024),
     ("POST", r"/api/accounting/uploads", True, _MULTIPART_BODY_MAX_BYTES),
+    # Extract: a format sample is one file; run drops share the batch upload cap.
+    ("POST", r"/api/accounting/extract/drafts", True, settings.max_file_size_mb * 1024 * 1024 + 64 * 1024),
+    ("POST", r"/api/accounting/extract/runs", True, _MULTIPART_BODY_MAX_BYTES),
     ("POST", r"/api/accounting/companies/[^/]+/imports/(opening-tb|open-items|journal-entries)(/preview)?",
      True, 6 * 1024 * 1024),
     ("POST", r"/api/accounting/companies/[^/]+/employees/[0-9]+/import(/preview)?", True, 11 * 1024 * 1024),

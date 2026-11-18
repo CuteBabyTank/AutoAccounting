@@ -18,6 +18,7 @@ const FIRM_ROLES = ["admin", "enterprise", "manager", "employee"];
 const PAGE_FEATURES: { path: string; exact?: boolean; key: FeatureKey; label: string }[] = [
   { path: "/accounting/work", key: "work", label: "The work board" },
   { path: "/accounting/companies", key: "companies", label: "Companies" },
+  { path: "/accounting/extract", key: "extract", label: "Extract" },
   { path: "/accounting", exact: true, key: "documents", label: "Documents" },
   { path: "/team", key: "team", label: "Team" },
 ];

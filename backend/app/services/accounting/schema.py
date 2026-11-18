@@ -41,6 +41,7 @@ def column_statements() -> list[str]:
         "ALTER TABLE aa_firm_settings ADD COLUMN IF NOT EXISTS auto_assign BOOLEAN NOT NULL DEFAULT true",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar BYTEA",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_with_firm BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS platform_disabled_at TIMESTAMPTZ",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS access JSONB",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)",
         "ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS pending_password_hash VARCHAR(255)",

@@ -183,11 +183,21 @@ export const accountingApi = {
   moveDocumentToCompany: (id: string, companyId: string) =>
     api.post<AADocument>(`/accounting/documents/${seg(id)}/move-company`, { company_id: companyId }).then((r) => r.data),
   deleteDocument: (id: string) => api.delete(`/accounting/documents/${seg(id)}`).then(() => undefined),
-  pageImage: (fileId: string, page: number) =>
-    api
-      // v: bumped when the server's page rendering changes (2 = blank margins trimmed), so cached pages refresh
-      .get<Blob>(`/accounting/files/${seg(fileId)}/pages/${seg(page)}`, { responseType: "blob", params: { v: 2 } })
-      .then((r) => r.data),
+  pageImage: async (fileId: string, page: number): Promise<Blob> => {
+    // v: bumped when the server's page rendering changes (2 = blank margins trimmed), so cached pages refresh
+    const get = () =>
+      api
+        .get<Blob>(`/accounting/files/${seg(fileId)}/pages/${seg(page)}`, { responseType: "blob", params: { v: 2 } })
+        .then((r) => r.data);
+    try {
+      return await get();
+    } catch (err) {
+      // 503 = the renderer was momentarily full; one short retry, then let the caller show its blank state.
+      if ((err as { response?: { status?: number } })?.response?.status !== 503) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 600 + Math.random() * 400));
+      return get();
+    }
+  },
   period: (companyId: string, year: number, quarter: number) =>
     api.get<Period>(`/accounting/periods/${seg(companyId)}/${seg(year)}/${seg(quarter)}`).then((r) => r.data),
   savePeriodInputs: (companyId: string, year: number, quarter: number, inputs: PeriodInputs) =>

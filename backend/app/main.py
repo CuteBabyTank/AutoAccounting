@@ -20,6 +20,8 @@ from app.edge import client_ip, origin_allowed
 from app.logging_config import setup_logging
 from app.routers import accounting, admin, auth, features, team
 from app.services.accounting import pipeline
+from app.services.accounting.extract import builder as extract_builder
+from app.services.accounting.extract import runner as extract_runner
 from app.services.features import feature_gate
 from app.auth.security import global_ip_limiter, should_limit_ip
 
@@ -41,10 +43,12 @@ setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await startup_migrations.run_all(engine)
+    await extract_builder.sweep_draft_folders()  # Extract samples nobody came back to (never raises)
     try:
         yield
     finally:
         await pipeline.release_running()
+        await extract_runner.release_running()
         await engine.dispose()
 
 
@@ -87,11 +91,32 @@ _CSP_POLICY = (
 )
 
 
-_JSON_BODY_MAX_BYTES = 25 * 1024 * 1024  # 25 MB
+_JSON_BODY_MAX_BYTES = 1024 * 1024
 # Bound the whole batch as well as each file; reserve space for multipart headers/fields.
 _MULTIPART_BODY_MAX_BYTES = min(
     settings.max_file_size_mb * settings.max_batch_size * 1024 * 1024, 256 * 1024 * 1024,
 ) + settings.max_batch_size * 64 * 1024 + 1024 * 1024
+
+# Exact method/path/media matches are evaluated before FastAPI parses any body. All other requests, including
+# multipart on JSON endpoints, keep the 1 MiB default. Import sheets allow 5 MiB (books) / 10 MiB (payroll).
+_BODY_ROUTE_LIMITS = (
+    ("PUT", r"/api/auth/me/avatar", True, 5 * 1024 * 1024 + 64 * 1024),
+    ("POST", r"/api/accounting/uploads", True, _MULTIPART_BODY_MAX_BYTES),
+    # Extract: a format sample is one file; run drops share the batch upload cap.
+    ("POST", r"/api/accounting/extract/drafts", True, settings.max_file_size_mb * 1024 * 1024 + 64 * 1024),
+    ("POST", r"/api/accounting/extract/runs", True, _MULTIPART_BODY_MAX_BYTES),
+    ("POST", r"/api/accounting/companies/[^/]+/imports/(opening-tb|open-items|journal-entries)(/preview)?",
+     True, 6 * 1024 * 1024),
+    ("POST", r"/api/accounting/companies/[^/]+/employees/[0-9]+/import(/preview)?", True, 11 * 1024 * 1024),
+    # 60 history messages of up to 4000 characters, including JSON unicode escapes.
+    # 5 MiB of transient files expands to ~6.7 MiB base64, plus bounded history and question.
+    ("POST", r"/api/accounting/assistant/chat", False, 9 * 1024 * 1024),
+    # Form previews/saves carry editable field maps; certificate zips carry up to 2000 such maps.
+    ("POST", r"/api/accounting/outputs/[^/]+/(preview|edits|2307s/preview)", False, 4 * 1024 * 1024),
+    ("POST", r"/api/accounting/companies/[^/]+/employees/[0-9]+/2316/preview", False, 4 * 1024 * 1024),
+    ("POST", r"/api/accounting/outputs/[^/]+/2307s", False, 25 * 1024 * 1024),
+    ("POST", r"/api/accounting/companies/[^/]+/employees/[0-9]+/2316\.zip", False, 25 * 1024 * 1024),
+)
 
 
 @app.middleware("http")
@@ -196,8 +221,17 @@ async def abuse_protection_middleware(request: Request, call_next) -> Response:
 
 # ---------------------------------------------------------------------------
 # Count bytes outside the HTTP middleware stack, including multipart parser reads.
+def _bearer_ok(authorization: str) -> bool:
+    """A signature-valid, unexpired, unscoped access token (no DB work): enough to earn a route's bulk allowance."""
+    from app.auth.jwt import verify_token
+    scheme, _, token = authorization.partition(" ")
+    payload = verify_token(token) if scheme.lower() == "bearer" and token else None
+    return payload is not None and payload.get("scope") is None
+
+
 app.add_middleware(BodySizeLimitMiddleware, max_bytes=_JSON_BODY_MAX_BYTES,
-                   multipart_max_bytes=_MULTIPART_BODY_MAX_BYTES)
+                   multipart_max_bytes=_JSON_BODY_MAX_BYTES, route_limits=_BODY_ROUTE_LIMITS,
+                   authorized=_bearer_ok)
 
 # CORS: must be added LAST to be the outermost middleware (processed first for requests)
 # ---------------------------------------------------------------------------

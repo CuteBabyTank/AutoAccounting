@@ -149,8 +149,18 @@ async def _after_change(db: AsyncSession, company: AACompany, line: AABankLine) 
     and the books move."""
     await bank.void_reconciliations(db, company.id, line.account_code, line.line_date)
     await db.flush()
-    await bank.rematch(db, company)
+    # Only lines outside retained history: a change to one line must never unmatch another line in a closed
+    # month, filed quarter or live reconciliation (deletion.safe_line_ids).
+    await bank.rematch(db, company, line_ids=await deletion.safe_line_ids(db, company))
     touch_books(company)
+
+
+async def _guard_line(db: AsyncSession, company: AACompany, line: AABankLine) -> None:
+    """A line in a closed month, filed quarter or live reconciliation keeps its match until that history is
+    reopened (the same rule as bank rules and document edits)."""
+    await deletion.protect_history(db, company, [line.line_date], doing="changing its bank match")
+    await deletion.protect_bank_links(db, company, [line] if line.match_status != "confirmed" else [],
+                                      doing="changing its bank match")
 
 
 async def _month_out(db: AsyncSession, user: User, company: AACompany, line: AABankLine) -> BankMonthOut:
@@ -176,6 +186,7 @@ async def confirm_line(line_id: uuid.UUID, body: ConfirmLineIn | None = None, us
     await lock_firm(db, ent)
     line = await _line_or_404(db, ent, line_id)
     company = await company_or_404(db, ent, line.company_id)
+    await _guard_line(db, company, line)
     if not line.account_code:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Choose which bank account this statement is first")
     before = audit.snapshot(line, _LINE_FIELDS)
@@ -219,6 +230,15 @@ async def confirm_line(line_id: uuid.UUID, body: ConfirmLineIn | None = None, us
                 .order_by(AADocument.doc_date, AADocument.id).limit(1))).scalar_one_or_none()
             if receipt is not None:  # a linked receipt is this invoice's payment: the line is that receipt
                 body = body.model_copy(update={"ref": str(receipt)})
+        if body.kind == "document":
+            safe = await deletion.safe_line_ids(db, company)
+            holder = (await db.execute(select(AABankLine.id).where(
+                AABankLine.enterprise_id == ent, AABankLine.company_id == company.id, bank.live_line(),
+                AABankLine.id != line.id, AABankLine.match_kind == "document", AABankLine.matched_ref == body.ref,
+                AABankLine.match_status.in_(("matched", "confirmed"))))).scalars().all()
+            if any(h not in safe for h in holder):
+                deletion.refuse("A bank line in closed, filed or reconciled history already pays that document. "
+                                "Undo that match on Bank (reopening its month if needed) first.")
         elif not listed:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pick one of the candidates shown for this line")
         if body.amount is not None and body.amount > full:
@@ -245,6 +265,7 @@ async def reject_line(line_id: uuid.UUID, body: LineReasonIn | None = None, user
     await lock_firm(db, ent)
     line = await _line_or_404(db, ent, line_id)
     company = await company_or_404(db, ent, line.company_id)
+    await _guard_line(db, company, line)
     before = audit.snapshot(line, _LINE_FIELDS)
     if line.match_status != "excluded":
         refused = line.matched_ref or ("posting" if line.match_kind == "posting" else "")
@@ -268,6 +289,7 @@ async def exclude_line(line_id: uuid.UUID, body: LineReasonIn | None = None, use
     await lock_firm(db, ent)
     line = await _line_or_404(db, ent, line_id)
     company = await company_or_404(db, ent, line.company_id)
+    await _guard_line(db, company, line)
     before = audit.snapshot(line, _LINE_FIELDS)
     line.match_status, line.match_kind, line.matched_ref, line.match_amount = "excluded", "", "", None
     line.posting, line.review_reason = {}, ""
@@ -285,7 +307,7 @@ async def rematch_company(company_id: uuid.UUID, user: User = Depends(get_curren
                           db: AsyncSession = Depends(get_db)):
     ent, company = await _company(db, user, company_id)
     await lock_firm(db, ent)
-    matched = await bank.rematch(db, company)
+    matched = await bank.rematch(db, company, line_ids=await deletion.rematchable_line_ids(db, company))
     audit.record(db, ent=ent, company_id=company.id, user=user, entity="bank_line", entity_id=None,
                  action="rematch", label=company.registered_name, after={"matched_lines": matched}, always=True)
     touch_books(company)
@@ -309,6 +331,13 @@ async def patch_statement(statement_id: uuid.UUID, body: StatementPatch, user: U
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pick an active asset account (Cash in bank or a sub-account)")
     before = {"account_code": statement.account_code}
     old = statement.account_code
+    if old and old != account.code:
+        # Re-pointing moves every line's postings to another account: retained history must be reopened first.
+        lines = (await db.execute(select(AABankLine).where(
+            AABankLine.statement_id == statement.id, AABankLine.enterprise_id == ent, bank.live_line()
+        ))).scalars().all()
+        await deletion.protect_history(db, company, [l.line_date for l in lines], doing="changing its bank account")
+        await deletion.protect_bank_links(db, company, list(lines), doing="changing its bank account")
     await bank.assign_account(db, statement, account)
     if old:
         await bank.void_reconciliations(db, company.id, old, statement.period_start or date.min)
@@ -316,7 +345,8 @@ async def patch_statement(statement_id: uuid.UUID, body: StatementPatch, user: U
     audit.record(db, label=f"{statement.bank_name} {statement.account_number}".strip(), ent=ent,
                  company_id=company.id, user=user, entity="bank_statement", entity_id=statement.id,
                  action="update", before=before, after={"account_code": account.code})
-    await bank.rematch(db, company)
+    await db.flush()
+    await bank.rematch(db, company, line_ids=await deletion.rematchable_line_ids(db, company))
     touch_books(company)
     await db.commit()
     return statement

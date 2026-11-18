@@ -11,7 +11,7 @@ from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session
-from app.auth.jwt import verify_token
+from app.auth.jwt import credential_version, verify_token
 from app.models.user import User, UserRole
 from app.auth.security import global_user_limiter
 
@@ -77,14 +77,14 @@ async def _get_active_user(db: AsyncSession, payload: dict) -> User:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
-    if not user.is_active:
+    if not user.is_active or user.platform_disabled_at is not None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated",
         )
-    # A password change or reset signs out every session issued before it (to the second, as ``iat`` is).
-    changed = user.password_changed_at
-    if changed is not None and int(payload.get("iat") or 0) < int(changed.timestamp()):
+    # Bind to the credential state, including resets within the token's iat second. Legacy tokens sign out.
+    version = payload.get("pwd")
+    if type(version) is not int or version != credential_version(user.password_changed_at):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     return user
 
@@ -99,15 +99,16 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
-    user = await _get_active_user(db, payload)
-
-    # Per-user global rate limit (prevents scraping / excessive polling)
-    if not global_user_limiter.check_and_record(str(user.id)):
+    # Per-user global rate limit (prevents scraping / excessive polling). Counted on the
+    # signature-verified subject before any DB work: tokens of revoked, disabled or deleted
+    # accounts skip the per-IP bucket (should_limit_ip) and must not escape both limiters.
+    if not global_user_limiter.check_and_record(str(payload.get("sub"))):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many requests. Please slow down.",
             headers={"Retry-After": "60"},
         )
+    user = await _get_active_user(db, payload)
 
     # Bind identity to the DB session so RLS policies on the aa_* tables
     # can filter to the current user's firm. Done after the user lookup

@@ -243,15 +243,20 @@ def _current_year(company: AACompany) -> int:
 async def list_assets(company_id: uuid.UUID, year: int | None = Query(default=None, ge=2000, le=2100),
                       user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     company = await company_or_404(db, scope_for(user), company_id)
-    await sync_assets(db, company)  # documents filed since the last generation get their rows now
-    await db.commit()
+    enabled = await features.effective_for(db, user)
+    if not enabled["books"] and not enabled["documents"]:
+        return []
+    if enabled["documents"]:
+        await sync_assets(db, company)  # documents filed since the last generation get their rows now
+        await db.commit()
     rows = (await db.execute(
         select(AAAsset, AADocument).outerjoin(AADocument, AADocument.id == AAAsset.document_id)
         .where(AAAsset.company_id == company.id, AAAsset.enterprise_id == company.enterprise_id,
                AAAsset.deleted_at.is_(None)).order_by(AAAsset.in_service, AAAsset.description)
     )).all()
     fy = year or _current_year(company)
-    return [_asset_out(row, doc, fy, company.fiscal_year_end_month) for row, doc in rows]
+    return [_asset_out(row, doc, fy, company.fiscal_year_end_month) for row, doc in rows
+            if enabled["books" if row.document_id is None else "documents"]]
 
 
 @router.patch("/assets/{asset_id}", response_model=AssetOut)

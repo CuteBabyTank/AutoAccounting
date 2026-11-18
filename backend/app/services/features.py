@@ -50,6 +50,7 @@ FEATURES: tuple[tuple[str, str, str, str], ...] = (
     ("imports", "Import", "Tools", "Opening TB, open items and journal imports"),
     ("atc", "ATC databank", "Tools", "Supplier and account ATC defaults"),
     ("audit", "Audit log", "Tools", "The company audit log"),
+    ("extract", "Extract", "Tools", "The Extract tab: custom formats, field extraction and Excel export"),
 )
 KEYS: tuple[str, ...] = tuple(f[0] for f in FEATURES)
 LABELS: dict[str, str] = {f[0]: f[1] for f in FEATURES}
@@ -73,6 +74,7 @@ ROUTES: tuple[tuple[frozenset[str] | None, re.Pattern[str], str], ...] = tuple(
         (None, rf"^{_A}/(work|tasks|checklist-templates)(/|$)", "work"),
         (None, rf"^{_A}/notifications(/|$)", "notifications"),
         (None, rf"^{_A}/search$", "search"),
+        (None, rf"^{_A}/extract(/|$)", "extract"),
         (None, rf"^{_A}/assistant/actions(/|$)", "assistant_write"),
         (None, rf"^{_A}/assistant(/|$)", "assistant"),
         (None, rf"^{_A}/companies/{_ID}/books/(close|reopen)$", "close"),

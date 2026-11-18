@@ -16,6 +16,11 @@ function sections(company: PageCompany | null): { read: Section[]; write: Sectio
   return {
     read: [
       {
+        title: "Temporary files and draft statements",
+        what: "Attach XLSX, PDF, JPG or HEIC files, up to 5 MB total, then ask for a draft statement or a summary. Files and attachment chats aren't saved in the app. Reattach files for follow-up questions; record changes are off in these chats.",
+        examples: ["Draft a financial statement from the attached trial balance", "Summarize the attached bank statement and flag missing information"],
+      },
+      {
         title: "Your work",
         what: "Your open tasks and the filings assigned to you: what's overdue, due today and coming up.",
         examples: ["What do I need to do today?", "What's on my plate this week?", "What's the team working on this week?"],

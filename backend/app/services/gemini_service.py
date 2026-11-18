@@ -18,7 +18,6 @@ from google import genai
 from google.genai import types
 
 from app.config import settings
-from app.services.pdf_render import render_zoom
 
 logger = logging.getLogger("gemini")
 
@@ -245,16 +244,9 @@ def extract_pdf_page(pdf_path: str, page_number: int) -> bytes:
 
 def render_pdf_page(pdf_path: str, page_number: int, dpi: int = 200) -> bytes:
     """Render a single PDF page as a PNG image (used for preview). page_number is 0-indexed."""
-    doc = fitz.open(pdf_path)
-    if page_number >= len(doc):
-        doc.close()
-        raise ValueError(f"Page {page_number} does not exist (PDF has {len(doc)} pages)")
-    page = doc[page_number]
-    zoom = render_zoom(page.rect.width, page.rect.height, dpi)
-    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-    img_bytes = pix.tobytes("png")
-    doc.close()
-    return img_bytes
+    from app.services.accounting.render_pool import render_page
+
+    return render_page(pdf_path, page_number, "png", dpi=dpi)
 
 
 def render_pdf_page_jpeg(pdf_path: str, page_number: int, dpi: int = 130, quality: int = 82) -> bytes:
@@ -263,16 +255,9 @@ def render_pdf_page_jpeg(pdf_path: str, page_number: int, dpi: int = 130, qualit
     Kept for the Gemini detection path (proven image/jpeg input). The review
     page is served WebP via render_pdf_page_webp instead.
     """
-    doc = fitz.open(pdf_path)
-    if page_number >= len(doc):
-        doc.close()
-        raise ValueError(f"Page {page_number} does not exist (PDF has {len(doc)} pages)")
-    page = doc[page_number]
-    zoom = render_zoom(page.rect.width, page.rect.height, dpi)
-    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-    img_bytes = pix.tobytes("jpeg", jpg_quality=quality)
-    doc.close()
-    return img_bytes
+    from app.services.accounting.render_pool import render_page
+
+    return render_page(pdf_path, page_number, "jpeg", dpi=dpi, quality=quality)
 
 
 def _encode_pixmap_webp(pix, quality: int = 80) -> bytes:
@@ -288,17 +273,9 @@ def _encode_pixmap_webp(pix, quality: int = 80) -> bytes:
 
 def render_pdf_page_webp(pdf_path: str, page_number: int, dpi: int = 130, quality: int = 80) -> bytes:
     """Render a PDF page as WebP (smaller + faster to transfer than JPEG). 0-indexed."""
-    doc = fitz.open(pdf_path)
-    if page_number >= len(doc):
-        doc.close()
-        raise ValueError(f"Page {page_number} does not exist (PDF has {len(doc)} pages)")
-    page = doc[page_number]
-    zoom = render_zoom(page.rect.width, page.rect.height, dpi)
-    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-    try:
-        return _encode_pixmap_webp(pix, quality)
-    finally:
-        doc.close()
+    from app.services.accounting.render_pool import render_page
+
+    return render_page(pdf_path, page_number, "webp", dpi=dpi, quality=quality)
 
 
 # Blur-up thumbnail: a tiny low-res WebP shown (scaled + blurred) while the
@@ -312,18 +289,9 @@ _THUMB_QUALITY = 40
 def render_pdf_page_thumb_webp(pdf_path: str, page_number: int, target_width: int = _THUMB_WIDTH,
                                quality: int = _THUMB_QUALITY) -> bytes:
     """Render a PDF page as a tiny (~32px-wide) WebP thumbnail for blur-up. 0-indexed."""
-    doc = fitz.open(pdf_path)
-    if page_number >= len(doc):
-        doc.close()
-        raise ValueError(f"Page {page_number} does not exist (PDF has {len(doc)} pages)")
-    page = doc[page_number]
-    try:
-        width_pt = page.rect.width or float(target_width)
-        zoom = render_zoom(width_pt, page.rect.height, 72 * target_width / width_pt)
-        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-        return _encode_pixmap_webp(pix, quality)
-    finally:
-        doc.close()
+    from app.services.accounting.render_pool import render_page
+
+    return render_page(pdf_path, page_number, "thumb", quality=quality, target_width=target_width)
 
 
 def get_pdf_page_count_safe(pdf_path: str) -> int:

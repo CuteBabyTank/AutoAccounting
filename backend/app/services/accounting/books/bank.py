@@ -253,8 +253,10 @@ async def bank_paid_ids(db: AsyncSession, company_id: uuid.UUID) -> set[str]:
 
 async def rematch(db: AsyncSession, company: AACompany, *, line_ids: set[uuid.UUID] | None = None) -> int:
     """Match undecided lines (optionally a guarded subset), reserving payments on every unchanged line."""
-    from app.services.accounting.books.loader import ensure_chart
+    from app.services.accounting.assignment import lock_firm
+    from app.services.accounting.books.loader import ensure_chart, touch_books
 
+    await lock_firm(db, company.enterprise_id)
     lines = (await db.execute(select(AABankLine).where(
         AABankLine.enterprise_id == company.enterprise_id, AABankLine.company_id == company.id,
         AABankLine.account_code != "", live_line()).order_by(AABankLine.line_date))
@@ -278,6 +280,8 @@ async def rematch(db: AsyncSession, company: AACompany, *, line_ids: set[uuid.UU
     results = match_all([_fact(l) for l in pending], candidates, await company_rules(db, company.id),
                         {str(l.id): set(l.rejected or []) for l in pending},
                         [(a.code, a.bank_account_no) for a in accounts])
+    before = {l.id: (l.match_status in POSTING_STATUSES, l.match_kind, l.matched_ref, l.match_amount,
+                     (l.posting or {}).get("account", "")) for l in pending}
     matched = 0
     for l in pending:
         m = results[str(l.id)]
@@ -292,6 +296,16 @@ async def rematch(db: AsyncSession, company: AACompany, *, line_ids: set[uuid.UU
         l.posting, l.candidates, l.review_reason = posting, list(m.candidates), m.reason
         if m.status == "matched":
             matched += 1
+    earliest: dict[str, date] = {}
+    for l in pending:
+        after = (l.match_status in POSTING_STATUSES, l.match_kind, l.matched_ref, l.match_amount,
+                 (l.posting or {}).get("account", ""))
+        if after != before[l.id]:
+            earliest[l.account_code] = min(earliest.get(l.account_code, l.line_date), l.line_date)
+    for account, on in earliest.items():
+        await void_reconciliations(db, company.id, account, on)
+    if earliest:
+        touch_books(company)
     sync_payment_flags(docs, await _flushed_paid_ids(db, company.id))
     await db.flush()
     await refresh_opening_flag(db, company)

@@ -15,7 +15,7 @@ def test_selective_rematch_reserves_unchanged_automatic_payment(monkeypatch):
                                match_amount=Decimal('100'), amount=Decimal('-100'))
     changing = SimpleNamespace(id=uuid.uuid4(), match_status='unmatched', matched_ref='', amount=Decimal('-100'),
                                line_date=date(2026, 3, 1), narration='E2E RENT', check_no='', account_code='1020',
-                               rejected=[])
+                               rejected=[], match_kind='', match_amount=None, posting={})
     db = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(
         scalars=lambda: SimpleNamespace(all=lambda: [reserved, changing]))), flush=AsyncMock())
     company = SimpleNamespace(id=uuid.uuid4(), enterprise_id=uuid.uuid4())

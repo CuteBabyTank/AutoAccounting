@@ -107,7 +107,7 @@ secret AA_DB_BACKUP_URL "AA_DB_BACKUP_URL (postgresql://postgres.<ref>:<pw>@<poo
 # The backup job verifies Supabase's certificate with the same CA the app uses (it carries the BYPASSRLS
 # credential and receives every firm's data, so encryption without server verification isn't enough).
 if ! g secrets describe AA_SUPABASE_CA >/dev/null 2>&1; then
-  g secrets create AA_SUPABASE_CA --data-file="$(dirname "$0")/../backend/certs/supabase-prod-ca-2021.crt" \
+  g secrets create AA_SUPABASE_CA --data-file="../backend/certs/supabase-prod-ca-2021.crt" \
     --replication-policy automatic >/dev/null
   echo "AA_SUPABASE_CA: created"
 fi

@@ -44,6 +44,8 @@ const ACTION_LABELS: Record<string, string> = {
   restore: "Restored",
   skip: "Files skipped",
   retry: "Processing retried",
+  resume: "Processing resumed",
+  fail: "Processing failed",
   rematch: "Bank lines matched again",
   mark_reviewed: "Marked reviewed",
   unmark_reviewed: "Marked not reviewed",

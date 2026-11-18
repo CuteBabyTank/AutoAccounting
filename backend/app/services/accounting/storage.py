@@ -53,7 +53,9 @@ def _image_problem(path: Path) -> str | None:
             width, height = img.size
             if width * height > MAX_IMAGE_PIXELS:
                 return "too_large"
-            img.load()
+            from app.services.accounting.compress import image_decode_slot
+            with image_decode_slot(width * height):
+                img.load()
         return None
     except Image.DecompressionBombError:
         return "too_large"
@@ -63,6 +65,16 @@ def _image_problem(path: Path) -> str | None:
 
 def upload_dir(upload_id: uuid.UUID) -> Path:
     return Path(settings.accounting_root) / "accounting" / str(upload_id)
+
+
+def extract_draft_dir(draft_id: uuid.UUID) -> Path:
+    """Where an Extract format draft keeps its sample (deleted on save or after 24 hours)."""
+    return Path(settings.accounting_root) / "extract" / "drafts" / str(draft_id)
+
+
+def extract_run_dir(run_id: uuid.UUID) -> Path:
+    """Where an Extract run keeps its dropped files (deleted with the run)."""
+    return Path(settings.accounting_root) / "extract" / "runs" / str(run_id)
 
 
 async def stream_upload(f: UploadFile, dest_dir: Path, shrunk: bool = False) -> StoredUpload:
@@ -181,10 +193,11 @@ def read_page_bytes(stored_path: str, file_type: str, page: int) -> tuple[bytes,
     path = Path(stored_path)
     if not path.is_file():
         return None
+    if file_type == "pdf":
+        # Both helpers isolate their renders. None alone permits the full-page fallback; failures propagate.
+        trimmed = render_pdf_page_trimmed(str(path), page - 1)
+        return (trimmed or render_pdf_page_webp(str(path), page - 1)), "image/webp"
     try:
-        if file_type == "pdf":
-            trimmed = render_pdf_page_trimmed(str(path), page - 1)
-            return (trimmed or render_pdf_page_webp(str(path), page - 1)), "image/webp"
         if page != 1:
             return None
         data = path.read_bytes()

@@ -16,16 +16,16 @@ from datetime import datetime, timedelta
 STALE_AFTER = timedelta(minutes=30)
 RESUME_WITHIN = timedelta(hours=24)
 RUNNING_STATUSES = frozenset({"detecting", "extracting"})
-# A file whose extraction has died this many times is set aside instead of resumed again (a deploy can
+# A file whose detection or extraction has died this many times is set aside instead of resumed again (a deploy can
 # interrupt a healthy file once or twice; a file that crashes the instance does it every time).
 MAX_INTERRUPTS = 3
 INTERRUPTED_MESSAGE = "This file stopped processing several times, so it was set aside. Split it or drop it again."
 
 
-def after_interrupt(interrupts: int) -> tuple[int, str]:
-    """(new interrupt count, next status) for a file a dead job left in "extracting"."""
+def after_interrupt(interrupts: int, retry_status: str = "detected") -> tuple[int, str]:
+    """(new interrupt count, next status) for a file left in detection or extraction by a dead job."""
     interrupts += 1
-    return interrupts, ("error" if interrupts >= MAX_INTERRUPTS else "detected")
+    return interrupts, ("error" if interrupts >= MAX_INTERRUPTS else retry_status)
 
 
 def is_stale_job(status: str, updated_at: datetime, now: datetime) -> bool:

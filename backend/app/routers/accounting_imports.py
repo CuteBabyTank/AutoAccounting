@@ -268,6 +268,9 @@ async def confirm_import(company_id: uuid.UUID, kind: ImportKind, file: UploadFi
         problem = entry_problem(built.chart, body, company.books_start, kept)
         if problem:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, problem)
+        if row is not None:
+            await deletion.protect_entry(db, company, row)
+        await deletion.protect_history(db, company, [company.books_start], from_date=company.books_start)
         batch.restore = {"opening": entry_state(row) if row is not None else None}
         if row is None:
             row = new_entry_row(ent, company, body, user)
@@ -307,7 +310,7 @@ async def confirm_import(company_id: uuid.UUID, kind: ImportKind, file: UploadFi
         out.created, out.skipped = len(built.result.items), built.result.skipped + built.result.documented
         batch.row_count = out.created
         await db.flush()
-        await bank.rematch(db, company)
+        await bank.rematch(db, company, line_ids=await deletion.rematchable_line_ids(db, company))
     else:
         for draft in built.result.entries:
             body = _entry_body(kind="manual", book="GJ", entry_date=draft.entry_date, reference=draft.reference,
@@ -499,6 +502,17 @@ async def undo_import(batch_id: uuid.UUID, user: User = Depends(get_current_user
     if problem:
         raise HTTPException(status.HTTP_409_CONFLICT, problem)
 
+    # Check every source before mutating any of them; UndoFacts' dependency refusals still apply.
+    if batch.kind == "opening-tb":
+        await deletion.protect_entry(db, company, extra["current"])
+        await deletion.protect_history(db, company, [company.books_start], from_date=company.books_start)
+    elif batch.kind == "journal-entries":
+        for e in extra["live"]:
+            await deletion.protect_entry(db, company, e)
+    else:
+        for item in extra["items"]:
+            await deletion.protect_opening_item(db, company, item)
+
     if batch.kind == "opening-tb":
         current, plan = extra["current"], extra["plan"]
         before = audit.snapshot(current, ENTRY_FIELDS)
@@ -546,7 +560,8 @@ async def undo_import(batch_id: uuid.UUID, user: User = Depends(get_current_user
     await db.flush()
     for account, on in touches:   # none hold today (the guard refuses), kept so a changed line never leaves one
         await bank.void_reconciliations(db, company.id, account, on)
-    await bank.rematch(db, company)
+    await db.flush()
+    await bank.rematch(db, company, line_ids=await deletion.safe_line_ids(db, company))
     await bank.refresh_opening_flag(db, company)
     warnings = []
     if (company.review_flags or {}).get("opening_balance_missing"):
@@ -647,7 +662,13 @@ async def patch_opening_item(item_id: uuid.UUID, body: OpeningItemPatch, user: U
     row = await _item_or_404(db, ent, item_id)
     company = await company_or_404(db, ent, row.company_id)
     before = audit.snapshot(row, _ITEM_FIELDS)
-    if body.paid_on is not None:
+    new_via = body.paid_via if body.paid_on else ""
+    new_account = body.paid_account if body.paid_on else ""
+    if (row.paid_on, row.paid_via or "", row.paid_account or "") != (body.paid_on, new_via, new_account):
+        # Moving, adding or clearing a payment changes retained books like deleting one does: the old payment
+        # (its date, bank links, reconciliation, write-off) and the new date both go through the guard.
+        await deletion.protect_opening_item(db, company, row, doing="changing its payment")
+        await deletion.protect_history(db, company, [body.paid_on], doing="changing its payment")
         if body.paid_on < company.books_start:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "A payment before the books start is already in the "
                                                              "opening balances; delete the item instead")
@@ -657,13 +678,13 @@ async def patch_opening_item(item_id: uuid.UUID, body: OpeningItemPatch, user: U
             if account is None or not account.active or account.type != "asset" or account.locked:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pay through an active, unlocked cash or bank account")
     row.paid_on = body.paid_on
-    row.paid_via = body.paid_via if body.paid_on else ""
-    row.paid_account = body.paid_account if body.paid_on else ""
+    row.paid_via = new_via
+    row.paid_account = new_account
     audit.record(db, label=_item_label(row), ent=ent, company_id=company.id, user=user, entity="opening_item",
                  entity_id=row.id, action="update", before=before, after=audit.snapshot(row, _ITEM_FIELDS))
     touch_books(company)
     await db.flush()
-    await bank.rematch(db, company)
+    await bank.rematch(db, company, line_ids=await deletion.safe_line_ids(db, company))
     await db.commit()
     return OpeningItemOut.model_validate(row)
 

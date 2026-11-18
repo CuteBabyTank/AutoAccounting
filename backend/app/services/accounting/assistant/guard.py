@@ -91,18 +91,55 @@ def dates(text: str) -> set[str]:
     return out
 
 
-def ungrounded(answer: str, sources: list[str]) -> list[str]:
-    """Figures and dates in the answer that appear in none of the sources (question, history, tool results)."""
+_TRIPLE_POOL = 200  # figures above which only two-term sums are tried (three terms is quadratic per answer figure)
+
+
+def _cents(n: str) -> int:
+    return abs(round(float(n) * 100))
+
+
+def _combines(target: int, pool: list[int], members: set[int]) -> bool:
+    """``target`` = ±a ± b (or ±a ± b ± c for a small pool) of pool figures, compared in whole centavos."""
+    def pair(t: int, values) -> bool:
+        return any(t - a in members or a - t in members or t + a in members for a in values)
+    if pair(target, pool):
+        return True
+    if len(pool) > _TRIPLE_POOL:
+        return False
+    for i, a in enumerate(pool):
+        for b in pool[i + 1:]:
+            for v in (a + b, abs(a - b)):
+                if target - v in members or v - target in members or target + v in members:
+                    return True
+    return False
+
+
+def ungrounded(answer: str, sources: list[str], combinable: list[str] | tuple = ()) -> list[str]:
+    """Figures and dates in the answer that appear in none of the sources (question, history, tool results).
+
+    Figures from ``combinable`` sources (temporary attachments) may also be added or subtracted, two or three at
+    a time, as the attachment prompt allows; an answer figure grounded that way can feed the next one (gross
+    profit, then net income)."""
     seen: set[str] = set()
     seen_dates: set[str] = set()
     for s in sources:
         seen |= numbers(s)
         seen_dates |= dates(s)
     seen |= _derived(seen)
+    pool: list[int] = []
+    for s in combinable:
+        pool.extend(_cents(n) for n in numbers(s))
+    members = set(pool)
+    pool = sorted(members)
     out = [m.group() for m in _SPELLED_DATE.finditer(answer or "") if not dates(m.group()) <= seen_dates]
     for m in _NUMBER.finditer(answer or ""):
         n = _norm(m.group())
         if n is None or n in seen or float(n) <= _SMALL or _YEAR.fullmatch(m.group()):
+            continue
+        if pool and _combines(_cents(n), pool, members):
+            if _cents(n) not in members:
+                members.add(_cents(n))
+                pool.append(_cents(n))
             continue
         if m.group() not in out:
             out.append(m.group())

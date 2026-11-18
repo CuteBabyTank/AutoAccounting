@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { AccessArea, Account, AdminFeatures, BudgetOperation, FirmUsage, Member, MemberAccess, UserRole } from "@/types";
+import type { AccessArea, Account, AdminExtractFormat, AdminFeatures, BudgetOperation, FirmUsage, Member, MemberAccess, UserRole } from "@/types";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -100,5 +100,7 @@ export const adminApi = {
   setFirmFeature: (firmId: string, key: string, enabled: boolean | null) =>
     api.put<AdminFeatures>(`/admin/firms/${seg(firmId)}/features/${seg(key)}`, { enabled }).then((r) => r.data),
   allFeaturesOn: () => api.post<AdminFeatures>("/admin/features/all-on").then((r) => r.data),
+  extractFormats: (firmId?: string) =>
+    api.get<AdminExtractFormat[]>("/admin/extract-formats", { params: firmId ? { firm_id: firmId } : {} }).then((r) => r.data),
 };
 

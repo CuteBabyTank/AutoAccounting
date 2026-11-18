@@ -9,6 +9,8 @@ import asyncio
 import base64
 import logging
 import random
+import tempfile
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import fitz  # PyMuPDF
@@ -47,15 +49,15 @@ def _zoom(rect: "fitz.Rect") -> float:
 
 
 def _pdf_pages(data: bytes) -> list[bytes]:
-    doc = fitz.open(stream=data, filetype="pdf")
-    try:
-        pages = []
-        for page in doc:  # a chunk is a few pages (pages_per_chunk), each capped at MAX_PIXELS
-            z = _zoom(page.rect)
-            pages.append(page.get_pixmap(matrix=fitz.Matrix(z, z)).tobytes("jpeg", jpg_quality=JPEG_QUALITY))
-        return pages
-    finally:
-        doc.close()
+    from app.services.accounting.render_pool import render_page
+
+    with tempfile.TemporaryDirectory(prefix="aa-qwen-") as folder:
+        path = Path(folder) / "chunk.pdf"
+        path.write_bytes(data)
+        with fitz.open(path) as doc:
+            count = len(doc)  # metadata only; untrusted content streams are drawn only in the child
+        return [render_page(str(path), page, "qwen", dpi=DPI, quality=JPEG_QUALITY)
+                for page in range(count)]
 
 
 def _image_part(data: bytes, mime: str) -> dict:
@@ -64,7 +66,9 @@ def _image_part(data: bytes, mime: str) -> dict:
 
 async def content_for(file_bytes: bytes, mime_type: str) -> list[dict]:
     if mime_type == "application/pdf":
-        pages = await asyncio.get_running_loop().run_in_executor(None, _pdf_pages, file_bytes)
+        from app.services.accounting.render_pool import run_pdf_work
+
+        pages = await run_pdf_work(_pdf_pages, file_bytes, wait=True)
         parts: list[dict] = []
         for n, page in enumerate(pages, 1):
             parts.append({"type": "text", "text": f"Page {n}:"})
@@ -73,9 +77,15 @@ async def content_for(file_bytes: bytes, mime_type: str) -> list[dict]:
     return [_image_part(file_bytes, mime_type)]
 
 
-def _payload(content: list[dict], prompt: str) -> dict:
+def _effort(thinking: str) -> str:
+    level = thinking.strip().lower()
+    return level if level in ("low", "medium", "high") else "high"
+
+
+def _payload(content: list[dict], prompt: str, thinking: str | None = None, model: str | None = None) -> dict:
+    """``thinking`` (low / medium / high; anything else counts as high) turns reasoning on for this call."""
     payload = {
-        "model": settings.accounting_reader_model,
+        "model": model or settings.accounting_reader_model,
         "messages": [{"role": "user", "content": [*content, {"type": "text", "text": prompt}]}],
         "temperature": 0,
         "max_tokens": settings.accounting_reader_max_output_tokens,
@@ -83,11 +93,11 @@ def _payload(content: list[dict], prompt: str) -> dict:
     }
     host = urlsplit(_base()).hostname or ""
     if host == "openrouter.ai":
-        payload["reasoning"] = {"enabled": False}
+        payload["reasoning"] = {"enabled": True, "effort": _effort(thinking)} if thinking else {"enabled": False}
         # Clients' tax documents: only hosts that neither keep nor train on what they're sent, fastest first.
         payload["provider"] = {"sort": "throughput", "data_collection": "deny"}
     elif host == "dashscope.aliyuncs.com" or (host.startswith("dashscope-") and host.endswith(".aliyuncs.com")):
-        payload["enable_thinking"] = False
+        payload["enable_thinking"] = bool(thinking)
     return payload
 
 
@@ -100,16 +110,19 @@ def _strip_fences(text: str) -> str:
     return t.strip()
 
 
-async def read(file_bytes: bytes, mime_type: str, prompt: str, user_id: str) -> str:
+async def read(file_bytes: bytes, mime_type: str, prompt: str, user_id: str, thinking: str | None = None,
+               model: str | None = None, timeout: float | None = None, meter: dict | None = None) -> str:
     if not configured():
         raise ReaderError("reader_not_configured")
     headers = {"Authorization": f"Bearer {_key()}"}
-    timeout = httpx.Timeout(settings.accounting_reader_timeout_seconds, connect=10)
-    async with _slots, httpx.AsyncClient(timeout=timeout) as client:  # the slot also bounds page rendering
-        payload = _payload(await content_for(file_bytes, mime_type), prompt)
+    limit = httpx.Timeout(timeout or settings.accounting_reader_timeout_seconds, connect=10)
+    async with _slots, httpx.AsyncClient(timeout=limit) as client:  # the slot also bounds page rendering
+        payload = _payload(await content_for(file_bytes, mime_type), prompt, thinking, model)
         for attempt in range(3):
             retry = attempt < 2
             try:
+                if meter is not None:
+                    meter["calls"] += 1
                 r = await client.post(f"{_base()}/chat/completions", json=payload, headers=headers)
             except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as e:
                 if not retry:
@@ -131,9 +144,15 @@ async def read(file_bytes: bytes, mime_type: str, prompt: str, user_id: str) -> 
             if isinstance(text, list):  # some providers return content parts
                 text = "".join(p.get("text", "") for p in text if isinstance(p, dict))
             usage = body.get("usage") or {}
+            if meter is not None:
+                meter["prompt"] += int(usage.get("prompt_tokens") or 0)
+                meter["completion"] += int(usage.get("completion_tokens") or 0)
+                meter["cached"] += int((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0)
             logger.info("reader_call model=%s user_id=%s prompt_tokens=%s completion_tokens=%s finish=%s",
-                        settings.accounting_reader_model, user_id, usage.get("prompt_tokens"),
+                        payload["model"], user_id, usage.get("prompt_tokens"),
                         usage.get("completion_tokens"), choice.get("finish_reason"))
+            if meter is not None and choice.get("finish_reason") != "stop":
+                raise ReaderError("reader_incomplete_reply")
             if not text.strip():
                 if retry:
                     continue

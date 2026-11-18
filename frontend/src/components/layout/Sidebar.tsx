@@ -20,6 +20,7 @@ import {
   Kanban,
   SidebarSimple,
   Camera,
+  Scan,
 } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "next-themes";
@@ -60,6 +61,7 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
       { id: "documents", label: "Documents", icon: Files, href: "/accounting", roles: FIRM, exact: true, feature: "documents" },
       { id: "work", label: "Work", icon: Kanban, href: "/accounting/work", roles: FIRM, feature: "work" },
       { id: "companies", label: "Companies", icon: Buildings, href: "/accounting/companies", roles: FIRM, feature: "companies" },
+      { id: "extract", label: "Extract", icon: Scan, href: "/accounting/extract", roles: FIRM, feature: "extract" },
     ],
   },
 ];

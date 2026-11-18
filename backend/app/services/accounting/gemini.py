@@ -5,6 +5,7 @@ package's model and thinking level.
 """
 
 import fitz  # PyMuPDF
+import httpx
 from google.genai import types
 
 from app.config import settings
@@ -20,31 +21,38 @@ class ReaderUnavailable(RuntimeError):
     """The reading service failed (out of credit, quota, outage), not the document."""
 
 
-async def call_gemini_raw(file_bytes: bytes, mime_type: str, prompt: str, user_id: str) -> str:
+async def call_gemini_raw(file_bytes: bytes, mime_type: str, prompt: str, user_id: str,
+                          thinking: str | None = None, model: str | None = None,
+                          timeout: float | None = None) -> str:
     """One document read with an AutoAccounting prompt; returns the raw (JSON) reply text.
 
     ``ACCOUNTING_READER`` picks the model: ``qwen`` (see ``qwen_reader``) or ``gemini`` (default). Either way a
-    failure of the service itself raises ``ReaderUnavailable``.
+    failure of the service itself raises ``ReaderUnavailable``. ``thinking`` / ``model`` / ``timeout`` override the
+    reader's usual low-effort settings for one call (format building); left out, nothing changes.
     """
     if settings.accounting_reader.strip().lower() == "qwen":
         try:
-            return await qwen_reader.read(file_bytes, mime_type, prompt, user_id)
+            return await qwen_reader.read(file_bytes, mime_type, prompt, user_id, thinking, model, timeout)
         except qwen_reader.ReaderError as e:
             raise ReaderUnavailable(f"Reader failed: {e}") from None
+        except httpx.HTTPError as e:  # network failures qwen_reader doesn't map (protocol, read, write, pool)
+            raise ReaderUnavailable(f"Reader failed: {type(e).__name__}") from None
     try:
-        return await _gemini(file_bytes, mime_type, prompt, user_id)
+        return await _gemini(file_bytes, mime_type, prompt, user_id, thinking, model)
     except RuntimeError as e:
         if str(e).startswith("Gemini API failed"):
             raise ReaderUnavailable(str(e)[:300]) from None
         raise
 
 
-async def _gemini(file_bytes: bytes, mime_type: str, prompt: str, user_id: str) -> str:
+async def _gemini(file_bytes: bytes, mime_type: str, prompt: str, user_id: str,
+                  thinking: str | None = None, model: str | None = None) -> str:
     client = gemini_service._get_gemini_client()
+    level = qwen_reader._effort(thinking) if thinking else settings.accounting_gemini_thinking_level
     return await gemini_service._call_gemini(
         client, file_bytes, mime_type, prompt, user_id,
-        model=settings.accounting_gemini_model,
-        thinking_config=types.ThinkingConfig(thinking_level=settings.accounting_gemini_thinking_level),
+        model=model or settings.accounting_gemini_model,
+        thinking_config=types.ThinkingConfig(thinking_level=level),
     )
 
 

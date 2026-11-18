@@ -1,6 +1,7 @@
 # Exact versions of the last known-good production image (aa-backend-00027, 2026-11-06).
 # Dockerfile.prod installs with -c constraints.txt so upstream releases can't change prod between builds.
 # To upgrade: change versions here deliberately, run the tests, then deploy.
+pillow-heif==1.8.1
 Hypercorn==0.18.0
 Mako==1.4.3
 MarkupSafe==3.0.4

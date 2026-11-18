@@ -30,7 +30,8 @@ backend/app/
                         # reports.py (live report loader) + compute/reports, report_export (XLSX/PDF),
                         # report_pack (management pack PDF + DOCX via zipfile);
                         # pipeline, extraction, matching, classify, periods, tree, storage, pdf_*,
-                        # render_xlsx, filing, rls, schema; compute/ (tax engine); books/
+                        # render_xlsx, filing, rls, schema; compute/ (tax engine); books/;
+                        # extract/ (Extract tab: spec, checks, guard, prompts, builder, runner, export)
     gemini_service.py   # rate limiters + prompt cache + _call_gemini + PDF page rendering
     usage_service.py    # monthly page counts + budget debits (charge_for_pages)
     form_filler_service.py  # BIR 2307 PDF fill (outgoing 2307s)
@@ -39,7 +40,7 @@ backend/app/
 backend/tests/          # pure-logic + router-isolation tests (no DB, no Gemini)
 
 frontend/src/
-  app/{login,pending,accounting,accounting/companies,accounting/work,team,admin}/page.tsx
+  app/{login,pending,accounting,accounting/companies,accounting/work,accounting/extract,team,admin}/page.tsx
   app/providers.tsx     # Theme + Auth + AuthGate (role routing from lib/roles.ts)
   components/accounting/  # all accounting UI panels
   components/work/      # work board pieces: CompanyHealth, TaskList/TaskForm, NotificationBell, FirmSettingsCard
@@ -93,20 +94,23 @@ Required in production: `GEMINI_API_KEY`, `JWT_SECRET` (≥32 chars), `GOOGLE_CL
 `ASSISTANT_FIRM_DAILY_TOKENS` (3000000), `ASSISTANT_USER_DAILY_TOKENS` (600000),
 `ASSISTANT_PLATFORM_DAILY_TOKENS` (20000000 per instance; all caps reset at Manila midnight, 0 disables),
 `ASSISTANT_HISTORY_TURNS` (12 messages), `ASSISTANT_HISTORY_CHARS` (800 per message),
-`ASSISTANT_HISTORY_BUDGET_CHARS` (4000 total), `EMAIL_PROVIDER` ("" off, "console" dev, "ses"), `EMAIL_FROM`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `ASSISTANT_ANSWER_CHARS` (4000, truncated with `…`), `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB` (50), `MAX_BATCH_SIZE` (200), `MAX_PDF_PAGES` (500, checked at upload and before extraction), `BOOTSTRAP_ADMIN_EMAIL`, `ENABLE_DEV_LOGIN`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+`ASSISTANT_HISTORY_BUDGET_CHARS` (4000 total), `EMAIL_PROVIDER` ("" off, "console" dev, "ses"), `EMAIL_FROM`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `ASSISTANT_ANSWER_CHARS` (4000, truncated with `…`), `EXTRACT_BUILDER_MODEL` (empty = the reader model), `EXTRACT_BUILDER_THINKING` (`high`), `EXTRACT_BUILDER_TIMEOUT_SECONDS` (300), `ACCOUNTING_DIR`, `MAX_FILE_SIZE_MB` (50), `MAX_BATCH_SIZE` (200), `MAX_PDF_PAGES` (500, checked at upload and before extraction), `BOOTSTRAP_ADMIN_EMAIL`, `ENABLE_DEV_LOGIN`, `JWT_SECRET_PREVIOUS`, `DATABASE_SSL_MODE`, `DATABASE_SSL_ROOT_CERT`, `DATABASE_POOLER`, Gemini rate-limit knobs. Frontend: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
 Multipart bodies are capped at the smaller of the configured batch capacity and 256 MiB, plus 64 KiB per file and
-1 MiB for headers/fields. JSON bodies are capped at 25 MiB; limits count received bytes regardless of Content-Length.
+1 MiB for headers/fields on batch uploads only; other bodies default to 1 MiB, with route-specific caps of 5 MiB + 64 KiB for avatars, 6/11 MiB for books/payroll imports, 2 MiB for assistant history, 4 MiB for form edits/previews and 25 MiB for bulk certificate edits; limits count received bytes regardless of Content-Length. A route allowance above 1 MiB applies only to requests carrying a signature-valid bearer token (`main._bearer_ok`); anonymous bodies get 1 MiB. The per-user request limiter runs on the token's `sub` before the user lookup.
 
 ## Gotchas
 
+- **Legacy account disables:** run `python -m app.services.platform_disabled_backfill [--dry-run]` once after deployment; it preserves proven firm-only suspensions and restricts ambiguous legacy disables until platform review (idempotent, system-audited).
 - **aa_* tables have FORCE RLS** keyed on `app.current_user_id` → the user's firm. Every DB session that touches them must `bind_session_user` (`get_current_user` does it; background jobs like `pipeline.run_extraction` do it themselves). The app's DB role must be **NOBYPASSRLS** or RLS silently does nothing.
 - **Firm scope:** every accounting row carries `enterprise_id` = the firm owner's user id (`routers/accounting_scope.scope_for`). Always filter by it, even with RLS on.
 - **Upload compression:** `storage.stream_upload` compresses every accepted file before it is kept
   (`services/accounting/compress.py`: photos ≤ 2400 px JPEG q80, PDF images > 240 dpi resampled to 200, fonts subset).
   The stored `sha256` is the **original** upload's (duplicate drops still match); `file_size`, `stored_path` and
   `file_type` are the kept copy's (a PNG may become a JPG). Signed / encrypted PDFs are kept byte-for-byte. The PDF
-  rewrite runs in a memory-capped subprocess, up to `compress.PDF_WORKERS` (3) at once on `PDF_POOL`; past
+  rewrite runs in a memory-capped subprocess on `PDF_POOL` (up to `compress.PDF_WORKERS`, 3). Compression and
+  rendering share `pdf_budget.PDF_CHILD_SLOTS`: at most 3 children × 768 MiB, leaving 1792 MiB of the 4 GiB
+  instance for the parent and buffers. Background work waits; the page viewer can return 503 when full. Past
   `storage.PDF_QUEUE_MAX` waiting, a PDF is kept as uploaded. JPEG photos are shrunk in the browser first
   (`lib/photo-shrink.ts`, same 2400 px / q80) and flagged `shrunk` per file; the server then skips its own JPEG pass.
   Never key duplicates on a browser-supplied hash (a firm member could pre-claim one and get a later real file
@@ -124,9 +128,9 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   the origin secret, else the last `X-Forwarded-For` entry (the first is client-forged). The lock (403 without
   `X-AA-Origin`, except `/api/health`) is `ORIGIN_LOCK=true` on the backend and `ORIGIN_SECRET` on the frontend.
 - **In-memory rate limiters** are per instance; N instances ≈ N× the limit.
-- **Bank statements:** `kind == "statement"` docs stay category `support`; their lines live in `aa_bank_statements` / `aa_bank_lines` (stored by `books/bank.store_statement` in the pipeline, then `bank.rematch`). A line only posts when `match_status` is `matched` (auto: one strong candidate, partial with payee + number, or a cash-deposit transfer) or `confirmed`, and its statement has an `account_code` (resolved by the last 4 digits of `aa_accounts.bank_account_no`). A document match **replaces** the doc's `paid_on` payment (`compute/bank_books.apply_bank_lines`); never add another payment path for bank-matched docs. Amount alone never auto-links. Anything that changes a line must `void_reconciliations` + `rematch` + `touch_books`. Lines keep the file page they are printed on (`aa_bank_lines.page`, via `bank_statement.file_page`; None for
+- **Bank statements:** `kind == "statement"` docs stay category `support`; their lines live in `aa_bank_statements` / `aa_bank_lines` (stored by `books/bank.store_statement` in the pipeline, then `bank.rematch`). A line only posts when `match_status` is `matched` (auto: one strong candidate, partial with payee + number, or a cash-deposit transfer) or `confirmed`, and its statement has an `account_code` (resolved by the last 4 digits of `aa_accounts.bank_account_no`). A document match **replaces** the doc's `paid_on` payment (`compute/bank_books.apply_bank_lines`); never add another payment path for bank-matched docs. Amount alone never auto-links. Anything that changes a line must `void_reconciliations` + `rematch` + `touch_books`. No route or job runs an unrestricted `bank.rematch(db, company)`: after a change use `deletion.safe_line_ids`; for new lines/documents (pipeline, statement first assignment, open-item import, manual Rematch) use `deletion.rematchable_line_ids` (safe lines + lines that post nothing yet). Line confirm/reject/exclude refuse lines in closed/filed/reconciled history (`_guard_line`), and a confirm can't take a document a retained line already pays. Lines keep the file page they are printed on (`aa_bank_lines.page`, via `bank_statement.file_page`; None for
   older extractions). Closing a month with unreconciled statement lines needs `override_reason` (409 `bank_unreconciled:` otherwise). `aa_companies.review_flags.opening_balance_missing` is refreshed by `bank.refresh_opening_flag`.
-- **Audit log:** every router that changes firm data calls `services/accounting/audit.record(db, ent=, company_id=, user=, entity=, entity_id=, action=, before=, after=, reason=, label=)` before its commit (snapshot the row with `audit.snapshot(row, fields)` before mutating; only changed fields are stored, a no-op writes nothing; pass `before=None` for creates, `after=None` for deletes). New entities go in `audit.ENTITIES` and `ENTITY_LABELS`/`ACTION_LABELS` in `components/accounting/AuditTrail.tsx`. `aa_audit_events` is append-only (RLS has SELECT + INSERT policies only). Read via `GET /api/accounting/audit-events`. The dev DB role is a superuser, so RLS is not enforced locally; test policies with a NOBYPASSRLS role.
+- **Audit log:** every router that changes firm data calls `services/accounting/audit.record(db, ent=, company_id=, user=, entity=, entity_id=, action=, before=, after=, reason=, label=)` before its commit (snapshot the row with `audit.snapshot(row, fields)` before mutating; only changed fields are stored, a no-op writes nothing; pass `before=None` for creates, `after=None` for deletes). New entities go in `audit.ENTITIES` and `ENTITY_LABELS`/`ACTION_LABELS` in `components/accounting/AuditTrail.tsx`. `aa_audit_events` is append-only (RLS has SELECT + INSERT policies only). Read via `GET /api/accounting/audit-events`, which hides entities whose area the person is refused (`accounting_audit.ENTITY_AREA`; map a new entity there). The dev DB role is a superuser, so RLS is not enforced locally; test policies with a NOBYPASSRLS role.
 - **Review reasons:** set `needs_review` with `review_rules.needs_review_for(reasons)`, never `bool(reasons)`: soft reasons (`payment_unverified`) show but don't queue or block close. Per-reason details go in `aa_documents.review_notes`. Payment flags (`payment_source_unknown`, `payment_unverified`) are cleared by `review_rules.sync_payment_flags(docs, paid_ids)` (called from `relink_receipts`); bank matching passes its matched document ids as `paid_ids`. A VAT mismatch claims 12% and posts the excess to `vat_difference` (1310); documents stored before that rule are
   switched by `books/vat_backfill.backfill_vat_difference` (run from `load_periods`, idempotent, audited as a system
   event), except in filed quarters, which keep the disallowed VAT and get `review_notes.vat_math_mismatch.legacy`.
@@ -223,6 +227,51 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   returns-only, and the company Overview then shows `BooksOffCard` to turn books on. Companies stored before
   2026-10-20: `python -m app.services.accounting.books.books_start [--dry-run]` (start of the first quarter with
   documents, audited as a system event).
+- **Extract tab** (`routers/accounting_extract.py`, package `services/accounting/extract/`, page `/accounting/extract`,
+  components in `components/extract/`, `lib/extract-api.ts`; design in `docs/superpowers/specs/2026-11-13-extract-tab-design.md`):
+  a standalone tool where a firm *format* (fields + checks) reads dropped documents into a table with yellow / red
+  review flags and an Excel download. It never touches companies, documents, books or filings, and has its own tables
+  (`aa_extract_formats`, `_drafts`, `_runs`, `_files`, `_records`, all in `rls._FIRM_TABLES`). Formats are **data**:
+  prompts are generated by `extract/prompts.py` from the fields, and nothing a model writes (code, regex, formula) is
+  stored or run. Every check is one of the catalogue kinds in `extract/checks.py`; a new kind needs its params in
+  `spec.clean_checks`, an evaluator in `checks`, a `spec.sentence` line, a `BUILDER_PROMPT` mention and the field-param
+  mirror in `components/extract/CheckList.tsx` (`FIELD_PARAMS`). Every kind except `rows_sum` needs all its fields in
+  one scope. `sum` / `rows_sum` count blank terms as 0 when the target and one term are present, and skip when an
+  operand is unreadable; `format atc` ignores spaces, hyphens and case. `required` and `format` checks are always red.
+  Default checks: TIN format, required, and `not_future` on date fields except forward-looking ones (a key word, split
+  on `_`, in `spec._FORWARD_WORDS`: due, to, end, until, valid, expiry...). Money: difference <= 0.05 passes,
+  <= max(1.00, 0.1% of target) is yellow, else red; commas must be thousands groups ("1.234,50" is unreadable);
+  confidence under 70 is a yellow marker (none given = no marker).
+  **Missing-fields guard** (`extract/guard.py`): the owner's "what's missing" note (200 chars) only names fields. It is
+  an allowlist, and rejects rather than strips (ASCII letters / digits, ñ, space and `- / . , ( ) % # & ' ; :`; newlines
+  count as spaces); the phrase check runs on the whole note in a spaced and a compact view and again on the final
+  names. Per draft: 5 asks, 10 fields added. Proposals are the default checks first, then the model's, through
+  `spec.clean_checks`. Model-written labels / descriptions / hints / names that read like instructions
+  (`guard.looks_like_instructions`) are dropped or blanked. **Drafts** (sample reads, first 5 pages) last 24 h,
+  creator only (expired rows purged on `create_draft` and `GET /formats`; sample folders older than 25 h swept from
+  disk at startup and at most hourly per instance, `builder.sweep_draft_folders`); formats are written by
+  owner / manager only (`MANAGER_ROLES`), any firm role with the `extract` area may use them. Editing an unedited
+  built-in needs a sample drop (the firm copy is made from a draft carrying `base_key`). Builder env:
+  `EXTRACT_BUILDER_*`. Billing: `usage_service.assert_pending_page_budget` counts unread Extract pages too (uploads and
+  Extract share one pending set); a sample is charged `min(pages, 5)` once, a missing-fields ask is free.
+  **Runs** (`extract/runner.py`): files live under `<accounting root>/extract/runs/<run id>/` (drafts under
+  `extract/drafts/<draft id>/`); a run snapshots its formats and reading, re-flagging after hand edits and export
+  always use the snapshot. `GET /runs` pages "Past extracts" (`offset`, `limit` <= 50 → `{"total", "offset",
+  "runs"}`); `GET /runs/{id}` returns counts; records are paged at `GET /runs/{id}/records` (limit <= 200). Deleting a
+  run keeps run + file rows as a tombstone and deletes its records and files. The job reuses `pipeline.read_chunks`
+  with Extract's own job slots (`runner._SLOTS`: one per firm, two per instance, apart from uploads), resumes on the
+  next `GET /runs/{id}`, and `runner.release_running` dates running files back at shutdown. **Lock order**
+  everywhere: run row, then the firm owner row, then file rows, then records (comment at the top of `runner.py`);
+  creating a run or a draft takes the owner lock before its first insert (the FK insert's KEY SHARE then a FOR
+  UPDATE deadlocked overlapping drops).
+  Export is capped at 20,000 records and 2,000,000 cells; text is stripped of control characters, then `csv_safe`.
+  **Admin**: Platform admin → "Extract formats" (`components/admin/ExtractFormats.tsx`, `GET /api/admin/extract-formats`)
+  lists every firm's formats read only, through a SELECT-only admin RLS policy (`aa_extract_formats_admin_read`); the
+  admin never edits a firm's format. Feature key `extract` (in `FEATURES`, `ROUTES`, `PERSONAL_KEYS`, `FeatureKey`;
+  the Team access panel reads the area list from the API).
+  `python -m scripts.extract_isolation_check` (inside backend, development only: it refuses other environments and
+  non-local hosts) creates two throwaway firms, an employee and an admin, checks the routes over HTTP and removes them;
+  it tests application-level filtering only (the dev DB role is a superuser, so RLS needs a NOBYPASSRLS role).
 - **Page tours** (`components/guide/SpotlightTour.tsx`, wrapped by `PageGuide`): the first visit to Documents, Work,
   Companies and Team, or a click on "How this works", runs an on-screen tour. It dims the page, rings each element and
   joins it to an explainer card with a dashed line. Stops are listed in `tours/spots.ts` and point at `data-tour="…"`
@@ -371,7 +420,7 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   `EMAIL_PROVIDER`: "" hides sign-up / forgot and the password form until an account has a password; "console"
   (dev) logs the links; "ses" (prod) sends through Amazon SES `ap-southeast-2` (same AWS account as SnagStock,
   autoaccounting.ph verified with DKIM) as `EMAIL_FROM`, keys in `AA_AWS_ACCESS_KEY_ID` / `AA_AWS_SECRET_ACCESS_KEY`. Links open `/login?verify=` /
-  `?reset=`, which strip the token from the URL. Only `/login` may be framed, and only same-origin (middleware sets
+  `?reset=`, which strip the token from the URL. Password lockout also applies to addresses with no account (`unknown_login_limiter`), and the email allowance is per (client IP, address) with a separate inbox cap counted only on real sends (`email_address_limiter` in `_send_link`). Team add-member answers every non-addable target with one message (`team._NOT_ADDABLE`). Only `/login` may be framed, and only same-origin (middleware sets
   `frame-ancestors 'self'` + `X-Frame-Options: SAMEORIGIN` there, DENY elsewhere).
 - **Tailwind `dark:`** follows the OS here; use the theme CSS vars instead.
 - **Frontend token** lives in `sessionStorage` (`autoaccounting_token`). The axios interceptor attaches it, and on 401 it is cleared and AuthGate redirects.
@@ -391,3 +440,5 @@ Alphalist DAT export (BIR layout unverified), Gemini read of scanned payroll reg
 
 - Companies/contacts use `archived_at`; assets/payroll use `deleted_at`. Keep identities, TIN uniqueness, source files and tax history (≥5 years); active loaders must exclude tombstones. Contact merges require both contacts restored first.
 - Before deleting accounting sources, use `services/accounting/deletion.py` (`protect_document`, `protect_entry`, `protect_history`), backed by pure `compute/retention.py`. Refuse closed/filed history, including later returns affected by carry-forwards, depreciation and bank/reference dependencies. Take `assignment.lock_firm` before reading mutation facts; competing filing/closing/bank writes use the same lock. Rematch only the bank lines covered by the guard, retain rows with tombstones, audit before commit, and confirm destructive UI actions.
+- Document edits, bulk exclusion and company moves use the same guard (`protect_document(..., doing=...)` for the refusal wording): only edits that take a document out of retained history (exclude, date, period, `paid_on`, `settles_document_id`) or a move are refused; ordinary corrections (parties, amounts, accounts) stay editable on filed / closed documents. Every rematch after a document change uses `deletion.safe_line_ids` (skips confirmed, closed/filed-dated and reconciled lines), never a full rematch.
+- PDF children: `pdf_budget.BACKGROUND_CHILD_SLOTS` (2 of the 3) caps compression + background (`wait=True`) renders, and `render_pool.BACKGROUND_WORKERS` caps their pool threads, so the page viewer always has a thread and a child; the frontend retries a page 503 once. Viewer admission is also capped per firm (`render_pool.VIEWER_PER_FIRM`, 3 of the 6 pending slots); pass `firm=` on new viewer routes. Image decodes over 12 MP in the parent go one at a time (`compress.image_decode_slot`). The Casper attachment worker gets an env without secrets and at most `attachments.MAX_WAITING` turns queue for a parse slot.

@@ -34,12 +34,16 @@ class MoveFacts:
     confirmed_bank_match: bool = False
     written_off: bool = False
     is_2307_for_a_sale: bool = False
+    # The retention guard's refusal (closed month, filed return, retained bank / write-off / 2307 link), if any.
+    retained_history: str = ""
 
 
 def move_problem(f: MoveFacts) -> str | None:
     """Why the document can't move to another company yet (the step to take first), or None."""
     if f.is_statement:
         return "Bank statements can't move between companies. Delete it here and upload it to the right company."
+    if f.retained_history:
+        return f.retained_history
     if f.has_asset:
         return "This document is in the fixed asset register. Remove the asset first, then move it."
     if f.confirmed_bank_match:

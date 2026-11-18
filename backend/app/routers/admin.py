@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_admin
+from app.models.accounting import AAExtractFormat
 from app.models.api_usage import ApiUsage
 from app.models.feature_toggle import FeatureToggle, FirmFeatureOverride
 from app.models.user import User, UserRole
@@ -19,16 +20,19 @@ from app.schemas.auth import (
 )
 from app.services import features
 from app.services.accounting import audit
+from app.services.accounting.extract import formats as extract_formats
+from app.services.accounting.extract import prompts as extract_prompts
 from app.services.budget_service import compute_new_budget
 
 router = APIRouter()
 
 _MEMBER_ROLES = (UserRole.EMPLOYEE, UserRole.MANAGER)
-_ACCOUNT_FIELDS = ("email", "role", "enterprise_id", "organization_name", "is_active")
+_ACCOUNT_FIELDS = ("email", "role", "enterprise_id", "organization_name", "is_active", "platform_disabled_at")
 
 
 async def _user_or_404(db: AsyncSession, user_id: uuid.UUID) -> User:
-    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    user = (await db.execute(select(User).where(User.id == user_id).with_for_update()
+                             .execution_options(populate_existing=True))).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return user
@@ -157,7 +161,9 @@ async def toggle_active(
         raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
     target = await _user_or_404(db, user_id)
     before = audit.snapshot(target, _ACCOUNT_FIELDS)
-    target.is_active = not target.is_active
+    # A platform restriction survives firm-side state changes; only this operation clears it.
+    target.is_active = target.platform_disabled_at is not None or not target.is_active
+    target.platform_disabled_at = None if target.is_active else datetime.now(timezone.utc)
     members_updated = 0
     if target.role == UserRole.ENTERPRISE:
         members = (User.enterprise_id == target.id, User.role.in_(_MEMBER_ROLES))
@@ -170,7 +176,8 @@ async def toggle_active(
                                        .where(*members, User.suspended_with_firm.is_(True)))).scalar_one()
             recorded = bool(target.suspended_with_firm) or marked > 0
             only = (User.suspended_with_firm.is_(True),) if recorded else (User.is_active.is_(False),)
-            stmt = update(User).where(*members, *only).values(is_active=True, suspended_with_firm=False)
+            stmt = (update(User).where(*members, *only, User.platform_disabled_at.is_(None))
+                    .values(is_active=True, suspended_with_firm=False))
             target.suspended_with_firm = False
         else:  # suspended: remember who was on, so members the firm deactivated stay off afterwards
             target.suspended_with_firm = True
@@ -337,3 +344,39 @@ async def assistant_usage(
 
     # Bound admin identity uses this table's SELECT-only admin policy under FORCE RLS.
     return await usage.report(db, days)
+
+
+def extract_format_row(row, firm_name: str, editor_name: str) -> dict:
+    """One firm format for the platform admin (pure): its definition, the check sentences and the reading prompt
+    generated from it. Formats hold no sample values, so none are shown."""
+    shown = extract_formats.out({"fields": row.fields or [], "checks": row.checks or []})
+    return {"id": str(row.id), "firm": firm_name, "name": row.name, "base_key": row.base_key,
+            "version": row.version, "deleted": row.deleted_at is not None,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None, "updated_by": editor_name,
+            "fields": shown["fields"], "checks": shown["checks"],
+            "prompt": extract_prompts.extraction_prompt(row.name, row.fields or [])}
+
+
+@router.get("/extract-formats")
+async def extract_formats_overview(
+    firm_id: uuid.UUID | None = None,
+    db: AsyncSession = Depends(get_db), _admin: User = Depends(require_admin),
+):
+    """Every firm's Extract formats, newest edit first, deleted ones included (read only; the admin sees other
+    firms' rows through the SELECT-only admin RLS policy)."""
+    q = select(AAExtractFormat).order_by(AAExtractFormat.updated_at.desc(), AAExtractFormat.id).limit(500)
+    if firm_id is not None:
+        q = q.where(AAExtractFormat.enterprise_id == firm_id)
+    rows = (await db.execute(q)).scalars().all()
+    ids = {r.enterprise_id for r in rows} | {r.updated_by for r in rows if r.updated_by}
+    names = {u.id: u for u in (await db.execute(select(User).where(User.id.in_(ids)))).scalars()} if ids else {}
+
+    def person(uid: uuid.UUID | None) -> str:
+        u = names.get(uid) if uid else None
+        return (u.nickname or u.email) if u is not None else ""
+
+    def firm(uid: uuid.UUID) -> str:
+        u = names.get(uid)
+        return (u.organization_name or u.email) if u is not None else ""
+
+    return [extract_format_row(r, firm(r.enterprise_id), person(r.updated_by)) for r in rows]

@@ -268,9 +268,13 @@ async def update_journal_entry(entry_id: uuid.UUID, body: JournalEntryIn, user: 
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A write-off can't be edited (its lines are tied to the "
                                                          "invoices): delete it, which reopens them, and write off again")
     await _check_entry(db, company, body, entry_id=row.id)
+    await deletion.protect_entry(db, company, row)
+    entry_date = company.books_start if body.kind == "opening" else body.entry_date
+    await deletion.protect_history(db, company, [entry_date],
+                                  from_date=entry_date if body.kind == "opening" else None)
     before = audit.snapshot(row, ENTRY_FIELDS)
     row.kind, row.book, row.reference, row.particulars = body.kind, body.book, body.reference, body.particulars
-    row.entry_date = company.books_start if body.kind == "opening" else body.entry_date
+    row.entry_date = entry_date
     row.lines = lines_json(body)
     row.is_adjusting = body.is_adjusting
     audit.record(db, label=entry_label(row),

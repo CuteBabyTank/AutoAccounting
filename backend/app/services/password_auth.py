@@ -22,6 +22,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import create_access_token
+from app.auth.security import email_address_limiter, unknown_login_limiter
 from app.config import settings
 from app.models.auth_token import AuthToken
 from app.models.user import User, UserRole
@@ -77,12 +78,15 @@ async def _use_link(db: AsyncSession, token: str, purpose: str) -> tuple[User, A
         raise HTTPException(400, "This link has expired or was already used. Ask for a new one.")
     row.used_at = now
     user = await db.get(User, row.user_id)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or user.platform_disabled_at is not None:
         raise HTTPException(400, "This link has expired or was already used. Ask for a new one.")
     return user, row
 
 
 async def _send_link(email: str, subject: str, intro: str, path: str, token: str, ttl_words: str) -> None:
+    if not email_address_limiter.check_and_record(normalize_email(email)):
+        logger.warning("email_send_capped")  # inbox flood cap; the caller's answer stays the same
+        return
     link = f"{_app_url()}{path}={quote(token)}"
     text = (f"{intro}\n\n{link}\n\nThe link works once and expires in {ttl_words}. If you didn't ask for this, "
             "you can ignore this email; nothing changes.\n\nAutoAccounting")
@@ -159,6 +163,7 @@ async def register(db: AsyncSession, email: str, password: str, accept_privacy: 
 
 async def verify_email(db: AsyncSession, token: str) -> tuple[User, str]:
     user, link = await _use_link(db, token, "verify")
+    await _lock_user(db, user)
     if user.email_verified_at is None:
         # Only a still-unconfirmed account takes the password chosen at sign-up; a confirmed one (or one its owner
         # claimed through Google) keeps its own.
@@ -168,10 +173,11 @@ async def verify_email(db: AsyncSession, token: str) -> tuple[User, str]:
             user.password_hash = link.pending_password_hash
             user.password_changed_at = now
     link.pending_password_hash = None
+    access_token = create_access_token(str(user.id), password_changed_at=user.password_changed_at)
     await db.commit()
     await db.refresh(user)
     logger.info("email_verified user_id=%s", user.id)
-    return user, create_access_token(str(user.id))
+    return user, access_token
 
 
 async def login(db: AsyncSession, email: str, password: str) -> tuple[User, str]:
@@ -182,6 +188,10 @@ async def login(db: AsyncSession, email: str, password: str) -> tuple[User, str]
         await passwords.verify_password(None, password)  # same work as a real attempt
         raise HTTPException(429, "Too many wrong passwords. Try again in 15 minutes, or reset your password.",
                             headers={"Retry-After": str(int((user.locked_until - now).total_seconds()) + 1)})
+    if user is None and unknown_login_limiter.is_rate_limited(email):
+        await passwords.verify_password(None, password)  # an unknown address locks exactly like a real one
+        raise HTTPException(429, "Too many wrong passwords. Try again in 15 minutes, or reset your password.",
+                            headers={"Retry-After": str(int(LOCK_FOR.total_seconds()) + 1)})
     checked_hash = user.password_hash if user else None
     ok = await passwords.verify_password(checked_hash, password)
     if user is not None and ok:
@@ -195,7 +205,9 @@ async def login(db: AsyncSession, email: str, password: str) -> tuple[User, str]
             raise HTTPException(403, "Confirm your email first. We sent you a link when you signed up; you can ask "
                                      "for a new one below.")
     if user is None or not ok:
-        if user is not None:
+        if user is None:
+            unknown_login_limiter.record(email)
+        else:
             user.failed_logins = (user.failed_logins or 0) + 1
             if user.failed_logins >= MAX_FAILS:
                 user.locked_until, user.failed_logins = now + LOCK_FOR, 0
@@ -203,7 +215,7 @@ async def login(db: AsyncSession, email: str, password: str) -> tuple[User, str]
             await db.commit()
         logger.info("password_login_failed")
         raise HTTPException(401, WRONG)
-    if not user.is_active:
+    if not user.is_active or user.platform_disabled_at is not None:
         raise HTTPException(403, "Account is deactivated")
     if user.email_verified_at is None:
         raise HTTPException(403, "Confirm your email first. We sent you a link when you signed up; you can ask "
@@ -211,7 +223,7 @@ async def login(db: AsyncSession, email: str, password: str) -> tuple[User, str]
     user.failed_logins, user.locked_until = 0, None
     if passwords.needs_rehash(user.password_hash):
         user.password_hash = await passwords.hash_password(password)
-    token = create_access_token(str(user.id))  # issued while the row is locked, so before any later reset
+    token = create_access_token(str(user.id), password_changed_at=user.password_changed_at)  # under the row lock
     await db.commit()
     await db.refresh(user)
     logger.info("password_login_success user_id=%s", user.id)
@@ -270,8 +282,9 @@ async def reset_password(db: AsyncSession, token: str, password: str) -> tuple[U
     user.failed_logins, user.locked_until = 0, None
     await db.execute(update(AuthToken).where(AuthToken.user_id == user.id)
                      .values(used_at=func.coalesce(AuthToken.used_at, now), pending_password_hash=None))
+    access_token = create_access_token(str(user.id), password_changed_at=user.password_changed_at)
     await db.commit()
     await db.refresh(user)
     logger.info("password_reset_done user_id=%s", user.id)
-    # Issued after the change, so this session survives the "signed out everywhere" check.
-    return user, create_access_token(str(user.id))
+    # Bound to this reset while locked; a later reset must revoke this session too.
+    return user, access_token

@@ -28,6 +28,7 @@ from app.models.user import User, UserRole
 from app.services import gemini_service
 from app.services.accounting import audit, duplicates, gemini as aa_gemini
 from app.services.accounting.assignment import lock_firm
+from app.services.accounting.field_hints import document_hints
 from app.services.accounting.classify import (
     CompanyProfile, classify_document, duplicate_key, empty_document_fields, mark_duplicates,
 )
@@ -500,7 +501,11 @@ async def run_extraction(upload_id: uuid.UUID, user_id: str, firm_id: uuid.UUID)
                     rows = []
                     for start0, pages, extracted in await task:
                         if extracted:
-                            rows += [classify_document(ext, profile, rules.get(company_id, {}), others) for ext in extracted]
+                            for ext in extracted:
+                                fields = classify_document(ext, profile, rules.get(company_id, {}), others)
+                                fields["field_hints"] = document_hints(
+                                    getattr(ext, "raw", None), getattr(ext, "page_offset", 0), fields)
+                                rows.append(fields)
                         else:
                             rows.append(empty_document_fields(pages, page_start=start0 + 1))
                     if not rows:

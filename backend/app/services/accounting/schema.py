@@ -106,6 +106,8 @@ def column_statements() -> list[str]:
         "ALTER TABLE aa_opening_items ADD COLUMN IF NOT EXISTS import_batch_id UUID "
         "REFERENCES aa_import_batches(id) ON DELETE SET NULL",
         "CREATE INDEX IF NOT EXISTS ix_aa_opening_items_import_batch_id ON aa_opening_items (import_batch_id)",
+        # Field boxes: where the reader read each field (field_hints.py); the browser confirms against the page text.
+        "ALTER TABLE aa_documents ADD COLUMN IF NOT EXISTS field_hints JSONB NOT NULL DEFAULT '{}'::jsonb",
     ] + search_index_statements()
 
 

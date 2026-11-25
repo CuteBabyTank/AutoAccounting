@@ -63,6 +63,7 @@ Reply with ONLY valid JSON, no markdown fences, no explanation:
   "expense_account": "<purchases|raw_materials|importation|capital_goods|salaries|rent|utilities|professional_fees|office_supplies|representation|transportation|repairs|taxes_licenses|other>",
   "description": "<what was bought or the service rendered, in a few words, e.g. office rent for March, aircon repair, cement and rebar>",
   "confidence": <0-100, your certainty in the amounts and date>,
+  "where": {"<field>": [<page>, <x0>, <y0>, <x1>, <y1>]},
   "statement": <ONLY for a bank or e-wallet statement, else omit: {"bank_name": "", "account_number": "<as printed>",
     "period_start": "<YYYY-MM-DD>", "period_end": "<YYYY-MM-DD>", "opening_balance": <beginning balance>,
     "closing_balance": <ending balance>,
@@ -89,7 +90,12 @@ Rules:
 - Copy a TIN with ALL its digits as printed, including the branch code after the 9-digit number (e.g.
   "010-234-567-000" or "010-234-567-00000"). Never stop at the first 9 digits and never add a branch code that
   isn't printed.
-- Use "" for text that is not printed. Never invent a TIN or a document number."""
+- Use "" for text that is not printed. Never invent a TIN or a document number.
+- "where": for each field you filled that is printed on the page, [page, x0, y0, x1, y1] around the printed value
+  only (not its label), coordinates 0-1000 from the page's top-left, page as in the "Page N:" label (1 for a single
+  image). Keys: doc_number, doc_date, seller_name, seller_tin, seller_address, buyer_name, buyer_tin, buyer_address,
+  gross_amount, vatable_amount, vat_amount, exempt_amount, zero_rated_amount, withholding_amount. Leave out fields
+  you worked out rather than read."""
 
 
 _BUSINESS = {
@@ -155,6 +161,7 @@ class ExtractedDoc:
     due_date: date | None = None
     terms_days: int | None = None              # printed credit terms in days ("Net 30")
     raw: dict = field(default_factory=dict)
+    page_offset: int = 0                       # pages before the chunk this was read from (its "where" is chunk-local)
 
 
 def _load_json(raw: str):
@@ -296,5 +303,6 @@ def parse_extraction(raw: str, page_offset: int = 0, chunk_pages: int | None = N
             due_date=due_fields(item)[0],
             terms_days=due_fields(item)[1],
             raw=item,
+            page_offset=page_offset,
         ))
     return docs

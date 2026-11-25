@@ -224,6 +224,9 @@ class AADocument(Base):
     raw: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # Documents a person said this one is not a duplicate of (ids as strings); the double-check skips those pairs.
     not_duplicate_of: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    # Where the reader read each field: {key: {"page", "box": [x0, y0, x1, y1] fractions} | {"computed": true}}
+    # (services/accounting/field_hints.py). Never drawn as is; the browser confirms it against the page's text.
+    field_hints: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     # On a sale the customer withheld tax on: a person's "2307 to receive" mark {"status", "document_id"}.
     cwt_2307: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

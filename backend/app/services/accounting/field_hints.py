@@ -58,6 +58,18 @@ def norm(value: Any) -> str:
     return "".join(ch for ch in text.casefold() if ch.isalnum())
 
 
+def _same(key: str, raw: Any, value: Any) -> bool:
+    """Whether the stored value is what the reader read. A TIN is stored as its 9-digit base, so the printed digits
+    (with the branch code) only need to start with it."""
+    if not norm(raw):
+        return False
+    if key.endswith("_tin"):
+        digits = re.sub(r"\D", "", str(raw))
+        stored = re.sub(r"\D", "", str(value))
+        return bool(stored) and digits.startswith(stored)
+    return norm(raw) == norm(value)
+
+
 def doc_hints(where: object, values: dict[str, str], raw_values: dict[str, str], page_offset: int, first: int,
               last: int) -> dict:
     """Hints per field key: the reader's box when the stored value is what it read, `{"computed": True}` when the
@@ -68,7 +80,7 @@ def doc_hints(where: object, values: dict[str, str], raw_values: dict[str, str],
         if not norm(value):
             continue
         raw = raw_values.get(key)
-        if not norm(raw) or norm(raw) != norm(value):
+        if not _same(key, raw, value):
             out[key] = {"computed": True}
             continue
         hint = parse_hint(boxes.get(key), page_offset, first, last)
@@ -91,3 +103,40 @@ def prune(hints: dict, first: int, last: int) -> dict:
         return {"header": _keep(hints.get("header") or {}, first, last),
                 "rows": [_keep(r, first, last) if isinstance(r, dict) else {} for r in rows]}
     return _keep(hints, first, last)
+
+
+# aa_documents column -> where the reader's reply has that value (the `where` keys are the column names).
+_DOC_RAW = {
+    "doc_number": ("doc_number",), "doc_date": ("date",),
+    "seller_name": ("seller", "name"), "seller_tin": ("seller", "tin"), "seller_address": ("seller", "address"),
+    "buyer_name": ("buyer", "name"), "buyer_tin": ("buyer", "tin"), "buyer_address": ("buyer", "address"),
+    "gross_amount": ("gross_amount",), "vatable_amount": ("vatable_amount",), "vat_amount": ("vat_amount",),
+    "exempt_amount": ("exempt_amount",), "zero_rated_amount": ("zero_rated_amount",),
+    "withholding_amount": ("withholding_amount",),
+}
+DOC_KEYS = tuple(_DOC_RAW)
+
+
+def _dig(raw: dict, path: tuple[str, ...]) -> Any:
+    cur: Any = raw
+    for part in path:
+        cur = cur.get(part) if isinstance(cur, dict) else None
+    return cur
+
+
+def _shown(value: Any) -> str:
+    """A stored column value as text; zero amounts count as blank (the reader writes 0 for "not shown")."""
+    if value is None:
+        return ""
+    text = str(value)
+    return "" if norm(text) in ("0.00", "000") else text
+
+
+def document_hints(raw: dict | None, page_offset: int, fields: dict) -> dict:
+    """`field_hints` for a new aa_documents row from the reader's item (`raw`, with its `where`) and the row's final
+    `fields` (after the cleaner)."""
+    raw = raw if isinstance(raw, dict) else {}
+    values = {k: _shown(fields.get(k)) for k in DOC_KEYS}
+    read = {k: _shown(_dig(raw, path)) for k, path in _DOC_RAW.items()}
+    return doc_hints(raw.get("where"), values, read, page_offset,
+                     int(fields.get("page_start") or 1), int(fields.get("page_end") or 1))

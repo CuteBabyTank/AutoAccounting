@@ -52,3 +52,18 @@ describe("wordsFor", () => {
     expect(ocr).not.toHaveBeenCalled();
   });
 });
+
+describe("sign-out", () => {
+  it("drops a page that finishes after clear: nothing is kept for the next person", async () => {
+    let release: (l: PageLayout) => void = () => undefined;
+    const layoutFetch = vi.fn(() => new Promise<PageLayout>((r) => { release = r; }));
+    const put = vi.fn(async () => undefined);
+    const pw = createPageWords({ layoutFetch, ocr: vi.fn(async () => []), store: { get: async () => undefined, put } });
+    const pending = pw.wordsFor({ ...base, signal: new AbortController().signal });
+    await new Promise((r) => setTimeout(r, 0));   // the layout request is out
+    pw.clear();
+    release({ crop: [0, 0, 1, 1], aspect: 1, words: [[0, 0, 1, 1, "x"]], text_layer: true });
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(put).not.toHaveBeenCalled();
+  });
+});

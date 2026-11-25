@@ -65,17 +65,21 @@ function untilVisible(signal: AbortSignal): Promise<void> {
 export function createPageWords(deps: Deps) {
   const memory = new Map<string, PageWords>();
   let queue: Promise<unknown> = Promise.resolve();   // one OCR job at a time
+  let generation = 0;   // bumped on sign-out: anything still in flight is dropped, never kept
 
   async function wordsFor(req: WordsRequest): Promise<PageWords> {
     const key = `${req.userId}:${req.src}:${req.fileId}:${req.page}`;
-    if (req.signal.aborted) throw abortError();
+    const gen = generation;
+    const stale = () => req.signal.aborted || gen !== generation;
+    if (stale()) throw abortError();
     const hit = memory.get(key) ?? (await deps.store?.get(key).catch(() => undefined));
+    if (stale()) throw abortError();
     if (hit) {
       memory.set(key, hit);
       return hit;
     }
     const layout = await deps.layoutFetch(req.src, req.fileId, req.page);
-    if (req.signal.aborted) throw abortError();
+    if (stale()) throw abortError();
     let result: PageWords;
     if (!layout.crop) {
       result = { crop: null, aspect: layout.aspect, words: [] };
@@ -85,12 +89,12 @@ export function createPageWords(deps: Deps) {
       const crop = layout.crop;
       const job = queue.then(async () => {
         await untilVisible(req.signal);
-        if (req.signal.aborted) throw abortError();
+        if (stale()) throw abortError();
         return deps.ocr(req.imageUrl, req.width, req.height);
       });
       queue = job.catch(() => undefined);
       const shown = await job;
-      if (req.signal.aborted) throw abortError();
+      if (stale()) throw abortError();
       const [cx0, cy0, cx1, cy1] = crop;
       const cw = cx1 - cx0;
       const ch = cy1 - cy0;
@@ -104,7 +108,13 @@ export function createPageWords(deps: Deps) {
     return result;
   }
 
-  return { wordsFor, clear: () => memory.clear() };
+  return {
+    wordsFor,
+    clear: () => {
+      generation += 1;
+      memory.clear();
+    },
+  };
 }
 
 // ---- The browser's instance: API layout routes, Tesseract.js, IndexedDB ----
@@ -132,11 +142,15 @@ function request<T>(r: IDBRequest<T>): Promise<T> {
 
 interface Row { key: string; at: number; size: number; value: PageWords }
 
+let openDb: IDBDatabase | null = null;   // closed before the sign-out delete, which an open connection would block
+
 function browserStore(): Store | null {
   if (typeof indexedDB === "undefined") return null;
   let ready: Promise<IDBDatabase> | null = null;
   const db = () => {
     ready ??= idb().then(async (d) => {
+      openDb = d;
+      d.onversionchange = () => d.close();   // a delete from another tab's sign-out goes through
       try {   // prune: old entries, then the oldest past the size cap
         const rows = (await request(d.transaction("pages").objectStore("pages").getAll())) as Row[];
         const now = Date.now();
@@ -210,6 +224,12 @@ export async function wordsFor(req: WordsRequest): Promise<PageWords> {
 export function clearPageWords(): void {
   instance?.clear();
   instance = null;
+  try {
+    openDb?.close();
+  } catch {
+    // already closed
+  }
+  openDb = null;
   const w = worker;
   worker = null;
   void w?.then((x) => x.terminate()).catch(() => undefined);

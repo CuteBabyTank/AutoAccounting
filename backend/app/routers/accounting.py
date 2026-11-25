@@ -973,8 +973,8 @@ async def get_folder(
         quarter=quarter,
         label=label,
         counts=folder_counts([(d.category, d.needs_review, d.reviewed, d.excluded) for d in docs]),
-        documents=_documents_out(docs, company, await accounting_periods.supplier_atc_rules(db, company.id),
-                                 hints=False),
+        # Hints stay in folder lists: the document panel opens the listed document as is.
+        documents=_documents_out(docs, company, await accounting_periods.supplier_atc_rules(db, company.id)),
     )
 
 

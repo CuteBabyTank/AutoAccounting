@@ -99,7 +99,7 @@ def _render_pdf_page_trimmed(pdf_path: str, page_number: int, layout_out: list |
 
             try:
                 layout_out.append(layout_of_page(page, clip))
-            except (ValueError, RuntimeError):
+            except Exception:   # noqa: BLE001 - a layout problem must never fail the image render
                 pass   # the layout route will compute it on its own
         if clip is None:
             return None

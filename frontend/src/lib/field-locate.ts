@@ -12,6 +12,14 @@ export type Word = [number, number, number, number, string];
 export type Hint = { page: number; box: Rect } | { computed: true };
 export type FieldKind = "money" | "number" | "date" | "tin" | "docno" | "text";
 
+/** One field the viewer can outline: its current value (boxes follow edits) and the reader's hint. */
+export interface FieldTarget {
+  key: string;
+  value: string;
+  kind: FieldKind;
+  hint?: Hint;
+}
+
 const MAX_RUN = 6;        // words one value may span
 const PAD = 0.004;   // of the untrimmed page: a trimmed receipt shows it several times larger
 const HINT_GROW = 0.25;   // the hint box grows by this share of its size on every side

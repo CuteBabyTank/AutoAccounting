@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CaretLeft, CaretRight, CornersIn, MagnifyingGlassMinus, MagnifyingGlassPlus } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
-import { boxInShown, locate, type FieldKind, type Hint, type Rect } from "@/lib/field-locate";
+import { boxInShown, locate, type FieldTarget, type Rect } from "@/lib/field-locate";
 import { wordsFor, type PageWords } from "@/lib/page-words";
 import { drawnRect, toContainer, zoomFor } from "@/lib/viewer-geometry";
 
@@ -15,13 +15,7 @@ const ICON_BTN = "rounded-md p-1 text-[var(--text-secondary)] hover:bg-[var(--bg
 
 const clamp = (z: number) => Math.min(MAX, Math.max(MIN, Math.round(z / STEP) * STEP));
 
-/** One field the viewer can outline: its current value (boxes follow edits) and the reader's hint. */
-export interface FieldTarget {
-  key: string;
-  value: string;
-  kind: FieldKind;
-  hint?: Hint;
-}
+export type { FieldTarget };
 
 /** Field boxes (lib/field-locate.ts): focusing a field outlines it on the scan and, with "Zoom to field" on, zooms
  *  to it; flagged fields are outlined amber. A box is drawn only once its page's image and words are in. */
@@ -170,7 +164,9 @@ export default function PageViewer({ images, firstPage, className = "", onAspect
     wordsFor({ src: fields.src, fileId: fields.fileId, page: currentNo, userId, imageUrl: src, width: size.w,
       height: size.h, signal: ctl.signal })
       .then((got) => setWords((prev) => ({ ...prev, [key]: got })))
-      .catch(() => undefined);   // no words, no boxes; the page still shows
+      .catch((e: unknown) => {   // no words, no boxes; the page still shows
+        if ((e as { name?: string })?.name !== "AbortError") console.warn("Field boxes: no words for this page", e);
+      });
     return () => ctl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- words[wordsKey] is the guard, not an input
   }, [fields?.src, fields?.fileId, src, size, userId, wordsKey, currentNo]);

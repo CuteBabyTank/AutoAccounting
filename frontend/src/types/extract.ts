@@ -1,5 +1,6 @@
 // Extract tab shapes, mirroring backend routers/accounting_extract.py (formats.out / draft_out, _file_out,
 // _record_out, list_runs, get_run).
+import type { Hint } from "@/lib/field-locate";
 
 export type ExtractFieldType = "text" | "number" | "money" | "date" | "tin" | "percent" | "code" | "boolean";
 export type ExtractScope = "header" | "row";
@@ -123,6 +124,8 @@ export interface ExtractRecord {
   edited: ExtractCell[];
   bad_cells: ExtractCell[];
   flags: ExtractFlag[];
+  /** Where the reader read each value, shaped like `values` (backend field_hints.record_hints); older records have none. */
+  hints?: { header?: Record<string, Hint>; rows?: Record<string, Hint>[] };
 }
 
 export interface ExtractRecordPage {

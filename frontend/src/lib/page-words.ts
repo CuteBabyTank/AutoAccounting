@@ -46,6 +46,9 @@ interface Deps {
   store: Store | null;
 }
 
+/** Bump when how words are read changes (OCR scale, data, cut-off), so pages cached the old way are read again. */
+const WORDS_VERSION = 2;
+
 const abortError = () => Object.assign(new Error("Aborted"), { name: "AbortError" });
 
 function untilVisible(signal: AbortSignal): Promise<void> {
@@ -68,7 +71,7 @@ export function createPageWords(deps: Deps) {
   let generation = 0;   // bumped on sign-out: anything still in flight is dropped, never kept
 
   async function wordsFor(req: WordsRequest): Promise<PageWords> {
-    const key = `${req.userId}:${req.src}:${req.fileId}:${req.page}`;
+    const key = `v${WORDS_VERSION}:${req.userId}:${req.src}:${req.fileId}:${req.page}`;
     const gen = generation;
     const stale = () => req.signal.aborted || gen !== generation;
     if (stale()) throw abortError();
@@ -122,7 +125,9 @@ export function createPageWords(deps: Deps) {
 const DB = "aa-page-words";
 const KEEP_MS = 7 * 24 * 3600 * 1000;
 const MAX_BYTES = 20 * 1024 * 1024;
-const MIN_CONFIDENCE = 60;   // OCR words it isn't sure of are left out (no box beats a wrong box)
+const MIN_CONFIDENCE = 60;
+const OCR_SIDE = 3000;
+const OCR_MAX_SCALE = 2.5;   // OCR words it isn't sure of are left out (no box beats a wrong box)
 
 function idb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -188,7 +193,22 @@ async function tesseractOcr(imageUrl: string, width: number, height: number): Pr
   worker ??= import("tesseract.js").then(({ createWorker }) => createWorker("eng", 1, {
     workerPath: "/ocr/worker.min.js", corePath: "/ocr/", langPath: "/ocr/", workerBlobURL: false, gzip: true,
   }));
-  const { data } = await (await worker).recognize(imageUrl, {}, { blocks: true, text: false });
+  // Small print on a page-sized image is too small for OCR: read it enlarged (longest side about OCR_SIDE pixels).
+  const scale = Math.min(OCR_MAX_SCALE, OCR_SIDE / Math.max(width, height));
+  let input: string | Blob = imageUrl;
+  if (scale > 1.2 && typeof OffscreenCanvas !== "undefined") {
+    const bitmap = await createImageBitmap(await (await fetch(imageUrl)).blob());
+    const canvas = new OffscreenCanvas(Math.round(width * scale), Math.round(height * scale));
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      input = await canvas.convertToBlob({ type: "image/png" });
+    }
+    bitmap.close();
+  }
+  const s = input === imageUrl ? 1 : scale;
+  const { data } = await (await worker).recognize(input, {}, { blocks: true, text: false });
   const out: Word[] = [];
   for (const block of data.blocks ?? []) {
     for (const para of block.paragraphs) {
@@ -196,7 +216,7 @@ async function tesseractOcr(imageUrl: string, width: number, height: number): Pr
         for (const w of line.words) {
           if (w.confidence < MIN_CONFIDENCE || !w.text.trim()) continue;
           const b = w.bbox;
-          out.push([b.x0 / width, b.y0 / height, b.x1 / width, b.y1 / height, w.text]);
+          out.push([b.x0 / (width * s), b.y0 / (height * s), b.x1 / (width * s), b.y1 / (height * s), w.text]);
         }
       }
     }

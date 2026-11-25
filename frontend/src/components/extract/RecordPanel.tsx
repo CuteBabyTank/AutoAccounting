@@ -1,8 +1,9 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { CaretLeft, CaretRight, Check, Spinner, X } from "@phosphor-icons/react";
-import PageViewer from "@/components/extract/PageViewer";
+import type { FieldBoxes } from "@/components/accounting/PageViewer";
+import RecordPages from "@/components/extract/RecordPages";
 import { EditedMark, FlagMark } from "@/components/extract/FlagMark";
 import { extractApi } from "@/lib/extract-api";
 import { apiErrorMessage } from "@/lib/accounting-format";
@@ -10,6 +11,7 @@ import {
   LEVEL_INPUT, LEVEL_TEXT, MAX_VALUE_CHARS, cellId, editedCells, firstCell, flagLine, flagSentence, flagsByCell, isNumeric,
   lowConfidence, pagesLabel, worst,
 } from "@/lib/extract-flags";
+import { recordTargets } from "@/lib/extract-targets";
 import type { ExtractField, ExtractFlag, ExtractRecord, ExtractSnapshot } from "@/types/extract";
 
 /** Saves one cell; resolves to an error message, or null when it went through. */
@@ -124,6 +126,15 @@ export default function RecordPanel({
     }
   };
 
+  // Field boxes: the focused cell is outlined on the scan (and zoomed to); flagged cells amber.
+  const [activeCell, setActiveCell] = useState<string | null>(null);
+  const flaggedKey = [...byCell.keys()].join("|");
+  const fieldBoxes = useMemo<FieldBoxes>(() => ({
+    src: "extract", fileId: record.file_id, targets: snapshot ? recordTargets(record, snapshot) : [],
+    active: activeCell, flagged: flaggedKey ? flaggedKey.split("|") : [], onBoxClick: focusCell,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- focusCell only reads the DOM
+  }), [record, snapshot, activeCell, flaggedKey]);
+
   useEffect(() => {
     if (focus.cell) focusCell(focus.cell);
     // focusCell only reads the DOM; refocus when the asked-for cell (or its nonce) changes
@@ -154,6 +165,10 @@ export default function RecordPanel({
   return (
     <aside
       ref={root}
+      onFocus={(e) => {
+        const cell = (e.target as HTMLElement).dataset?.cell;
+        if (cell) setActiveCell(cell);
+      }}
       aria-label={`Record ${number}`}
       role={modal ? "dialog" : undefined}
       aria-modal={modal || undefined}
@@ -187,9 +202,9 @@ export default function RecordPanel({
         </p>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 @2xl:grid @2xl:grid-cols-2 @2xl:gap-4 @2xl:overflow-hidden">
-        <div className="h-[55vh] @2xl:h-auto @2xl:min-h-0">
-          <PageViewer fileId={record.file_id} start={record.page_start} end={record.page_end} />
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 @2xl:grid @2xl:grid-cols-2 @2xl:grid-rows-[minmax(0,1fr)] @2xl:gap-4 @2xl:overflow-hidden">
+        <div className="h-[55vh] @2xl:h-full @2xl:min-h-0">
+          <RecordPages fileId={record.file_id} start={record.page_start} end={record.page_end} fields={fieldBoxes} />
         </div>
         <div className="mt-4 @2xl:mt-0 @2xl:min-h-0 @2xl:overflow-y-auto @2xl:pr-1">
           {header.length > 0 && (

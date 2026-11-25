@@ -37,6 +37,8 @@ export interface WordsRequest {
 interface Store {
   get(key: string): Promise<PageWords | undefined>;
   put(key: string, value: PageWords): Promise<void>;
+  /** Drop every page kept for anyone but this person (a shared browser whose last user closed the tab). */
+  purgeOthers?(userId: string): Promise<void>;
 }
 
 interface Deps {
@@ -44,6 +46,8 @@ interface Deps {
   /** OCR of the shown image: words as fractions of that image. */
   ocr: (imageUrl: string, width: number, height: number) => Promise<Word[]>;
   store: Store | null;
+  /** Pages kept in memory (oldest dropped first). */
+  memoryCap?: number;
 }
 
 /** Bump when how words are read changes (OCR scale, data, cut-off), so pages cached the old way are read again. */
@@ -67,10 +71,21 @@ function untilVisible(signal: AbortSignal): Promise<void> {
 
 export function createPageWords(deps: Deps) {
   const memory = new Map<string, PageWords>();
+  const cap = deps.memoryCap ?? 60;
+  const remember = (key: string, value: PageWords) => {
+    memory.delete(key);
+    memory.set(key, value);
+    while (memory.size > cap) memory.delete(memory.keys().next().value as string);
+  };
   let queue: Promise<unknown> = Promise.resolve();   // one OCR job at a time
   let generation = 0;   // bumped on sign-out: anything still in flight is dropped, never kept
+  let owner: string | null = null;   // the person whose pages the store was last checked for
 
   async function wordsFor(req: WordsRequest): Promise<PageWords> {
+    if (owner !== req.userId) {
+      owner = req.userId;
+      await deps.store?.purgeOthers?.(req.userId).catch(() => undefined);
+    }
     // The image size is part of the key: words are only good for the exact image they were read from.
     const key = `v${WORDS_VERSION}:${req.userId}:${req.src}:${req.fileId}:${req.page}:${req.width}x${req.height}`;
     const gen = generation;
@@ -79,7 +94,7 @@ export function createPageWords(deps: Deps) {
     const hit = memory.get(key) ?? (await deps.store?.get(key).catch(() => undefined));
     if (stale()) throw abortError();
     if (hit) {
-      memory.set(key, hit);
+      remember(key, hit);
       return hit;
     }
     const layout = await deps.layoutFetch(req.src, req.fileId, req.page);
@@ -94,7 +109,7 @@ export function createPageWords(deps: Deps) {
     } else if (layout.text_layer) {
       // The PDF's own text: cheap to fetch again, so it stays in memory only, never in browser storage.
       result = { crop, aspect: layout.aspect, words: layout.words };
-      memory.set(key, result);
+      remember(key, result);
       return result;
     } else {
       const job = queue.then(async () => {
@@ -104,7 +119,7 @@ export function createPageWords(deps: Deps) {
       });
       queue = job.catch(() => undefined);
       const shown = await job;
-      if (stale()) throw abortError();
+      if (gen !== generation) throw abortError();   // signed out meanwhile: keep nothing
       const [cx0, cy0, cx1, cy1] = crop;
       const cw = cx1 - cx0;
       const ch = cy1 - cy0;
@@ -112,9 +127,11 @@ export function createPageWords(deps: Deps) {
         crop, aspect: layout.aspect,
         words: shown.map(([x0, y0, x1, y1, t]) => [cx0 + x0 * cw, cy0 + y0 * ch, cx0 + x1 * cw, cy0 + y1 * ch, t]),
       };
+      // Kept even when the page was left meanwhile (OCR can't be interrupted): reopening it needs no second read.
+      remember(key, result);
+      void deps.store?.put(key, result).catch(() => undefined);
+      if (req.signal.aborted) throw abortError();
     }
-    memory.set(key, result);
-    void deps.store?.put(key, result).catch(() => undefined);
     return result;
   }
 
@@ -123,6 +140,7 @@ export function createPageWords(deps: Deps) {
     clear: () => {
       generation += 1;
       memory.clear();
+      owner = null;
     },
   };
 }
@@ -185,6 +203,14 @@ function browserStore(): Store | null {
       const row = (await request((await db()).transaction("pages").objectStore("pages").get(key))) as Row | undefined;
       return row && Date.now() - row.at <= KEEP_MS ? row.value : undefined;
     },
+    async purgeOthers(userId) {
+      const d = await db();
+      const keys = (await request(d.transaction("pages").objectStore("pages").getAllKeys())) as string[];
+      const others = keys.filter((k) => k.split(":")[1] !== userId);
+      if (!others.length) return;
+      const tx = d.transaction("pages", "readwrite");
+      others.forEach((k) => tx.objectStore("pages").delete(k));
+    },
     async put(key, value) {
       const size = JSON.stringify(value).length;
       await request((await db()).transaction("pages", "readwrite").objectStore("pages")
@@ -195,8 +221,26 @@ function browserStore(): Store | null {
 
 type TesseractWorker = Awaited<ReturnType<typeof import("tesseract.js")["createWorker"]>>;
 let worker: Promise<TesseractWorker> | null = null;
+let idle: ReturnType<typeof setTimeout> | undefined;
+const IDLE_MS = 2 * 60 * 1000;   // the worker holds ~100 MB: shut it down when no page has been read for a while
+
+function stopWorker(): void {
+  clearTimeout(idle);
+  const w = worker;
+  worker = null;
+  void w?.then((x) => x.terminate()).catch(() => undefined);
+}
 
 async function tesseractOcr(imageUrl: string, width: number, height: number): Promise<Word[]> {
+  clearTimeout(idle);
+  try {
+    return await readPage(imageUrl, width, height);
+  } finally {
+    idle = setTimeout(stopWorker, IDLE_MS);
+  }
+}
+
+async function readPage(imageUrl: string, width: number, height: number): Promise<Word[]> {
   worker ??= import("tesseract.js").then(({ createWorker }) => createWorker("eng", 1, {
     workerPath: "/ocr/worker.min.js", corePath: "/ocr/", langPath: "/ocr/", workerBlobURL: false, gzip: true,
   }));
@@ -257,9 +301,7 @@ export function clearPageWords(): void {
     // already closed
   }
   openDb = null;
-  const w = worker;
-  worker = null;
-  void w?.then((x) => x.terminate()).catch(() => undefined);
+  stopWorker();
   try {
     indexedDB.deleteDatabase(DB);
   } catch {

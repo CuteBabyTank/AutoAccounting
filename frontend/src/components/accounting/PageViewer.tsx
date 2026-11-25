@@ -25,7 +25,11 @@ export interface FieldBoxes {
   targets: FieldTarget[];
   active: string | null;
   flagged: string[];
+  /** Bumped each time a field is focused: focusing the same field again zooms to it again. */
+  zoomRequest?: number;
   onBoxClick?: (key: string) => void;
+  /** The fields that can be outlined on the page shown (for the labels' "show on scan" buttons). */
+  onPlaceable?: (keys: string[]) => void;
 }
 
 interface Props {
@@ -177,10 +181,11 @@ export default function PageViewer({ images, firstPage, className = "", onAspect
   // A focused field on another page (its hint says which): show that page first.
   const active = fields?.active ?? null;
   const switchedFor = useRef<string | null>(null);   // the focus whose page has been shown (once per focus)
+  const zoomRequest = fields?.zoomRequest ?? 0;
   useEffect(() => {
     seeking.current = active;
     switchedFor.current = null;
-  }, [active]);
+  }, [active, zoomRequest]);
   // Re-checked as pages arrive, so a field on a page that is still loading is shown once that page is in.
   const pagesKey = images.map((_, i) => pageNo(i)).join(",");
   useEffect(() => {
@@ -196,23 +201,49 @@ export default function PageViewer({ images, firstPage, className = "", onAspect
       reset();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- when the focus moves or pages arrive
-  }, [active, pagesKey]);
+  }, [active, zoomRequest, pagesKey]);
 
   // Boxes on the shown page, in container fractions. Nothing until both its image and its words are in.
   const pw = wordsKey ? words[wordsKey] : undefined;
-  const boxes = useMemo(() => {
+  // Every field's place on this page (shown-image fractions), each looked up once per value: typing in one field
+  // redoes only that field.
+  const found = useRef<{ pw?: unknown; no?: number; shape?: string; map: Map<string, Rect | null> }>({ map: new Map() });
+  const placed = useMemo(() => {
     const out: Record<string, Rect> = {};
     if (!fields || !pw || !size || !boxAspect) return out;
     const imageAspect = size.w / size.h;
-    const drawn = drawnRect(boxAspect, imageAspect);
+    const shape = `${imageAspect}`;
+    const cache = found.current;
+    if (cache.pw !== pw || cache.no !== currentNo || cache.shape !== shape) {
+      found.current = { pw, no: currentNo, shape, map: new Map() };
+    }
+    const map = found.current.map;
     for (const t of fields.targets) {
-      if (t.key !== fields.active && !fields.flagged.includes(t.key)) continue;
-      const r = locate(t.value, t.kind, pw.words, t.hint, currentNo);
-      const shown = r && boxInShown(r, pw.crop, imageAspect, pw.aspect);
-      if (shown) out[t.key] = toContainer(shown, drawn);
+      const id = `${t.key}\u0000${t.kind}\u0000${t.value}\u0000${JSON.stringify(t.hint ?? null)}`;
+      if (!map.has(id)) {
+        const r = locate(t.value, t.kind, pw.words, t.hint, currentNo);
+        map.set(id, r && boxInShown(r, pw.crop, imageAspect, pw.aspect));
+      }
+      const shown = map.get(id);
+      if (shown) out[t.key] = shown;
     }
     return out;
   }, [fields, pw, size, boxAspect, currentNo]);
+  const placeableKey = Object.keys(placed).sort().join("|");
+  const onPlaceable = fields?.onPlaceable;
+  useEffect(() => {
+    onPlaceable?.(placeableKey ? placeableKey.split("|") : []);
+  }, [placeableKey, onPlaceable]);
+  // Drawn: the focused field and the flagged ones, in container fractions.
+  const boxes = useMemo(() => {
+    const out: Record<string, Rect> = {};
+    if (!fields || !size || !boxAspect) return out;
+    const drawn = drawnRect(boxAspect, size.w / size.h);
+    for (const [key, shown] of Object.entries(placed)) {
+      if (key === fields.active || fields.flagged.includes(key)) out[key] = toContainer(shown, drawn);
+    }
+    return out;
+  }, [fields, placed, size, boxAspect]);
 
   // Zoom to the focused field once its box is known (only once per focus).
   const activeBox = active ? boxes[active] : undefined;
@@ -220,6 +251,10 @@ export default function PageViewer({ images, firstPage, className = "", onAspect
     const el = box.current;
     if (!el || !activeBox || seeking.current !== active) return;
     seeking.current = null;
+    // Stacked layout (phones): bring the scan into sight when it is mostly off screen.
+    const r = el.getBoundingClientRect();
+    const seen = Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0);
+    if (seen < r.height / 3) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
     if (!follow) return;
     const next = zoomFor(activeBox, { w: el.clientWidth, h: el.clientHeight, left: el.scrollLeft, top: el.scrollTop,
       zoom: zoomRef.current });
@@ -304,12 +339,12 @@ export default function PageViewer({ images, firstPage, className = "", onAspect
         {images.length > 1 && (
           <span className="flex items-center gap-1">
             <button className={ICON_BTN} aria-label="Previous page" disabled={page === 0}
-              onClick={() => { setPage((p) => p - 1); reset(); }}>
+              onClick={() => { seeking.current = null; setPage((p) => p - 1); reset(); }}>
               <CaretLeft size={16} />
             </button>
             <span className="tabular-nums">Page {currentNo} of {pageNo(images.length - 1)}</span>
             <button className={ICON_BTN} aria-label="Next page" disabled={page >= images.length - 1}
-              onClick={() => { setPage((p) => p + 1); reset(); }}>
+              onClick={() => { seeking.current = null; setPage((p) => p + 1); reset(); }}>
               <CaretRight size={16} />
             </button>
           </span>

@@ -303,7 +303,7 @@ class DocumentOut(BaseModel):
     review_reasons: list[str]
     notes: str = ""
     review_notes: dict = Field(default_factory=dict)
-    field_hints: dict = Field(default_factory=dict)
+    field_hints: dict | None = Field(default_factory=dict)   # None in folder lists (not loaded there)
     reviewed: bool
     excluded: bool
     created_at: datetime

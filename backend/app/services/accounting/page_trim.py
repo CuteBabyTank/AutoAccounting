@@ -86,13 +86,21 @@ def pdf_clip(page: "fitz.Page") -> "fitz.Rect | None":
     return None if clip.is_empty else clip
 
 
-def _render_pdf_page_trimmed(pdf_path: str, page_number: int) -> bytes | None:
-    """Child-only implementation; the public helper always isolates parsing and rasterization."""
+def _render_pdf_page_trimmed(pdf_path: str, page_number: int, layout_out: list | None = None) -> bytes | None:
+    """Child-only implementation; the public helper always isolates parsing and rasterization. `layout_out` gets
+    the page's layout (page_layout.layout_of_page) from the same clip, for the render pool to cache."""
     with fitz.open(pdf_path) as doc:
         if not 0 <= page_number < len(doc):
             return None
         page = doc[page_number]
         clip = pdf_clip(page)
+        if layout_out is not None:
+            from app.services.accounting.page_layout import layout_of_page
+
+            try:
+                layout_out.append(layout_of_page(page, clip))
+            except (ValueError, RuntimeError):
+                pass   # the layout route will compute it on its own
         if clip is None:
             return None
         dpi = min(_MAX_DPI, int(72 * (_TARGET_PIXELS / (clip.width * clip.height)) ** 0.5))

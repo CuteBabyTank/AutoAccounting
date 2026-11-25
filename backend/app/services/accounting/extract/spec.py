@@ -49,6 +49,10 @@ def clean_text(value: Any, limit: int) -> str:
     return " ".join(text.split())[:limit].strip()
 
 
+# Keys the reading prompt uses itself ("where": the reader's field boxes, field_hints.py): never a field's key.
+RESERVED_KEYS = frozenset({"where", "rows", "page_start", "page_end", "confidence"})
+
+
 def _key_from(label: str, taken: set[str]) -> str:
     base = re.sub(r"\W+", "_", label.lower()).strip("_")[:MAX_KEY].strip("_") or "field"
     key, n = base, 1
@@ -64,7 +68,7 @@ def clean_fields(raw: Any) -> list[Field]:
     if not isinstance(raw, list):
         return []
     out: list[Field] = []
-    taken: set[str] = set()
+    taken: set[str] = set(RESERVED_KEYS)
     for item in raw:
         if not isinstance(item, dict):
             continue

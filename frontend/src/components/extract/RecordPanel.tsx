@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { CaretLeft, CaretRight, Check, Spinner, X } from "@phosphor-icons/react";
 import type { FieldBoxes } from "@/components/accounting/PageViewer";
+import ShowOnScan from "@/components/accounting/ShowOnScan";
 import RecordPages from "@/components/extract/RecordPages";
 import { EditedMark, FlagMark } from "@/components/extract/FlagMark";
 import { extractApi } from "@/lib/extract-api";
@@ -128,12 +129,18 @@ export default function RecordPanel({
 
   // Field boxes: the focused cell is outlined on the scan (and zoomed to); flagged cells amber.
   const [activeCell, setActiveCell] = useState<string | null>(null);
+  const [zoomRequest, setZoomRequest] = useState(0);
+  const [placeable, setPlaceable] = useState<string[]>([]);   // cells the viewer can outline on the page shown
+  // What is typed in a cell before it saves: the outline follows it (a saved record replaces the panel's record).
+  const [typing, setTyping] = useState<Record<string, string>>({});
+  useEffect(() => setTyping({}), [record]);
   const flaggedKey = [...byCell.keys()].join("|");
   const fieldBoxes = useMemo<FieldBoxes>(() => ({
-    src: "extract", fileId: record.file_id, targets: snapshot ? recordTargets(record, snapshot) : [],
+    src: "extract", fileId: record.file_id, targets: snapshot ? recordTargets(record, snapshot, typing) : [],
+    zoomRequest, onPlaceable: setPlaceable,
     active: activeCell, flagged: flaggedKey ? flaggedKey.split("|") : [], onBoxClick: focusCell,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- focusCell only reads the DOM
-  }), [record, snapshot, activeCell, flaggedKey]);
+  }), [record, snapshot, activeCell, flaggedKey, typing, zoomRequest]);
 
   useEffect(() => {
     if (focus.cell) focusCell(focus.cell);
@@ -167,7 +174,15 @@ export default function RecordPanel({
       ref={root}
       onFocus={(e) => {
         const cell = (e.target as HTMLElement).dataset?.cell;
-        if (cell) setActiveCell(cell);
+        if (cell) {
+          setActiveCell(cell);
+          setZoomRequest((n) => n + 1);
+        }
+      }}
+      onInput={(e) => {
+        const el = e.target as HTMLInputElement;
+        const cell = el.dataset?.cell;
+        if (cell) setTyping((t) => ({ ...t, [cell]: el.value }));
       }}
       aria-label={`Record ${number}`}
       role={modal ? "dialog" : undefined}
@@ -215,6 +230,10 @@ export default function RecordPanel({
                   <label key={f.key} className="block min-w-0">
                     <span className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-secondary)]">
                       {f.label} {edited.has(id) && <EditedMark />}
+                      {placeable.includes(id) && (
+                        <ShowOnScan onShow={() => root.current?.querySelector<HTMLInputElement>(
+                          `input[data-cell="${CSS.escape(id)}"]`)?.focus()} />
+                      )}
                     </span>
                     <CellInput id={id} field={f} row={null} value={record.values.header?.[f.key] ?? ""}
                       flags={byCell.get(id) ?? []} save={save} onStep={focusNext}

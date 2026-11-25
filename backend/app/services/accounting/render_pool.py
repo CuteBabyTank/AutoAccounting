@@ -129,15 +129,14 @@ sys.path.insert(0, sys.argv[1])
 from pathlib import Path
 from app.services.accounting.render_pool import _render_local
 data = _render_local(sys.argv[5], int(sys.argv[6]), sys.argv[7], int(sys.argv[8]),
-                     int(sys.argv[9]), int(sys.argv[10]))
-Path(sys.argv[11]).write_bytes(data or b'')
+                     int(sys.argv[9]), int(sys.argv[10]), sys.argv[11])
+Path(sys.argv[12]).write_bytes(data or b'')
 """
 
 
 def render_page(pdf_path: str, page: int, kind: str, dpi: int = 130, quality: int = 80,
                 target_width: int = 32) -> bytes | None:
     """Blocking isolated render; None means only that a trim was unnecessary, never worker failure."""
-    global _CACHE_BYTES
     try:
         stat = Path(pdf_path).stat()
         key = (str(Path(pdf_path).resolve()), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns,
@@ -162,11 +161,12 @@ def render_page(pdf_path: str, page: int, kind: str, dpi: int = 130, quality: in
     try:
         with tempfile.TemporaryDirectory(prefix="aa-render-") as folder:
             dest = Path(folder) / "page.image"
+            sidecar = Path(folder) / "page.layout"   # a trimmed render's layout, from the same clip
             try:
                 proc = subprocess.run(
                     [sys.executable, "-I", "-c", _WORKER, _APP_ROOT, str(PDF_MEMORY_BYTES), str(PDF_CPU_S),
                      str(MAX_RENDER_BYTES), str(Path(pdf_path).resolve()), str(page), kind, str(dpi), str(quality),
-                     str(target_width), str(dest)],
+                     str(target_width), str(sidecar), str(dest)],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=PDF_TIMEOUT_S, check=False,
                 )
             except subprocess.TimeoutExpired as exc:
@@ -179,6 +179,10 @@ def render_page(pdf_path: str, page: int, kind: str, dpi: int = 130, quality: in
                 data = stream.read(MAX_RENDER_BYTES + 1)
             if len(data) > MAX_RENDER_BYTES or (not data and kind != "trimmed"):
                 raise ValueError("Page unavailable: invalid render output")
+            layout = b""
+            if kind == "trimmed" and sidecar.is_file():
+                with sidecar.open("rb") as stream:
+                    layout = stream.read(MAX_RENDER_BYTES + 1)
     except OSError as exc:
         raise ValueError("Page unavailable: renderer could not read the page") from exc
     finally:
@@ -186,19 +190,27 @@ def render_page(pdf_path: str, page: int, kind: str, dpi: int = 130, quality: in
         if background:
             BACKGROUND_CHILD_SLOTS.release()
         _WORKERS.release()
-    if len(data) <= _CACHE_LIMIT:
-        with _LOCK:
-            previous = _CACHE.pop(key, b"")
-            _CACHE_BYTES -= len(previous or b"")
-            while _CACHE and (_CACHE_BYTES + len(data) > _CACHE_LIMIT or len(_CACHE) >= 128):
-                _CACHE_BYTES -= len(_CACHE.popitem(last=False)[1] or b"")
-            _CACHE[key] = data or None
-            _CACHE_BYTES += len(data)
+    _remember(key, data)
+    if layout and len(layout) <= MAX_RENDER_BYTES:
+        _remember(key[:6] + ("layout", 130, 80, 32), layout)   # the key read_page_layout's render_page call uses
     return data or None
 
 
+def _remember(key: tuple, data: bytes) -> None:
+    global _CACHE_BYTES
+    if len(data) > _CACHE_LIMIT:
+        return
+    with _LOCK:
+        previous = _CACHE.pop(key, b"")
+        _CACHE_BYTES -= len(previous or b"")
+        while _CACHE and (_CACHE_BYTES + len(data) > _CACHE_LIMIT or len(_CACHE) >= 128):
+            _CACHE_BYTES -= len(_CACHE.popitem(last=False)[1] or b"")
+        _CACHE[key] = data or None
+        _CACHE_BYTES += len(data)
+
+
 def _render_local(pdf_path: str, page_number: int, kind: str, dpi: int, quality: int,
-                  target_width: int) -> bytes | None:
+                  target_width: int, sidecar: str = "") -> bytes | None:
     """Child entry point. Keep codecs and trim calculations identical to the original helpers."""
     import fitz
 
@@ -213,7 +225,17 @@ def _render_local(pdf_path: str, page_number: int, kind: str, dpi: int, quality:
     if kind == "trimmed":
         from app.services.accounting.page_trim import _render_pdf_page_trimmed
 
-        return _render_pdf_page_trimmed(pdf_path, page_number)
+        layout: list = []
+        data = _render_pdf_page_trimmed(pdf_path, page_number, layout if sidecar else None)
+        if sidecar and layout:
+            import json
+            from pathlib import Path
+
+            try:
+                Path(sidecar).write_bytes(json.dumps(layout[0]).encode())
+            except OSError:
+                pass   # too big for the output cap: the layout route computes it on its own
+        return data
     with fitz.open(pdf_path) as doc:
         if not 0 <= page_number < len(doc):
             raise ValueError("Page does not exist")

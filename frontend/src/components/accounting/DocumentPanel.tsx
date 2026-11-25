@@ -15,6 +15,7 @@ import { PRESETS } from "@/lib/quick-picks";
 import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, formatPeso, reasonDetail, formatTin, tinBranch } from "@/lib/accounting-format";
 import type { AADocument, Account, AuditEvent, DocumentPatch, DuplicatePair, PaymentLinks } from "@/types/accounting";
 import PageViewer, { type FieldBoxes, type FieldTarget } from "@/components/accounting/PageViewer";
+import ShowOnScan from "@/components/accounting/ShowOnScan";
 import type { FieldKind } from "@/lib/field-locate";
 
 const AMOUNTS = [
@@ -105,6 +106,8 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
   const images = useMemo(() => loaded.map((p) => p.url), [loaded]);
   const pageNumbers = useMemo(() => loaded.map((p) => p.n), [loaded]);
   const [activeField, setActiveField] = useState<string | null>(null);
+  const [zoomRequest, setZoomRequest] = useState(0);   // bumped on every focus: refocusing a field zooms again
+  const [placeable, setPlaceable] = useState<string[]>([]);   // fields the viewer can outline on the page shown
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -276,14 +279,20 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
     const hint = hints?.[key];
     return { key, kind, value: String(draft[key] ?? ""), ...(hint ? { hint } : {}) };
   }), [draft, hints]);
-  const flagged = useMemo(() => BOX_FIELDS.map(([k]) => k).filter((k) => checks[k]), [checks]);
+  // Keyed on the flagged names, not on `checks` (a new object every render), so boxes aren't redone per keystroke.
+  const flaggedKey = BOX_FIELDS.map(([k]) => k).filter((k) => checks[k]).join("|");
+  const flagged = useMemo(() => (flaggedKey ? flaggedKey.split("|") : []), [flaggedKey]);
   const fieldBoxes = useMemo<FieldBoxes>(() => ({
-    src: "accounting", fileId: doc.file_id, targets, active: activeField, flagged,
+    src: "accounting", fileId: doc.file_id, targets, active: activeField, flagged, zoomRequest,
+    onPlaceable: setPlaceable,
     onBoxClick: (key) => document.getElementById(`doc-field-${key}`)?.focus(),
-  }), [doc.file_id, targets, activeField, flagged]);
+  }), [doc.file_id, targets, activeField, flagged, zoomRequest]);
   const focusProps = (key: string) => ({
     id: `doc-field-${key}`,
-    onFocus: () => setActiveField(key),
+    onFocus: () => {
+      setActiveField(key);
+      setZoomRequest((n) => n + 1);
+    },
   });
   const field = (key: string, label: string, type = "text") => {
     const check = checks[key];
@@ -291,7 +300,10 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
     const hintId = check ? `check-${key}` : undefined;
     return (
       <div>
-        <label className={LABEL} htmlFor={`doc-field-${key}`}>{label}</label>
+        <label className={LABEL} htmlFor={`doc-field-${key}`}>
+          {label}
+          {placeable.includes(key) && <ShowOnScan onShow={() => document.getElementById(`doc-field-${key}`)?.focus()} />}
+        </label>
         {AMOUNT_KEYS.has(key) ? (
           <AmountInput
             {...focusProps(key)}

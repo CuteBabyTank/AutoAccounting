@@ -973,7 +973,8 @@ async def get_folder(
         quarter=quarter,
         label=label,
         counts=folder_counts([(d.category, d.needs_review, d.reviewed, d.excluded) for d in docs]),
-        documents=_documents_out(docs, company, await accounting_periods.supplier_atc_rules(db, company.id)),
+        documents=_documents_out(docs, company, await accounting_periods.supplier_atc_rules(db, company.id),
+                                 hints=False),
     )
 
 
@@ -1049,10 +1050,13 @@ async def _apply_rule_to_supplier_documents(db: AsyncSession, doc: AADocument, u
     return changed
 
 
-def _documents_out(docs, company: AACompany, rules: dict[str, str]) -> list[DocumentOut]:
+def _documents_out(docs, company: AACompany, rules: dict[str, str], hints: bool = True) -> list[DocumentOut]:
+    """`hints=False` (folder lists): field boxes are left out (None); the document panel fetches its document."""
     out = []
     for doc in docs:
         item = DocumentOut.model_validate(doc)
+        if not hints:
+            item.field_hints = None
         item.ewt_atc_effective = accounting_periods.effective_document_atc(doc, company, rules)
         item.ewt_atc_source = accounting_periods.document_atc_source(doc, rules)
         best = accounting_periods.best_document_atc(doc, company)

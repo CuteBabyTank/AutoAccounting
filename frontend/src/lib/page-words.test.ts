@@ -94,3 +94,36 @@ describe("the image must be the page the layout describes", () => {
     expect(put).not.toHaveBeenCalled();
   });
 });
+
+describe("housekeeping", () => {
+  const ocrLayout: PageLayout = { crop: [0, 0, 1, 1], aspect: 0.5, words: [], text_layer: false };
+  it("keeps OCR that finished after its page was left, so reopening doesn't read it again", async () => {
+    let finish: (w: Word[]) => void = () => undefined;
+    const ocr = vi.fn(() => new Promise<Word[]>((r) => { finish = r; }));
+    const pw = createPageWords({ layoutFetch: async () => ocrLayout, ocr, store: null });
+    const ctl = new AbortController();
+    const first = pw.wordsFor({ ...base, signal: ctl.signal });
+    await new Promise((r) => setTimeout(r, 0));
+    ctl.abort();
+    finish([[0, 0, 1, 1, "x"]]);
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+    await pw.wordsFor({ ...base, signal: new AbortController().signal });
+    expect(ocr).toHaveBeenCalledTimes(1);
+  });
+  it("forgets the oldest pages past its memory cap", async () => {
+    const layoutFetch = vi.fn(async () => ({ ...ocrLayout, text_layer: true, words: [] as Word[] }));
+    const pw = createPageWords({ layoutFetch, ocr: vi.fn(async () => []), store: null, memoryCap: 2 });
+    for (const page of [1, 2, 3]) await pw.wordsFor({ ...base, page, signal: new AbortController().signal });
+    await pw.wordsFor({ ...base, page: 1, signal: new AbortController().signal });
+    expect(layoutFetch).toHaveBeenCalledTimes(4);
+  });
+  it("drops another person's pages from the browser store when someone signs in", async () => {
+    const purgeOthers = vi.fn(async () => undefined);
+    const pw = createPageWords({ layoutFetch: async () => ocrLayout, ocr: vi.fn(async () => []),
+      store: { get: async () => undefined, put: async () => undefined, purgeOthers } });
+    await pw.wordsFor({ ...base, signal: new AbortController().signal });
+    await pw.wordsFor({ ...base, page: 2, signal: new AbortController().signal });
+    expect(purgeOthers).toHaveBeenCalledTimes(1);
+    expect(purgeOthers).toHaveBeenCalledWith("u1");
+  });
+});

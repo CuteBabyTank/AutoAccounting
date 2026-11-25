@@ -67,3 +67,38 @@ def test_parse_extraction_keeps_the_chunk_offset_and_prompt_asks_for_where():
     doc = parse_extraction(raw, page_offset=2, chunk_pages=2)[0]
     assert doc.page_offset == 2 and doc.page_start == 4
     assert '"where"' in EXTRACT_PROMPT and "0-1000" in EXTRACT_PROMPT
+
+
+def test_an_extract_field_labelled_where_never_takes_the_hint_key():
+    from app.services.accounting.extract import spec
+
+    fields = spec.clean_fields([{"label": "Where", "type": "text"}, {"label": "Amount", "type": "money"}])
+    assert "where" not in [f["key"] for f in fields]
+
+
+def test_folder_lists_leave_hints_out_and_a_single_document_keeps_them():
+    import uuid
+    from datetime import date, datetime, timezone
+    from decimal import Decimal
+    from app.models.accounting import AADocument
+    from app.routers.accounting import _documents_out
+
+    doc = AADocument(
+        id=uuid.uuid4(), company_id=uuid.uuid4(), file_id=uuid.uuid4(), page_start=1, page_end=1, document_title="",
+        client_role="buyer", category="expenses", account="rent", doc_type="invoice", doc_number="1",
+        doc_date=date(2026, 7, 1), seller_name="A", seller_tin="111222333", seller_address="", buyer_name="B",
+        buyer_tin="", buyer_address="", gross_amount=Decimal("1.00"), vatable_amount=Decimal("0"),
+        vat_amount=Decimal("0"), exempt_amount=Decimal("0"), zero_rated_amount=Decimal("0"),
+        withholding_amount=Decimal("0"), needs_review=False, reviewed=False, excluded=False, ewt_atc="",
+        confidence=90.0, review_reasons=[], review_notes={}, field_hints={"doc_number": {"computed": True}},
+        period_locked=False, seller_branch="", buyer_branch="", paid_via="", payment_ref="", settles_source="",
+        gl_account_code="", vat_treatment="", notes="", created_at=datetime.now(timezone.utc))
+    from app.models.accounting import AACompany
+
+    company = AACompany(registered_name="Juan", tin="123456789", branch_code="00000", rdo_code="030", address="",
+                        zip_code="", taxpayer_type="corporation", vat_status="vat", income_tax_option="graduated",
+                        deduction_method="itemized", business_type="trading", fiscal_year_end_month=12,
+                        is_withholding_agent=False, is_top_withholding_agent=False, has_employees=False)
+    listed = _documents_out([doc], company, {}, hints=False)[0]
+    single = _documents_out([doc], company, {})[0]
+    assert listed.field_hints is None and single.field_hints == {"doc_number": {"computed": True}}

@@ -112,3 +112,24 @@ def test_scanned_pdf_with_a_stray_text_line_goes_to_ocr(tmp_path):
     doc.save(str(path))
     out = _pdf_layout_local(str(path), 0)
     assert out["text_layer"] is False and out["words"] == []
+
+
+def test_a_trimmed_page_render_also_caches_its_layout(tmp_path, monkeypatch):
+    import json
+    import subprocess
+
+    from app.services.accounting import render_pool
+
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    page.insert_text((200, 300), "INVOICE 0071420", fontsize=12)
+    path = tmp_path / "t.pdf"
+    doc.save(str(path))
+    render_pool._CACHE.clear()
+    calls = []
+    real = subprocess.run
+    monkeypatch.setattr(render_pool.subprocess, "run", lambda *a, **k: calls.append(a[0][10]) or real(*a, **k))
+    assert render_pool.render_page(str(path), 0, "trimmed")
+    layout = json.loads(render_pool.render_page(str(path), 0, "layout"))
+    assert calls == ["trimmed"]                       # one child for both
+    assert layout == _pdf_layout_local(str(path), 0)  # the same layout the layout route would compute

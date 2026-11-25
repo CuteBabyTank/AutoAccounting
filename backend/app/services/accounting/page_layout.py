@@ -46,16 +46,23 @@ def _pdf_layout_local(pdf_path: str, page_number: int) -> dict:
         if not 0 <= page_number < len(doc):
             raise ValueError("Page does not exist")
         page = doc[page_number]
-        r = page.rect
-        w, h = r.width or 1.0, r.height or 1.0
-        clip = pdf_clip(page)
-        crop = _FULL if clip is None else [_r((clip.x0 - r.x0) / w), _r((clip.y0 - r.y0) / h),
-                                           _r((clip.x1 - r.x0) / w), _r((clip.y1 - r.y0) / h)]
-        raw = page.get_text("words")
-        # Words come in the unrotated page's space; page.rect and the trim are the page as shown.
-        m = page.rotation_matrix
-        boxes = [(fitz.Rect(x0, y0, x1, y1) * m, text) for x0, y0, x1, y1, text, *_ in raw]
-        scanned = _mostly_image(page, len(raw))
+        return layout_of_page(page, pdf_clip(page))
+
+
+def layout_of_page(page, clip) -> dict:
+    """A page's layout given the viewer's trim (`page_trim.pdf_clip`); the trimmed render computes it with the clip
+    it already has, so viewing a page costs one child for the image and its layout."""
+    import fitz
+
+    r = page.rect
+    w, h = r.width or 1.0, r.height or 1.0
+    crop = _FULL if clip is None else [_r((clip.x0 - r.x0) / w), _r((clip.y0 - r.y0) / h),
+                                       _r((clip.x1 - r.x0) / w), _r((clip.y1 - r.y0) / h)]
+    raw = page.get_text("words")
+    # Words come in the unrotated page's space; page.rect and the trim are the page as shown.
+    m = page.rotation_matrix
+    boxes = [(fitz.Rect(x0, y0, x1, y1) * m, text) for x0, y0, x1, y1, text, *_ in raw]
+    scanned = _mostly_image(page, len(raw))
     text_layer = 0 < len(raw) <= MAX_WORDS and not scanned
     words = [[_r((b.x0 - r.x0) / w), _r((b.y0 - r.y0) / h), _r((b.x1 - r.x0) / w), _r((b.y1 - r.y0) / h),
               str(text)[:100]] for b, text in boxes] if text_layer else []

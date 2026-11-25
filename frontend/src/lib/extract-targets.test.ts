@@ -39,3 +39,11 @@ describe("recordTargets", () => {
     expect(recordTargets(old, snapshot).every((t) => t.hint === undefined)).toBe(true);
   });
 });
+
+describe("typed but not saved", () => {
+  it("uses what is being typed, so the outline never stays on the old printed value", () => {
+    const by = Object.fromEntries(recordTargets(record, snapshot, { "h:total_amount": "999.00" }).map((t) => [t.key, t]));
+    expect(by["h:total_amount"].value).toBe("999.00");
+    expect(by["0:amount"].value).toBe("10.00");
+  });
+});

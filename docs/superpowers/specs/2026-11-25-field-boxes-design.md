@@ -1,6 +1,6 @@
 # Field boxes: click a field, see it on the scan
 
-Date: 2026-11-25 · Status: draft for approval
+Date: 2026-11-25 · Status: approved 2026-11-25 (updated: lazy, in-browser locating)
 
 ## Why
 
@@ -30,8 +30,8 @@ from the reader plus a text check instead.
 
 ## Non-goals
 
-- No boxes for documents read before this ships. Their viewer works as it does today (no backfill job). A later
-  backfill could run the text-locate half alone.
+- No backfill job. Older documents still get boxes for distinctive values (TIN, number, date, names), because
+  locating happens when the page is opened (section 3).
 - No fixed-form templates for BIR forms (2307, 2550-Q). That is a possible later addition using MLLM-HTR's
   method.
 - No boxes on line items in the Documents panel (it has no line items). Extract row fields **do** get boxes, per
@@ -41,8 +41,9 @@ from the reader plus a text check instead.
 ## Anti-goals (a failure even if it works)
 
 - A box on the wrong spot, the wrong page or the wrong document. Every rule below prefers drawing nothing.
-- Slower or costlier extraction in a way people notice: at most about +15% reader output tokens, and OCR adds
-  ≤ 3 s CPU per scanned page, run in the background job, never in a request.
+- Extra server cost: the only additions are about +15% reader output tokens for hints and a millisecond words read
+  when a PDF page is opened. OCR never runs on the server.
+- A slow or janky browser: OCR runs in a worker, one page at a time, only for pages that are open.
 - A firm seeing another firm's boxes (they live on firm-scoped rows already under RLS).
 
 ## Approaches considered
@@ -52,6 +53,11 @@ from the reader plus a text check instead.
 | A. Text locate only | PDF text layer / OCR words, match the stored value | Never wrong, but no box for handwriting, computed values or values printed twice |
 | B. Model boxes only | The reader returns a box per field | Covers nearly everything, but boxes are sometimes off or made up, so it can't be "always correct" |
 | **C. Both (chosen)** | Model box as a hint, text locate confirms and snaps | Most work; only option that is both exact and broad |
+
+Within C, the user then chose the cheapest way to run it: locate lazily, when a page is opened, in the browser
+(Tesseract.js) rather than OCR in the extraction job (RapidOCR on Cloud Run, the first draft). Trade-offs: no server
+CPU or new backend dependency, and older documents get boxes too. In exchange there is a one-time ~5 MB download and a
+1 to 3 s wait before outlines appear on a newly opened scanned page.
 
 The user picked **C**.
 
@@ -97,17 +103,32 @@ The user picked **C**.
 - **Hint boxes are untrusted model output.** They are clamped to 0–1, must have positive area, at most 60% of the
   page in each dimension, and a page inside the record's `page_start..page_end`. Anything else is dropped.
 
-### 3. Text locate confirms or snaps (`field_boxes.locate`)
+### 3. Text locate, only when a page is opened, in the person's browser
 
-Runs inside the extraction job, after values are cleaned, once per page that has a field:
+The user's direction (2026-11-25): pick the cheapest, most efficient way. Locating runs only when someone opens a
+page, and it runs on their computer, not the server. Nothing is located for pages nobody opens.
 
-- **Words with positions.**
-  - A PDF page with a text layer: `page.get_text("words")` (PyMuPDF), in the existing memory-capped render child.
-  - Otherwise (images, scanned PDFs): OCR with **RapidOCR (onnxruntime, CPU)** on the same render the reader got.
-    It runs on the PDF child slots (`pdf_budget` / `render_pool.BACKGROUND_*`) so the viewer always keeps a slot,
-    and is skipped when `storage.PDF_QUEUE_MAX`-style pressure is hit (no boxes, never a failure).
-  - Results are cached per (file, page) for the job only.
-- **Matching** the stored, cleaned value against word sequences, normalised per type:
+- **Hints** come from the extraction call that already happens (section 2), for a few more output tokens. They are
+  the only thing stored on the server.
+- **Words with positions**, fetched or made only when a page is shown in a panel:
+  - **PDF page with a text layer:** `GET .../files/{id}/pages/{n}/words` returns `[[x0,y0,x1,y1,text], …]` as
+    fractions of the untrimmed page. It is PyMuPDF `get_text("words")` in the existing isolated render child,
+    with no rendering, so it takes milliseconds. It returns `[]` when the page has no text layer. It is cached
+    like the page image (`private, max-age=3600`, `Vary: Authorization`), capped at 5,000 words, and firm-scoped
+    like the page route.
+  - **Images and scanned PDFs (`[]` above):** OCR in the browser with **Tesseract.js** in a Web Worker, on the
+    page image the viewer already loaded. The worker, core WASM and `eng` fast traineddata (about 5 MB, cached by
+    the browser after the first use) are self-hosted under `public/ocr/`, never a CDN. The CSP gains
+    `'wasm-unsafe-eval'` in `script-src`: it allows compiling WebAssembly only, not JS eval. OCR words are in
+    trimmed-image space, so they are mapped back to untrimmed fractions with the crop header (section 1) before
+    matching.
+  - One OCR job at a time per tab. It is cancelled when the page or panel changes, and only runs while the tab is
+    visible.
+- **Cache:** words per (file id, page) are kept in memory for the session and in IndexedDB keyed by user. They are
+  client data, so they are cleared on sign-out with the rest of `lib/personal-storage.ts`, and `public/app.js` is
+  kept in step. Entries older than 7 days are pruned, total ≤ 20 MB. Reopening a page needs no new OCR.
+- **Matching** (`lib/field-locate.ts`, pure TypeScript), on the stored, cleaned value against word sequences,
+  normalised per type:
   - money/number: digits and the decimal point, so `1,234.50`, `₱1,234.50` and `1234.50` all match.
   - dates: every common written form of the ISO date.
   - TIN: the digits (9 to 14).
@@ -115,29 +136,29 @@ Runs inside the extraction job, after values are cleaned, once per page that has
 - **Decision (strict, user's choice 2026-11-25: only confirmed boxes are ever drawn):**
   - **With a hint:** a box is drawn only when exactly one match has its centre inside the hint box (expanded 25%).
     If the single match on the page is outside the hint, no box is drawn.
-  - **Without a hint** (old-style output, Extract rows past the first 20): a single match on the page is accepted
-    only for distinctive values: TIN, document number, dates, and text of 2+ words. Amounts and one-word text
-    without a hint get no box, because a lone `120.00` may be another line.
+  - **Without a hint** (documents read before this ships, Extract rows past the first 20): a single match on the
+    page is accepted only for distinctive values: TIN, document number, dates, and text of 2+ words. Amounts and
+    one-word text without a hint get no box, because a lone `120.00` may be another line. Because locating is lazy,
+    **older documents get these boxes too**, with no backfill.
   - **No match:** no box. The model's hint is **never drawn**.
-  - Values the system produces rather than reads are never located (builder's call, mine): amounts
-    computed by the cleaner (VAT split, gross from net + VAT, `vat_difference`) and any field the reader left blank.
-    The cleaner marks these, and a field it changed is treated as computed.
-- `how` is therefore only `text` or `ocr`. Boxes get 1% padding.
+  - Values the system produces rather than reads are never located (builder's call, mine): amounts computed
+    by the cleaner (VAT split, gross from net + VAT, `vat_difference`) and any field the reader left blank. The
+    server marks these in the hints (`"computed": true`); a field the cleaner changed counts as computed.
+  - Boxes are recomputed from the **current** value, so a hand edit moves or removes its box automatically. No
+    invalidation is stored.
+- Boxes get 1% padding. `how` = `text` | `ocr`.
 
 ### 4. Storage
 
-- Documents: new column `aa_documents.field_boxes JSONB NOT NULL DEFAULT '{}'`. The model and `schema.py` both get
-  it, keyed by the API's field keys (`seller_name`, `seller_tin`, `doc_number`, `doc_date`, `gross_amount`,
-  `vatable_amount`, `vat_amount`, `exempt_amount`, `zero_rated_amount`, `withholding_amount`, `ewt_atc`,
-  `seller_address`, `buyer_name`, `buyer_tin`, `buyer_address`).
-- Extract: new column `aa_extract_records.boxes JSONB NOT NULL DEFAULT '{}'`, shaped like `values`:
-  `{"header": {key: box}, "rows": [{key: box}]}`.
-- **Hand edits:** when a person changes a field's value, its box is removed if the new value no longer matches the
-  located text. Simplest rule: drop the box on any value edit unless the new value normalises to the same thing.
-  Moving a document to another company (`move_company`) keeps its boxes, because the file didn't change.
-- **Split or merged documents and page changes:** if `page_start`/`page_end` change, boxes outside the new range are
-  dropped.
-- Boxes are returned in the document and record payloads (`types/accounting.ts`, `types/extract.ts`).
+- Only hints are stored. Documents: new column `aa_documents.field_hints JSONB NOT NULL DEFAULT '{}'`. The model and
+  `schema.py` both get it, keyed by the API's field keys (`seller_name`, `seller_tin`, `doc_number`, `doc_date`,
+  `gross_amount`, `vatable_amount`, `vat_amount`, `exempt_amount`, `zero_rated_amount`, `withholding_amount`,
+  `ewt_atc`, `seller_address`, `buyer_name`, `buyer_tin`, `buyer_address`). Each value is
+  `{page, box: [x0,y0,x1,y1]}` or `{computed: true}`.
+- Extract: new column `aa_extract_records.hints JSONB NOT NULL DEFAULT '{}'`, shaped like `values`:
+  `{"header": {key: hint}, "rows": [{key: hint}]}`.
+- Page range changes (split or merge) drop hints outside the new range. Moving a company keeps them.
+- Hints are returned in the document and record payloads (`types/accounting.ts`, `types/extract.ts`).
 
 ### 5. Viewer behaviour (both `PageViewer`s)
 
@@ -162,20 +183,18 @@ Runs inside the extraction job, after values are cleaned, once per page that has
 
 ## Constraints
 
-- **Dependencies:** `rapidocr-onnxruntime` and its pinned deps go in `pyproject.toml` *and*
-  `backend/constraints.txt`. The models ship in the image, never downloaded at runtime. Check the image size and the
-  4 GiB / 768 MiB-child memory budget (`pdf_budget`).
-- **OCR fallback (my call, pending the user's confirmation):** OCR goes behind a setting (`FIELD_BOX_OCR`, on by
-  default). If RapidOCR doesn't fit the budget (≤ 3 s CPU per page, the 768 MiB child limit, a reasonable image
-  size), ship with it off: digital PDFs get boxes from their text layer, and photos/scans get none until OCR fits.
-  Plan OCR as its own phase, after the text-layer path works end to end.
+- **Dependencies:** `tesseract.js` (pinned exact) plus its self-hosted worker, core and `eng` fast data in
+  `public/ocr/`. No new backend dependency.
+- **Frontend tests:** the repo has no frontend test runner. Add `vitest` (dev dependency, pinned) for
+  `lib/field-locate.ts` and the crop mapping only.
 - **Security:** model output is never trusted (strict clamping, no strings from boxes rendered as HTML).
   `X-AA-Page-Crop` contains numbers only.
 - **Resumable jobs:** locating runs inside the existing resumable extraction job. A crash before boxes are stored
   just leaves no boxes.
 - **Billing:** no page charges change.
-- Tests are pure-logic, like the rest of `backend/tests`: parser (Qwen and Gemini formats, chunk offsets, bad
-  boxes), matcher (each type, duplicates + hint, no match), crop mapping, edit invalidation.
+- Backend tests are pure-logic, like the rest of `backend/tests`: hint parser (Qwen and Gemini formats, chunk
+  offsets, bad boxes, computed marks), page-range pruning, and the words route's scoping. Frontend (vitest): matcher
+  (each type, duplicates + hint, no hint, no match) and crop mapping.
 
 ## Left to the builder
 

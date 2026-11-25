@@ -6,6 +6,7 @@ carries the flag message as a comment, and every text cell goes through `csv_saf
 """
 
 import io
+import re
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -25,6 +26,9 @@ _MAX_NUMBER_CHARS = 30
 _MAX_EXPONENT = 15  # digits before / after the point a number cell may have; beyond it the value stays text
 MAX_CELLS = 2_000_000
 _TEXT_MAX = 32000  # Excel's cell limit is 32,767 characters
+# The same shapes `checks` accepts: commas only as thousands groups, then a plain decimal (no exponent, no NaN).
+_GROUPED = re.compile(r"\d{1,3}(,\d{3})+(\.\d+)?")
+_PLAIN = re.compile(r"-?(\d+(\.\d*)?|\.\d+)")
 
 
 def cell_count(header_fields: int, row_fields: int, records: int, lines: int) -> int:
@@ -39,8 +43,16 @@ def _text(value: Any) -> Any:
 
 
 def _number(text: str) -> Decimal | None:
-    clean = text.replace(",", "").strip()
+    """A plain number ("-1234.50", or with true thousands groups "1,234.50") as a Decimal, else None. Anything the
+    checks call unreadable ("1.234,50", "12,34") stays text: stripping its commas would write a wrong amount."""
+    clean = text.strip()
     if not clean or len(clean) > _MAX_NUMBER_CHARS:
+        return None
+    if "," in clean:
+        if not _GROUPED.fullmatch(clean.removeprefix("-")):
+            return None
+        clean = clean.replace(",", "")
+    if not _PLAIN.fullmatch(clean):
         return None
     try:
         value = Decimal(clean)

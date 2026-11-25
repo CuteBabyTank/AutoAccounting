@@ -699,6 +699,32 @@ async def extract_file_page(file_id: str, page: int = PathParam(ge=1, le=10000),
                     headers={"Cache-Control": "private, max-age=3600", "Vary": "Authorization"})
 
 
+@router.get("/files/{file_id}/pages/{page}/layout")
+async def extract_file_page_layout(file_id: str, page: int = PathParam(ge=1, le=10000),
+                                   user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """The page's trim region and PDF words for field boxes (services/accounting/page_layout.py)."""
+    ent = scope_for(user)
+    f, run = await _file_or_404(db, ent, file_id, message="Page not found")
+    if page > f.page_count or not runner.own_file(run.id, f.stored_path):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Page not found")
+    stored_path, file_type = f.stored_path, f.file_type
+    await db.commit()  # nothing stays open while the page is read
+    from app.services.accounting.page_layout import read_page_layout
+    from app.services.accounting.render_pool import RenderBusy, run_pdf_work
+
+    try:
+        layout = await run_pdf_work(read_page_layout, stored_path, file_type, page, owner=str(user.id),
+                                    firm=str(ent))
+    except RenderBusy as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Page unavailable: renderer is busy") from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Page unavailable: PDF could not be read") \
+            from exc
+    if layout is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Page not found")
+    return JSONResponse(layout, headers={"Cache-Control": "private, max-age=3600", "Vary": "Authorization"})
+
+
 @router.delete("/runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_run(run_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Delete a run (its creator, an owner or a manager): the run and file rows stay as a tombstone, its records and

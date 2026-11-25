@@ -204,6 +204,12 @@ def _render_local(pdf_path: str, page_number: int, kind: str, dpi: int, quality:
 
     from app.services.pdf_render import render_zoom
 
+    if kind == "layout":
+        import json
+
+        from app.services.accounting.page_layout import _pdf_layout_local
+
+        return json.dumps(_pdf_layout_local(pdf_path, page_number)).encode()
     if kind == "trimmed":
         from app.services.accounting.page_trim import _render_pdf_page_trimmed
 

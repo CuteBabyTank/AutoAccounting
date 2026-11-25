@@ -11,7 +11,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
 from fastapi import Path as PathParam
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -1523,6 +1523,35 @@ async def file_page(
     # someone the firm has since removed) never gets these bytes from the cache without asking the server.
     return Response(content=data, media_type=media_type,
                     headers={"Cache-Control": "private, max-age=3600", "Vary": "Authorization"})
+
+
+@router.get("/files/{file_id}/pages/{page}/layout")
+async def file_page_layout(
+    file_id: uuid.UUID,
+    page: int = PathParam(ge=1, le=10000),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Where the viewer's trimmed image sits on the page, and the PDF's own words (field boxes, page_layout.py)."""
+    ent = _scope(user)
+    f = (await db.execute(
+        select(AAFile).where(AAFile.id == file_id, AAFile.enterprise_id == ent)
+    )).scalar_one_or_none()
+    if f is None or page > f.page_count or not is_stored_path_safe(f.stored_path):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Page not found")
+    from app.services.accounting.page_layout import read_page_layout
+    from app.services.accounting.render_pool import RenderBusy, run_pdf_work
+
+    try:
+        layout = await run_pdf_work(read_page_layout, f.stored_path, f.file_type, page, owner=str(user.id),
+                                    firm=str(ent))
+    except RenderBusy as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Page unavailable: renderer is busy") from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Page unavailable: PDF could not be read") from exc
+    if layout is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Page not found")
+    return JSONResponse(layout, headers={"Cache-Control": "private, max-age=3600", "Vary": "Authorization"})
 
 
 router.include_router(accounting_work.router)

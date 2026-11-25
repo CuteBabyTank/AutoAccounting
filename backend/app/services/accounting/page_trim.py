@@ -70,23 +70,30 @@ def render_pdf_page_trimmed(pdf_path: str, page_number: int) -> bytes | None:
     return render_page(pdf_path, page_number, "trimmed")
 
 
+def pdf_clip(page: "fitz.Page") -> "fitz.Rect | None":
+    """The region of a PDF page the viewer shows (its content plus a margin), or None to show the whole page. The
+    trimmed render and the page layout route (page_layout.py) both use this, so a field box always lines up."""
+    zoom = render_zoom(page.rect.width, page.rect.height, _PROBE_DPI)
+    probe = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+    img = Image.frombytes("RGB" if probe.n < 4 else "RGBA", (probe.width, probe.height), probe.samples)
+    box = content_box(img)
+    if box is None:
+        return None
+    scale = 1 / zoom
+    r = page.rect
+    clip = fitz.Rect(r.x0 + box[0] * scale, r.y0 + box[1] * scale, r.x0 + box[2] * scale, r.y0 + box[3] * scale)
+    clip &= r
+    return None if clip.is_empty else clip
+
+
 def _render_pdf_page_trimmed(pdf_path: str, page_number: int) -> bytes | None:
     """Child-only implementation; the public helper always isolates parsing and rasterization."""
     with fitz.open(pdf_path) as doc:
         if not 0 <= page_number < len(doc):
             return None
         page = doc[page_number]
-        zoom = render_zoom(page.rect.width, page.rect.height, _PROBE_DPI)
-        probe = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-        img = Image.frombytes("RGB" if probe.n < 4 else "RGBA", (probe.width, probe.height), probe.samples)
-        box = content_box(img)
-        if box is None:
-            return None
-        scale = 1 / zoom
-        r = page.rect
-        clip = fitz.Rect(r.x0 + box[0] * scale, r.y0 + box[1] * scale, r.x0 + box[2] * scale, r.y0 + box[3] * scale)
-        clip &= r
-        if clip.is_empty:
+        clip = pdf_clip(page)
+        if clip is None:
             return None
         dpi = min(_MAX_DPI, int(72 * (_TARGET_PIXELS / (clip.width * clip.height)) ** 0.5))
         zoom = render_zoom(clip.width, clip.height, max(130, dpi))

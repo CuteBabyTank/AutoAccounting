@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "prebuild": "node scripts/version-assets.mjs",
-    "version-assets": "node scripts/version-assets.mjs"
+    "version-assets": "node scripts/version-assets.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.7",
@@ -30,6 +31,7 @@
     "eslint-config-next": "~15.5.16",
     "postcss": "^8.4.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "3.2.4"
   }
 }

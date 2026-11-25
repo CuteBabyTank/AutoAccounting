@@ -65,3 +65,22 @@ describe("boxInShown", () => {
     expect(boxInShown([0.0, 0.0, 0.05, 0.05], [0.1, 0.1, 0.9, 0.9], 1, 1)).toBeNull();
   });
 });
+
+describe("no-hint values never match unrelated numbers", () => {
+  const one = (t: string): Word[] => [w(0.1, 0.1, 0.2, 0.12, t)];
+  it("a date needs separators or a month name", () => {
+    expect(locate("2026-01-03", "date", one("13.26"), undefined, 1)).toBeNull();
+    expect(locate("2026-01-03", "date", one("1326"), undefined, 1)).toBeNull();
+    expect(locate("2026-11-03", "date", one("113.26"), undefined, 1)).toBeNull();
+    expect(locate("2026-01-03", "date", one("01/03/2026"), undefined, 1)).not.toBeNull();
+    expect(locate("2026-01-03", "date", one("2026-01-03"), undefined, 1)).not.toBeNull();
+    expect(locate("2026-01-03", "date", [w(0.1, 0.1, 0.13, 0.12, "Jan"), w(0.14, 0.1, 0.16, 0.12, "3,"), w(0.17, 0.1, 0.2, 0.12, "2026")], undefined, 1)).not.toBeNull();
+  });
+  it("a short or amount-like document number needs a hint", () => {
+    expect(locate("100", "docno", one("1.00"), undefined, 1)).toBeNull();
+    expect(locate("12", "docno", one("12"), undefined, 1)).toBeNull();
+    expect(locate("0071420", "docno", one("0071420"), undefined, 1)).not.toBeNull();
+    expect(locate("A-12", "docno", one("A-12"), undefined, 1)).not.toBeNull();
+    expect(locate("100", "docno", one("1.00"), hintAt([0, 0, 0.5, 0.5]), 1)).toBeNull();
+  });
+});

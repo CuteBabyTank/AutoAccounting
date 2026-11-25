@@ -18,6 +18,24 @@ def _r(v: float) -> float:
     return round(v, 5)
 
 
+FEW_WORDS = 40          # a scan's stray text (a "Scanned with ..." line, page numbers) is about this many words
+IMAGE_SHARE = 0.5       # ...on a page mostly covered by one picture
+
+
+def _mostly_image(page, word_count: int) -> bool:
+    """A scanned page carrying a little text: its words aren't the document's, so the browser OCRs the picture."""
+    if word_count > FEW_WORDS:
+        return False
+    import fitz
+
+    area = abs(page.rect) or 1.0
+    try:
+        covered = max((abs(page.rect & fitz.Rect(i["bbox"])) for i in page.get_image_info()), default=0)
+    except (ValueError, RuntimeError):
+        return False
+    return covered / area >= IMAGE_SHARE
+
+
 def _pdf_layout_local(pdf_path: str, page_number: int) -> dict:
     """Child-only (render_pool kind "layout"): parsing the PDF stays in the memory-capped child."""
     import fitz
@@ -34,9 +52,13 @@ def _pdf_layout_local(pdf_path: str, page_number: int) -> dict:
         crop = _FULL if clip is None else [_r((clip.x0 - r.x0) / w), _r((clip.y0 - r.y0) / h),
                                            _r((clip.x1 - r.x0) / w), _r((clip.y1 - r.y0) / h)]
         raw = page.get_text("words")
-    text_layer = 0 < len(raw) <= MAX_WORDS
-    words = [[_r((x0 - r.x0) / w), _r((y0 - r.y0) / h), _r((x1 - r.x0) / w), _r((y1 - r.y0) / h), str(text)[:100]]
-             for x0, y0, x1, y1, text, *_ in raw] if text_layer else []
+        # Words come in the unrotated page's space; page.rect and the trim are the page as shown.
+        m = page.rotation_matrix
+        boxes = [(fitz.Rect(x0, y0, x1, y1) * m, text) for x0, y0, x1, y1, text, *_ in raw]
+        scanned = _mostly_image(page, len(raw))
+    text_layer = 0 < len(raw) <= MAX_WORDS and not scanned
+    words = [[_r((b.x0 - r.x0) / w), _r((b.y0 - r.y0) / h), _r((b.x1 - r.x0) / w), _r((b.y1 - r.y0) / h),
+              str(text)[:100]] for b, text in boxes] if text_layer else []
     return {"crop": crop, "aspect": w / h, "words": words, "text_layer": text_layer}
 
 

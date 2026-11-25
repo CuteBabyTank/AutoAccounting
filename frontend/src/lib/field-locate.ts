@@ -39,27 +39,29 @@ function amount(s: string): string | null {
   return (negative ? -n : n).toFixed(2);
 }
 
-function dateForms(iso: string): Set<string> {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
-  if (!m) return new Set();
-  const [y, mm, dd] = [m[1], m[2], m[3]];
-  const mon = MONTHS[Number(mm) - 1];
-  if (!mon) return new Set();
-  const d = String(Number(dd));
-  const mo = String(Number(mm));
-  const yy = y.slice(2);
-  const out = new Set<string>();
-  for (const day of new Set([d, dd])) {
-    for (const month of new Set([mo, mm])) {
-      out.add(`${month}${day}${y}`).add(`${day}${month}${y}`).add(`${month}${day}${yy}`).add(`${day}${month}${yy}`);
-    }
-    for (const name of [mon, mon.slice(0, 3), mon.slice(0, 4)]) {
-      out.add(`${name}${day}${y}`).add(`${day}${name}${y}`).add(`${y}${name}${day}`);
-    }
-  }
-  out.add(`${y}${mm}${dd}`);
+/** A printed date as [year, month, day] candidates: three numbers with separators (m/d/y, d/m/y, y-m-d) or a
+ *  month name with a day and year. Separator-less digits ("1326") never count: they are too easily an amount. */
+function dateReadings(text: string): [number, number, number][] {
+  const parts = text.normalize("NFKC").toLowerCase().split(/[\s/\-.,]+/).filter(Boolean);
+  if (parts.length !== 3) return [];
+  const year = (p: string) => (/^\d{4}$/.test(p) ? Number(p) : /^\d{2}$/.test(p) ? 2000 + Number(p) : NaN);
+  const num = (p: string) => (/^\d{1,2}$/.test(p) ? Number(p) : NaN);
+  const month = (p: string) => {
+    const i = MONTHS.findIndex((m) => p.length >= 3 && m.startsWith(p.replace(/\.$/, "")));
+    return i >= 0 ? i + 1 : NaN;
+  };
+  const [a, b, c] = parts;
+  const out: [number, number, number][] = [];
+  const push = (y: number, m: number, d: number) => { if (y && m >= 1 && m <= 12 && d >= 1 && d <= 31) out.push([y, m, d]); };
+  if (/^\d{4}$/.test(a)) push(year(a), num(b) || month(b), num(c));          // 2026-11-03, 2026 Nov 3
+  push(year(c), num(a), num(b));                                          // 11/03/2026 (Philippine order)
+  push(year(c), num(b), num(a));                                          // 03/11/2026
+  push(year(c), month(a), num(b));                                        // Nov 3, 2026
+  push(year(c), month(b), num(a));                                        // 3 Nov 2026
   return out;
 }
+
+const AMOUNT_LIKE = /^\d+[.,]\d+$/;
 
 /** Whether a run of words reads as the value. */
 function matcher(value: string, kind: FieldKind): ((text: string) => boolean) | null {
@@ -68,8 +70,10 @@ function matcher(value: string, kind: FieldKind): ((text: string) => boolean) | 
     return want === null ? null : (t) => amount(t) === want;
   }
   if (kind === "date") {
-    const forms = dateForms(value);
-    return forms.size ? (t) => forms.has(alnum(t)) : null;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+    if (!m) return null;
+    const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    return (t) => dateReadings(t).some(([a, b, c]) => a === y && b === mo && c === d);
   }
   if (kind === "tin") {
     const want = digits(value);
@@ -77,7 +81,10 @@ function matcher(value: string, kind: FieldKind): ((text: string) => boolean) | 
     return (t) => /^[\d\s.\-/]+$/.test(t.trim()) && digits(t).length <= 14 && digits(t).startsWith(want);
   }
   const want = alnum(value);
-  return want ? (t) => alnum(t) === want : null;
+  if (!want) return null;
+  // A document number never matches an amount-like print ("100" vs "1.00") unless it is written that way itself.
+  if (kind === "docno" && !/[.,]/.test(value)) return (t) => !AMOUNT_LIKE.test(t.trim()) && alnum(t) === want;
+  return (t) => alnum(t) === want;
 }
 
 const sameLine = (a: Word, b: Word) => {
@@ -125,7 +132,8 @@ const padded = (r: Rect): Rect =>
 
 /** Values distinctive enough to trust one match on the page without the reader's hint. */
 function distinctive(value: string, kind: FieldKind): boolean {
-  if (kind === "tin" || kind === "docno" || kind === "date") return true;
+  if (kind === "tin" || kind === "date") return true;
+  if (kind === "docno") return alnum(value).length >= 4 || /\p{L}/u.test(value);
   return kind === "text" && value.trim().split(/\s+/).filter((p) => alnum(p)).length >= 2;
 }
 

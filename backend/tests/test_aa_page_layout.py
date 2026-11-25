@@ -79,3 +79,36 @@ async def test_layout_route_is_firm_scoped_and_404s_a_foreign_file(monkeypatch):
                                           SimpleNamespace(execute=AsyncMock(side_effect=execute)))
     assert error.value.status_code == 404
     assert "enterprise_id" in seen[0]
+
+
+def test_rotated_pdf_words_are_in_the_shown_orientation(tmp_path):
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    page.insert_text((400, 600), "TOTAL 1,234.50", fontsize=11)
+    page.set_rotation(90)
+    path = tmp_path / "r.pdf"
+    doc.save(str(path))
+    out = _pdf_layout_local(str(path), 0)
+    w = next(x for x in out["words"] if x[4] == "1,234.50")
+    cx, cy = (w[0] + w[2]) / 2, (w[1] + w[3]) / 2
+    x0, y0, x1, y1 = out["crop"]
+    assert x0 <= cx <= x1 and y0 <= cy <= y1          # the word sits inside the trimmed region the viewer shows
+    assert abs(out["aspect"] - 792 / 612) < 1e-6      # landscape as shown
+
+
+def test_scanned_pdf_with_a_stray_text_line_goes_to_ocr(tmp_path):
+    import io as _io
+
+    from PIL import Image as _Image
+
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    img = _Image.new("RGB", (600, 780), (230, 230, 230))
+    buf = _io.BytesIO()
+    img.save(buf, "PNG")
+    page.insert_image(fitz.Rect(6, 6, 606, 786), stream=buf.getvalue())
+    page.insert_text((20, 780), "Scanned with CamScanner", fontsize=6)
+    path = tmp_path / "s.pdf"
+    doc.save(str(path))
+    out = _pdf_layout_local(str(path), 0)
+    assert out["text_layer"] is False and out["words"] == []

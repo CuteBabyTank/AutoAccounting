@@ -67,10 +67,13 @@ export default function PageViewer({ images, firstPage, className = "", onAspect
     setZoomState(MIN);
   }
 
+  // A different document: back to its first page at fit. Keyed on the first image, not the array, so pages that
+  // are still arriving one by one don't undo a page switch or a field zoom.
+  const firstImage = images[0];
   useEffect(() => {
     setPage(0);
     reset();
-  }, [images]);
+  }, [firstImage]);
 
   useLayoutEffect(() => {
     const el = box.current;
@@ -173,19 +176,27 @@ export default function PageViewer({ images, firstPage, className = "", onAspect
 
   // A focused field on another page (its hint says which): show that page first.
   const active = fields?.active ?? null;
+  const switchedFor = useRef<string | null>(null);   // the focus whose page has been shown (once per focus)
   useEffect(() => {
     seeking.current = active;
-    if (!fields || !active) return;
+    switchedFor.current = null;
+  }, [active]);
+  // Re-checked as pages arrive, so a field on a page that is still loading is shown once that page is in.
+  const pagesKey = images.map((_, i) => pageNo(i)).join(",");
+  useEffect(() => {
+    if (!fields || !active || switchedFor.current === active) return;
     const target = fields.targets.find((t) => t.key === active);
     const hintPage = target?.hint && "page" in target.hint ? target.hint.page : null;
     if (hintPage === null) return;
     const idx = images.findIndex((_, i) => pageNo(i) === hintPage);
-    if (idx >= 0 && idx !== page) {
+    if (idx < 0) return;
+    switchedFor.current = active;
+    if (idx !== page) {
       setPage(idx);
       reset();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the focus moves
-  }, [active]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- when the focus moves or pages arrive
+  }, [active, pagesKey]);
 
   // Boxes on the shown page, in container fractions. Nothing until both its image and its words are in.
   const pw = wordsKey ? words[wordsKey] : undefined;

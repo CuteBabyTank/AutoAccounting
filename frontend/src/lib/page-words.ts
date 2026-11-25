@@ -71,7 +71,8 @@ export function createPageWords(deps: Deps) {
   let generation = 0;   // bumped on sign-out: anything still in flight is dropped, never kept
 
   async function wordsFor(req: WordsRequest): Promise<PageWords> {
-    const key = `v${WORDS_VERSION}:${req.userId}:${req.src}:${req.fileId}:${req.page}`;
+    // The image size is part of the key: words are only good for the exact image they were read from.
+    const key = `v${WORDS_VERSION}:${req.userId}:${req.src}:${req.fileId}:${req.page}:${req.width}x${req.height}`;
     const gen = generation;
     const stale = () => req.signal.aborted || gen !== generation;
     if (stale()) throw abortError();
@@ -84,12 +85,18 @@ export function createPageWords(deps: Deps) {
     const layout = await deps.layoutFetch(req.src, req.fileId, req.page);
     if (stale()) throw abortError();
     let result: PageWords;
-    if (!layout.crop) {
-      result = { crop: null, aspect: layout.aspect, words: [] };
+    const crop = layout.crop;
+    const shapeOk = !!crop && req.width > 0 && req.height > 0 && layout.aspect > 0 &&
+      Math.abs((req.width / req.height) / (layout.aspect * ((crop[2] - crop[0]) / (crop[3] - crop[1]))) - 1) <= 0.02;
+    if (!crop || !shapeOk) {
+      // Not the image this layout describes (a stale cached image, a render fallback): no words, nothing kept.
+      return { crop: null, aspect: layout.aspect, words: [] };
     } else if (layout.text_layer) {
-      result = { crop: layout.crop, aspect: layout.aspect, words: layout.words };
+      // The PDF's own text: cheap to fetch again, so it stays in memory only, never in browser storage.
+      result = { crop, aspect: layout.aspect, words: layout.words };
+      memory.set(key, result);
+      return result;
     } else {
-      const crop = layout.crop;
       const job = queue.then(async () => {
         await untilVisible(req.signal);
         if (stale()) throw abortError();

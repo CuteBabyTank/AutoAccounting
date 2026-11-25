@@ -63,6 +63,11 @@ export const DOCUMENTS_SPOTS: Spot[] = [
     body: "Whatever you open on the left shows here: documents to check, the quarter's BIR returns, books, bank and reports.",
   },
   {
+    target: "zoom-to-field",
+    title: "See where a value came from",
+    body: "Click any field and the scan zooms to where it is printed, outlined in blue. Amber outlines mark fields to check. Untick to keep the zoom where it is.",
+  },
+  {
     target: "books-off",
     title: "Returns only, or full books?",
     body: "This client gets BIR returns only. Turn on books to also keep their journals, ledger and financial statements, and to get Reports.",

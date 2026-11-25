@@ -11,7 +11,7 @@ const words: Word[] = [
   w(0.1, 0.5, 0.2, 0.52, "Total"), total,
 ];
 const hintAt = (r: number[]) => ({ page: 1, box: r as [number, number, number, number] });
-const pad = (r: number[]) => [r[0] - 0.01, r[1] - 0.01, r[2] + 0.01, r[3] + 0.01];
+const pad = (r: number[]) => [r[0] - 0.004, r[1] - 0.004, r[2] + 0.004, r[3] + 0.004];
 
 describe("locate", () => {
   it("finds an amount inside its hint, padded", () => {
@@ -24,7 +24,7 @@ describe("locate", () => {
   it("needs the hint to pick exactly one of two equal amounts", () => {
     const sub = w(0.6, 0.45, 0.75, 0.47, "1,234.50");
     const two = [...words, sub];
-    expect(locate("1234.50", "money", two, hintAt([0.58, 0.49, 0.8, 0.54]), 1)![1]).toBeCloseTo(0.49, 6);
+    expect(locate("1234.50", "money", two, hintAt([0.58, 0.49, 0.8, 0.54]), 1)![1]).toBeCloseTo(0.496, 6);
     expect(locate("1234.50", "money", two, undefined, 1)).toBeNull();
     expect(locate("1234.50", "money", two, hintAt([0.5, 0.4, 0.9, 0.6]), 1)).toBeNull();
   });
@@ -41,8 +41,8 @@ describe("locate", () => {
   });
   it("takes several-word text without a hint, never one word", () => {
     const got = locate("Juan Dela Cruz Hardware", "text", words, undefined, 1)!;
-    expect(got[0]).toBeCloseTo(0.09, 6);
-    expect(got[2]).toBeCloseTo(0.51, 6);
+    expect(got[0]).toBeCloseTo(0.096, 6);
+    expect(got[2]).toBeCloseTo(0.504, 6);
     expect(locate("Cash", "text", words, undefined, 1)).toBeNull();
     expect(locate("Cash", "text", words, hintAt([0.05, 0.38, 0.25, 0.45]), 1)).not.toBeNull();
   });

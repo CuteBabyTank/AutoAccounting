@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowsLeftRight, X } from "@phosphor-icons/react";
 import AssetSection from "@/components/accounting/AssetSection";
 import AtcPicker from "@/components/accounting/AtcPicker";
@@ -14,7 +14,8 @@ import { checkDocument, type FieldCheck } from "@/lib/document-checks";
 import { PRESETS } from "@/lib/quick-picks";
 import { ACCOUNTS, ACCOUNT_LABELS, CATEGORY_LABELS, REASON_LABELS, SOFT_REASONS, apiErrorMessage, formatPeso, reasonDetail, formatTin, tinBranch } from "@/lib/accounting-format";
 import type { AADocument, Account, AuditEvent, DocumentPatch, DuplicatePair, PaymentLinks } from "@/types/accounting";
-import PageViewer from "@/components/accounting/PageViewer";
+import PageViewer, { type FieldBoxes, type FieldTarget } from "@/components/accounting/PageViewer";
+import type { FieldKind } from "@/lib/field-locate";
 
 const AMOUNTS = [
   ["gross_amount", "Total"],
@@ -25,6 +26,13 @@ const AMOUNTS = [
   ["withholding_amount", "Tax withheld"],
 ] as const;
 const AMOUNT_KEYS = new Set<string>(AMOUNTS.map(([k]) => k));
+/** Fields the scan can outline (backend field_hints.DOC_KEYS) and how each is matched on the page. */
+const BOX_FIELDS: [string, FieldKind][] = [
+  ["doc_number", "docno"], ["doc_date", "date"],
+  ["seller_name", "text"], ["seller_tin", "tin"], ["seller_address", "text"],
+  ["buyer_name", "text"], ["buyer_tin", "tin"], ["buyer_address", "text"],
+  ...AMOUNTS.map(([k]) => [k, "money"] as [string, FieldKind]),
+];
 const CATEGORIES = ["sales", "purchases", "expenses", "payroll", "2307", "support", "unsorted"] as const;
 const INPUT = "w-full px-2.5 py-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]";
 // Orange for a blank box, red for one that's wrong (lib/document-checks).
@@ -92,7 +100,11 @@ function bookableAccounts(accounts: Account[], docAccount: string, current: stri
 export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDeleted }: Props) {
   const firstPage = focusPage && focusPage >= doc.page_start && focusPage <= doc.page_end ? focusPage : doc.page_start;
   const [draft, setDraft] = useState<Draft>(() => toDraft(doc));
-  const [images, setImages] = useState<string[]>([]);
+  // The pages shown, with the file page each one is (a page that fails to load is skipped, so they can differ).
+  const [loaded, setLoaded] = useState<{ n: number; url: string }[]>([]);
+  const images = useMemo(() => loaded.map((p) => p.url), [loaded]);
+  const pageNumbers = useMemo(() => loaded.map((p) => p.n), [loaded]);
+  const [activeField, setActiveField] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -173,7 +185,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
   useEffect(() => {
     let cancelled = false;
     const urls: string[] = [];
-    setImages([]);
+    setLoaded([]);
     const last = Math.min(doc.page_end, firstPage + 4);
     (async () => {
       for (let p = firstPage; p <= last; p++) {
@@ -182,7 +194,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
           if (cancelled) return;
           const url = URL.createObjectURL(blob);
           urls.push(url);
-          setImages((prev) => [...prev, url]);
+          setLoaded((prev) => [...prev, { n: p, url }]);
         } catch {
           // Page previews are best-effort; the fields still load.
         }
@@ -258,15 +270,31 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
 
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
   const checks = checkDocument(draft, { client_role: doc.client_role, doc_type: doc.doc_type, today });
+  // Field boxes: the printed spot of each field the scan can show (lib/field-locate.ts); boxes follow the draft.
+  const hints = doc.field_hints;
+  const targets = useMemo<FieldTarget[]>(() => BOX_FIELDS.map(([key, kind]) => {
+    const hint = hints?.[key];
+    return { key, kind, value: String(draft[key] ?? ""), ...(hint ? { hint } : {}) };
+  }), [draft, hints]);
+  const flagged = useMemo(() => BOX_FIELDS.map(([k]) => k).filter((k) => checks[k]), [checks]);
+  const fieldBoxes = useMemo<FieldBoxes>(() => ({
+    src: "accounting", fileId: doc.file_id, targets, active: activeField, flagged,
+    onBoxClick: (key) => document.getElementById(`doc-field-${key}`)?.focus(),
+  }), [doc.file_id, targets, activeField, flagged]);
+  const focusProps = (key: string) => ({
+    id: `doc-field-${key}`,
+    onFocus: () => setActiveField(key),
+  });
   const field = (key: string, label: string, type = "text") => {
     const check = checks[key];
     const cls = check ? `${INPUT} ${FLAG[check.level]}` : INPUT;
     const hintId = check ? `check-${key}` : undefined;
     return (
       <div>
-        <label className={LABEL}>{label}</label>
+        <label className={LABEL} htmlFor={`doc-field-${key}`}>{label}</label>
         {AMOUNT_KEYS.has(key) ? (
           <AmountInput
+            {...focusProps(key)}
             className={cls}
             aria-invalid={check?.level === "error" || undefined}
             aria-describedby={hintId}
@@ -275,6 +303,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
           />
         ) : (
           <input
+            {...focusProps(key)}
             type={type}
             className={cls}
             aria-invalid={check?.level === "error" || undefined}
@@ -319,7 +348,8 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
   const [aspect, setAspect] = useState(0.77);   // a Letter page until the first page loads
 
   const pages = (size: "sm" | "lg") => (
-    <PageViewer images={images} firstPage={firstPage} className={size === "lg" ? "h-full" : "h-[60vh]"}
+    <PageViewer images={images} pageNumbers={pageNumbers} fields={fieldBoxes} firstPage={firstPage}
+      className={size === "lg" ? "h-full" : "h-[60vh]"}
       onAspect={size === "lg" ? setAspect : undefined} />
   );
 

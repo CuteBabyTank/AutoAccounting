@@ -13,7 +13,7 @@ export type Hint = { page: number; box: Rect } | { computed: true };
 export type FieldKind = "money" | "number" | "date" | "tin" | "docno" | "text";
 
 const MAX_RUN = 6;        // words one value may span
-const PAD = 0.01;
+const PAD = 0.004;   // of the untrimmed page: a trimmed receipt shows it several times larger
 const HINT_GROW = 0.25;   // the hint box grows by this share of its size on every side
 const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
   "november", "december"];

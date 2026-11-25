@@ -216,6 +216,8 @@ export interface AADocument {
   review_reasons: string[];
   /** Details per reason, e.g. review_notes.ewt_expected = { atc, rate, base, amount }. */
   review_notes?: Record<string, Record<string, string>>;
+  /** Where the reader read each field (backend field_hints.py); the viewer confirms it against the page's words. */
+  field_hints?: Record<string, import("@/lib/field-locate").Hint>;
   reviewed: boolean;
   excluded: boolean;
   paid_on: string | null;

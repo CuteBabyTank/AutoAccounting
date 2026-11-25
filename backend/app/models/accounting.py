@@ -1100,5 +1100,7 @@ class AAExtractRecord(Base):
     edited: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)  # cells a person changed
     bad_cells: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     flags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # Where the reader read each value, shaped like `values` (services/accounting/field_hints.record_hints).
+    hints: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()

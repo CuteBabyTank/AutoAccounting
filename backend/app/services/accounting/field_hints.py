@@ -140,3 +140,29 @@ def document_hints(raw: dict | None, page_offset: int, fields: dict) -> dict:
     read = {k: _shown(_dig(raw, path)) for k, path in _DOC_RAW.items()}
     return doc_hints(raw.get("where"), values, read, page_offset,
                      int(fields.get("page_start") or 1), int(fields.get("page_end") or 1))
+
+
+def _boxes(where: object, values: dict, page_offset: int, first: int, last: int) -> dict:
+    """A hint for every non-blank value whose box is sane (Extract: the cleaner only reformats what was read)."""
+    boxes = where if isinstance(where, dict) else {}
+    out: dict[str, dict] = {}
+    for key, value in values.items():
+        if norm(value):
+            hint = parse_hint(boxes.get(key), page_offset, first, last)
+            if hint is not None:
+                out[key] = hint
+    return out
+
+
+def record_hints(item: dict, values: dict, page_offset: int, first: int, last: int, max_rows: int) -> dict:
+    """Extract `hints` for one record, shaped like its `values`: header hints from the item's `where`, row hints
+    from each row's own `where` (first HINT_ROWS rows only). Rows line up with `checks.clean_record`, which skips
+    items that aren't objects."""
+    header = _boxes(item.get("where"), values.get("header") or {}, page_offset, first, last)
+    raw_rows = [r for r in (item.get("rows") if isinstance(item.get("rows"), list) else [])[:max_rows]
+                if isinstance(r, dict)]
+    rows: list[dict] = []
+    for i, row_values in enumerate(values.get("rows") or []):
+        raw = raw_rows[i] if i < len(raw_rows) and i < HINT_ROWS else {}
+        rows.append(_boxes(raw.get("where"), row_values, page_offset, first, last))
+    return {"header": header, "rows": rows}

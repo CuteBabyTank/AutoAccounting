@@ -538,7 +538,7 @@ async def _process(db: AsyncSession, f: AAExtractFile, snapshots: dict, user_id:
         db.add_all([AAExtractRecord(
             enterprise_id=firm_id, run_id=run_id, file_id=file_id, position=i, page_start=r["page_start"],
             page_end=r["page_end"], confidence=r["confidence"], values=r["values"], edited=[],
-            bad_cells=r["bad_cells"], flags=r["flags"]) for i, r in enumerate(records)])
+            bad_cells=r["bad_cells"], flags=r["flags"], hints=r.get("hints") or {}) for i, r in enumerate(records)])
         await db.commit()
         logger.info("extract_file_done file_id=%s pages=%d records=%d", file_id, page_count, len(records))
     except Exception as exc:  # one bad file never stops the run

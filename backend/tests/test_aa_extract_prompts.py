@@ -273,3 +273,23 @@ def test_model_text_that_reads_like_instructions_is_dropped():
 
 def test_builder_prompt_asks_for_sum_checks_on_amount_chains():
     assert "row-scoped sum" in prompts.BUILDER_PROMPT and "subtotal" in prompts.BUILDER_PROMPT.lower()
+
+
+def test_record_hints_header_rows_and_cap():
+    import json
+
+    from app.services.accounting.extract import builtins
+    from app.services.accounting.extract.prompts import extraction_prompt, parse_records
+
+    fields = builtins.BUILTINS["invoice"]["fields"]
+    rows = [{"description": f"Item {i}", "amount": "10.00", "where": {"amount": [1, 700, 300 + i, 800, 310 + i]}}
+            for i in range(25)]
+    item = {"page_start": 1, "total_amount": "250.00", "receipt_number": "",
+            "where": {"total_amount": [1, 700, 900, 800, 930], "receipt_number": [1, 1, 1, 50, 50]}, "rows": rows}
+    rec = parse_records(json.dumps({"documents": [item]}), fields, 0, 1)[0]
+    hints = rec["hints"]
+    assert hints["header"]["total_amount"] == {"page": 1, "box": [0.7, 0.9, 0.8, 0.93]}
+    assert "receipt_number" not in hints["header"]          # blank value: nothing to find
+    assert len(hints["rows"]) == 25
+    assert hints["rows"][19]["amount"]["page"] == 1 and hints["rows"][20] == {}
+    assert '"where"' in extraction_prompt("Invoice", fields) and "0-1000" in extraction_prompt("Invoice", fields)

@@ -12,6 +12,7 @@ import re
 from typing import Any
 
 from app.services.accounting.extract import checks, guard, spec
+from app.services.accounting import field_hints
 
 DETECT_THRESHOLD = 60.0
 MAX_DOCUMENTS = 200
@@ -208,9 +209,10 @@ def extraction_prompt(name: str, fields: list[spec.Field]) -> str:
         '  "confidence": <0-100, your certainty in the values you read>,',
     ]
     lines += [f"  {_placeholder(f)}," for f in header]
+    lines.append('  "where": {"<key>": [<page>, <x0>, <y0>, <x1>, <y1>]},')
     if rows:
         lines.append('  "rows": [{')
-        lines.append(",\n".join(f"    {_placeholder(f)}" for f in rows))
+        lines.append(",\n".join(f"    {_placeholder(f)}" for f in rows) + ',\n    "where": {"<key>": [<page>, <x0>, <y0>, <x1>, <y1>]}')
         lines.append("  }]")
     else:
         lines[-1] = lines[-1].rstrip(",")
@@ -218,7 +220,7 @@ def extraction_prompt(name: str, fields: list[spec.Field]) -> str:
 
     rules = [
         "- Return ONLY valid JSON, no markdown fences, no explanation",
-        "- Use exactly the keys above and no others; every value is a string",
+        "- Use exactly the keys above and no others; every field value is a string (\"where\" holds number lists)",
         '- If a field is blank, not printed or unreadable, return empty string ""',
         "- Every page that carries its own complete document (its own header, number and total) is a separate entry, "
         "even when it repeats a document already in this file (a second copy or a rescan). Only merge pages that "
@@ -228,6 +230,10 @@ def extraction_prompt(name: str, fields: list[spec.Field]) -> str:
         rules.append('- "rows": EVERY line of the main table that has ANY data, in printed order, one object per line; '
                      "a table that continues on the next page belongs to the same document. Never add a row for a "
                      "subtotal or total line.")
+    rules.append('- "where": for each key you filled that is printed on the page, [page, x0, y0, x1, y1] around the '
+                 "printed value only (not its label), coordinates 0-1000 from the page's top-left, page as in the "
+                 '"Page N:" label (1 for a single image). Leave out values you worked out rather than read.'
+                 + (f' In "rows", give "where" for the first {field_hints.HINT_ROWS} lines only.' if rows else ""))
     rules.append(f"- {_DATA_RULE}")
     for ftype in _TYPE_ORDER:
         keys = ", ".join(f["key"] for f in fields if f["type"] == ftype)
@@ -400,8 +406,11 @@ def parse_records(raw: str, fields: list[spec.Field], page_offset: int = 0,
             start = min(start, last_page)
             end = min(end, last_page)
         values, bad = checks.clean_record(item, fields)
+        hints = field_hints.record_hints(item, values, page_offset, start + page_offset, end + page_offset,
+                                         checks.MAX_ROWS)
         out.append({"page_start": start + page_offset, "page_end": end + page_offset,
-                    "confidence": _confidence(item.get("confidence")), "values": values, "bad_cells": bad})
+                    "confidence": _confidence(item.get("confidence")), "values": values, "bad_cells": bad,
+                    "hints": hints})
         if len(out) >= MAX_DOCUMENTS:
             break
     return out

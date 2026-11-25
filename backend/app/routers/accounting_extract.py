@@ -420,7 +420,7 @@ def _file_out(f: AAExtractFile) -> dict:
 def _record_out(r: AAExtractRecord) -> dict:
     return {"id": str(r.id), "file_id": str(r.file_id), "position": r.position, "page_start": r.page_start,
             "page_end": r.page_end, "confidence": r.confidence, "values": r.values, "edited": r.edited or [],
-            "bad_cells": r.bad_cells or [], "flags": r.flags or []}
+            "bad_cells": r.bad_cells or [], "flags": r.flags or [], "hints": r.hints or {}}
 
 
 async def _recover(db: AsyncSession, ent: uuid.UUID, run: AAExtractRun, files: list[AAExtractFile]) -> None:

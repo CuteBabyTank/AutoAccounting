@@ -1,5 +1,6 @@
 // Accounting API client (companies, uploads, periods, books). Auth/team/admin calls live in lib/api.ts.
 import api, { seg } from "@/lib/api";
+import type { PageLayout } from "@/lib/page-words";
 import type { StatementType } from "@/types/extras";
 import type {
   BulkResolveResult,
@@ -183,6 +184,18 @@ export const accountingApi = {
   moveDocumentToCompany: (id: string, companyId: string) =>
     api.post<AADocument>(`/accounting/documents/${seg(id)}/move-company`, { company_id: companyId }).then((r) => r.data),
   deleteDocument: (id: string) => api.delete(`/accounting/documents/${seg(id)}`).then(() => undefined),
+  /** Field boxes: where the shown image sits on the page and the PDF's own words (lib/page-words.ts). */
+  pageLayout: async (fileId: string, page: number): Promise<PageLayout> => {
+    const get = () =>
+      api.get<PageLayout>(`/accounting/files/${seg(fileId)}/pages/${seg(page)}/layout`).then((r) => r.data);
+    try {
+      return await get();
+    } catch (err) {
+      if ((err as { response?: { status?: number } })?.response?.status !== 503) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 600 + Math.random() * 400));
+      return get();
+    }
+  },
   pageImage: async (fileId: string, page: number): Promise<Blob> => {
     // v: bumped when the server's page rendering changes (2 = blank margins trimmed), so cached pages refresh
     const get = () =>

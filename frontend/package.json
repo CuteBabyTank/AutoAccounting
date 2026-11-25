@@ -7,19 +7,23 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "prebuild": "node scripts/version-assets.mjs",
+    "prebuild": "node scripts/copy-ocr.mjs && node scripts/version-assets.mjs",
     "version-assets": "node scripts/version-assets.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "predev": "node scripts/copy-ocr.mjs",
+    "copy-ocr": "node scripts/copy-ocr.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.7",
     "@react-oauth/google": "^0.13.5",
+    "@tesseract.js-data/eng": "1.0.0",
     "axios": "^1.7.0",
     "next": "~15.5.16",
     "next-themes": "^0.4.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-dropzone": "^14.3.5"
+    "react-dropzone": "^14.3.5",
+    "tesseract.js": "6.0.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",

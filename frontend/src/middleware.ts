@@ -42,7 +42,8 @@ export function middleware(request: NextRequest) {
   const csp = [
     "default-src 'self'",
     // 'unsafe-eval' only in dev: React Refresh evaluates modules as strings.
-    `script-src 'self' 'nonce-${nonce}'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""} https://accounts.google.com/gsi/client`,
+    // 'wasm-unsafe-eval': compiling WebAssembly only (the field-box OCR in /ocr/), not JS eval.
+    `script-src 'self' 'nonce-${nonce}' 'wasm-unsafe-eval'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""} https://accounts.google.com/gsi/client`,
     "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style https://fonts.googleapis.com",
     // blob: lets the PDF preview show a generated file in an iframe.
     "frame-src 'self' blob: https://accounts.google.com/",

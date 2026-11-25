@@ -1,5 +1,6 @@
 // Extract tab client (backend routers/accounting_extract.py, under /api/accounting/extract).
 import api, { seg } from "@/lib/api";
+import type { PageLayout } from "@/lib/page-words";
 import type { WorkbookSheet } from "@/types/accounting";
 import type {
   ExtractDraft,
@@ -73,6 +74,18 @@ export const extractApi = {
       return await get();
     } catch (err) {
       // 503 = the renderer was momentarily full; one short retry, then let the caller show its blank state.
+      if ((err as { response?: { status?: number } })?.response?.status !== 503) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 600 + Math.random() * 400));
+      return get();
+    }
+  },
+  /** Field boxes: where the shown image sits on the page and the PDF's own words (lib/page-words.ts). */
+  pageLayout: async (fileId: string, page: number): Promise<PageLayout> => {
+    const get = () =>
+      api.get<PageLayout>(`${BASE}/files/${seg(fileId)}/pages/${seg(page)}/layout`).then((r) => r.data);
+    try {
+      return await get();
+    } catch (err) {
       if ((err as { response?: { status?: number } })?.response?.status !== 503) throw err;
       await new Promise((resolve) => setTimeout(resolve, 600 + Math.random() * 400));
       return get();

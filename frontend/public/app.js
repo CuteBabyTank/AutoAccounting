@@ -90,6 +90,7 @@
           if (key && (key.startsWith("aa:assistant:messages") || key.startsWith("aa:quick:"))) store.removeItem(key);
         }
       }
+      indexedDB.deleteDatabase("aa-page-words");  // field boxes: words read off opened pages (lib/page-words.ts)
     } catch { /* storage blocked */ }
     renderAuth();
   }));

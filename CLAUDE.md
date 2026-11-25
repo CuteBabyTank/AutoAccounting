@@ -277,6 +277,21 @@ Multipart bodies are capped at the smaller of the configured batch capacity and 
   joins it to an explainer card with a dashed line. Stops are listed in `tours/spots.ts` and point at `data-tour="…"`
   attributes. A stop whose element isn't on screen (role, phone layout, no data) is skipped, so keep each `data-tour` on
   a visible element when you change a page. The illustrated slides (`GuideTour`) are offered at the end of the tour.
+- **Field boxes** (click a field, the scan outlines and zooms to it; design in
+  `docs/superpowers/specs/2026-11-25-field-boxes-design.md`): the reader returns `where: {key: [page, x0, y0, x1, y1]}`
+  (0-1000, chunk-local page) in the extraction call it already makes; `services/accounting/field_hints.py` keeps
+  them as `aa_documents.field_hints` / `aa_extract_records.hints` (fractions of the **untrimmed** page, file pages),
+  or `{computed: true}` when the stored value isn't what was read (never searched for). Hints are **never drawn**.
+  The browser confirms each against the page's words (`lib/field-locate.ts`, strict: with a hint exactly one match
+  inside it; without one only TIN / number / date / 2+-word text found once; amounts never) and draws nothing
+  otherwise. Words come from `GET …/files/{id}/pages/{n}/layout` (PDF text layer + the viewer's trim `crop`; the
+  trim render and the route share `page_trim.pdf_clip`, keep it that way) or, for images / scans, Tesseract.js in the
+  person's browser (`lib/page-words.ts`; worker, core and `eng` data self-hosted in `public/ocr/` by
+  `scripts/copy-ocr.mjs` at predev / prebuild; CSP `'wasm-unsafe-eval'`). No OCR on the server; only pages someone
+  opens are read. Words are cached in IndexedDB `aa-page-words` per person, cleared on sign-out (also in
+  `public/app.js`); bump `WORDS_VERSION` when the OCR changes. A photo with an EXIF rotation gets `crop: null` (no
+  boxes). A new document field needs a key in `field_hints._DOC_RAW`, the reader prompt's `where` list and
+  `BOX_FIELDS` in `DocumentPanel.tsx`.
 - **Notification jumps:** a bell click opens its target (`NotificationBell.target`) and rings the element marked `data-focus` for ~2 s (`lib/focus.ts` `flashFocus`, names from `focusName`; CSS `.aa-focus-flash`). A new notification kind needs a branch in `target` and a `data-focus` on what it points at.
 - **PDF preview / hand edits:** every PDF button opens the preview first and downloads from there (one button, no
   separate preview/eye button; `components/accounting/PdfPreview.tsx`, read-only files use `useFilePreview`). Excel exports

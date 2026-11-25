@@ -86,3 +86,14 @@ def test_text_is_capped():
 def test_cell_count():
     assert export.cell_count(10, 5, 100, 300) == 100 * 14 + 300 * 7
     assert export.MAX_CELLS == 2_000_000
+
+
+def test_unreadable_amounts_stay_text_and_grouped_ones_become_numbers():
+    # The checks call "1.234,50" / "12,34" / "1,2,3" unreadable; stripping their commas would write a wrong amount.
+    texts = ["1.234,50", "12,34", "1,2,3", "1E5", "NaN"]
+    wb = load_workbook(io.BytesIO(export.workbook("Invoice", SNAP, [record(i, t) for i, t in enumerate(texts, 1)]
+                                                  + [record(9, "1,234.50"), record(10, "-1234.5")])))
+    ws = wb["Records"]
+    col = [c.value for c in ws[1]].index("Total amount") + 1
+    assert [ws.cell(r, col).value for r in range(2, 7)] == texts
+    assert ws.cell(7, col).value == 1234.5 and ws.cell(8, col).value == -1234.5

@@ -73,15 +73,11 @@ The user picked **C**.
   - `how` ∈ `text` | `ocr`: which word source confirmed the box.
 - The reader and the viewer use the same stored file, so a photographed sideways page is sideways in both and the
   box stays aligned. The only transform between them is the viewer's **margin trim** (`page_trim.py`).
-- Both page routes (`/api/accounting/files/{id}/pages/{n}` and the Extract one) add a response header
-  `X-AA-Page-Crop: x0,y0,x1,y1`: the trimmed region as fractions of the untrimmed page, or `0,0,1,1` when untrimmed.
-  It must be added to CORS `expose_headers`.
-  - The trim functions (`content_box`, `_render_pdf_page_trimmed`) return their box alongside the bytes. The box
-    must describe exactly the pixels returned, including the pad.
-  - The frontend maps a box into the shown image with
-    `(x - cx0) / (cx1 - cx0)`, and the same for y.
-  - A box that falls outside the crop (more than 2% of the crop size) is not drawn.
-- The page `v` in `accountingApi.pageImage` is bumped, so cached images without the header are refetched.
+- The trim crop comes from the page layout route (section 3), not from a response header. It returns the trimmed
+  region as fractions of the untrimmed page, or `0,0,1,1` when untrimmed, plus the untrimmed aspect ratio. The trim
+  render and the layout route call the same clip function, so they can't differ. The frontend maps a box into the
+  shown image with `(x - cx0) / (cx1 - cx0)`, and the same for y. A box is not drawn when it falls outside the crop
+  (more than 2%), or when the shown image's aspect ratio doesn't match the crop's (more than 2% off).
 
 ### 2. Reader asks for a hint box
 
@@ -92,10 +88,9 @@ The user picked **C**.
     for row fields.
   - The page is the "Page N:" label the reader already sees. The prompt says to give a box only for a value printed
     on the page and to leave it out otherwise.
-- **Coordinate formats differ by provider.** One parser in `services/accounting/field_boxes.py` turns them into
-  fractions:
-  - Qwen VL: `bbox_2d [x1,y1,x2,y2]`, 0–1000.
-  - Gemini: `box_2d [ymin,xmin,ymax,xmax]`, 0–1000.
+- **One coordinate format for every provider.** The prompt asks for `[page, x0, y0, x1, y1]` in 0–1000 from the
+  top-left, which is Qwen VL's native order. Gemini (dev only) is told the same. `services/accounting/field_hints.py`
+  turns it into fractions.
 - **Chunk pages map back to file pages.** PDFs go 2 pages per call (Qwen) or 10 (Gemini), so the parser maps a
   chunk's page label back to the file page with the chunk's offset (`pipeline.read_chunks` knows it).
 - **Extract row fields:** hints only for the first 20 rows of a record (my call, to keep the token cost within
@@ -120,7 +115,7 @@ page, and it runs on their computer, not the server. Nothing is located for page
     page image the viewer already loaded. The worker, core WASM and `eng` fast traineddata (about 5 MB, cached by
     the browser after the first use) are self-hosted under `public/ocr/`, never a CDN. The CSP gains
     `'wasm-unsafe-eval'` in `script-src`: it allows compiling WebAssembly only, not JS eval. OCR words are in
-    trimmed-image space, so they are mapped back to untrimmed fractions with the crop header (section 1) before
+    trimmed-image space, so they are mapped back to untrimmed fractions with the layout crop (section 1) before
     matching.
   - One OCR job at a time per tab. It is cancelled when the page or panel changes, and only runs while the tab is
     visible.
@@ -188,7 +183,7 @@ page, and it runs on their computer, not the server. Nothing is located for page
 - **Frontend tests:** the repo has no frontend test runner. Add `vitest` (dev dependency, pinned) for
   `lib/field-locate.ts` and the crop mapping only.
 - **Security:** model output is never trusted (strict clamping, no strings from boxes rendered as HTML).
-  `X-AA-Page-Crop` contains numbers only.
+  The layout route returns numbers and word text only.
 - **Resumable jobs:** locating runs inside the existing resumable extraction job. A crash before boxes are stored
   just leaves no boxes.
 - **Billing:** no page charges change.

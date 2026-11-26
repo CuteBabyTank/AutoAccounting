@@ -127,3 +127,11 @@ describe("housekeeping", () => {
     expect(purgeOthers).toHaveBeenCalledWith("u1");
   });
 });
+
+describe("keysToPurge", () => {
+  it("drops other people's pages and this person's pages read the old way", async () => {
+    const { keysToPurge } = await import("./page-words");
+    const keys = ["v2:u1:accounting:f:1:10x20", "v2:u2:accounting:f:1:10x20", "u1:accounting:f:1", "v1:u1:extract:f:2:1x1"];
+    expect(keysToPurge(keys, "u1")).toEqual(keys.slice(1));
+  });
+});

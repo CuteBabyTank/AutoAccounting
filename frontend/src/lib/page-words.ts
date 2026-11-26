@@ -53,6 +53,12 @@ interface Deps {
 /** Bump when how words are read changes (OCR scale, data, cut-off), so pages cached the old way are read again. */
 const WORDS_VERSION = 2;
 
+/** Browser-store keys to drop when `userId` reads pages: anyone else's, and this person's from an older version. */
+export function keysToPurge(keys: string[], userId: string): string[] {
+  const mine = `v${WORDS_VERSION}:${userId}:`;
+  return keys.filter((k) => !k.startsWith(mine));
+}
+
 const abortError = () => Object.assign(new Error("Aborted"), { name: "AbortError" });
 
 function untilVisible(signal: AbortSignal): Promise<void> {
@@ -172,6 +178,7 @@ function request<T>(r: IDBRequest<T>): Promise<T> {
 
 interface Row { key: string; at: number; size: number; value: PageWords }
 
+let storeGen = 0;   // bumped on sign-out: a write that was waiting for the database is dropped
 let openDb: IDBDatabase | null = null;   // closed before the sign-out delete, which an open connection would block
 
 function browserStore(): Store | null {
@@ -206,14 +213,17 @@ function browserStore(): Store | null {
     async purgeOthers(userId) {
       const d = await db();
       const keys = (await request(d.transaction("pages").objectStore("pages").getAllKeys())) as string[];
-      const others = keys.filter((k) => k.split(":")[1] !== userId);
+      const others = keysToPurge(keys, userId);
       if (!others.length) return;
       const tx = d.transaction("pages", "readwrite");
       others.forEach((k) => tx.objectStore("pages").delete(k));
     },
     async put(key, value) {
       const size = JSON.stringify(value).length;
-      await request((await db()).transaction("pages", "readwrite").objectStore("pages")
+      const gen = storeGen;
+      const d = await db();
+      if (gen !== storeGen) return;   // signed out while the database opened: keep nothing
+      await request(d.transaction("pages", "readwrite").objectStore("pages")
         .put({ key, at: Date.now(), size, value } satisfies Row));
     },
   };
@@ -293,6 +303,7 @@ export async function wordsFor(req: WordsRequest): Promise<PageWords> {
 
 /** Sign-out: forget every page's words (memory, IndexedDB) and stop the OCR worker. */
 export function clearPageWords(): void {
+  storeGen += 1;
   instance?.clear();
   instance = null;
   try {

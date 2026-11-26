@@ -125,7 +125,8 @@ def test_a_trimmed_page_render_also_caches_its_layout(tmp_path, monkeypatch):
     page.insert_text((200, 300), "INVOICE 0071420", fontsize=12)
     path = tmp_path / "t.pdf"
     doc.save(str(path))
-    render_pool._CACHE.clear()
+    monkeypatch.setattr(render_pool, "_CACHE", type(render_pool._CACHE)())
+    monkeypatch.setattr(render_pool, "_CACHE_BYTES", 0)
     calls = []
     real = subprocess.run
     monkeypatch.setattr(render_pool.subprocess, "run", lambda *a, **k: calls.append(a[0][10]) or real(*a, **k))
@@ -133,3 +134,28 @@ def test_a_trimmed_page_render_also_caches_its_layout(tmp_path, monkeypatch):
     layout = json.loads(render_pool.render_page(str(path), 0, "layout"))
     assert calls == ["trimmed"]                       # one child for both
     assert layout == _pdf_layout_local(str(path), 0)  # the same layout the layout route would compute
+
+
+def test_a_cut_off_layout_file_is_never_cached(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from app.services.accounting import render_pool
+
+    pdf = tmp_path / "c.pdf"
+    doc = fitz.open()
+    doc.new_page()
+    doc.save(str(pdf))
+    monkeypatch.setattr(render_pool, "_CACHE", type(render_pool._CACHE)())
+    monkeypatch.setattr(render_pool, "_CACHE_BYTES", 0)
+    kinds = []
+
+    def child(argv, **kwargs):
+        kinds.append(argv[10])
+        Path(argv[-2]).write_bytes(b'{"crop": [0, 0')   # the output cap cut the write short
+        Path(argv[-1]).write_bytes(b"image" if argv[10] == "trimmed" else b'{"crop": null}')
+        return type("P", (), {"returncode": 0})()
+
+    monkeypatch.setattr(render_pool.subprocess, "run", child)
+    render_pool.render_page(str(pdf), 0, "trimmed")
+    assert render_pool.render_page(str(pdf), 0, "layout") == b'{"crop": null}'
+    assert kinds == ["trimmed", "layout"]

@@ -191,9 +191,19 @@ def render_page(pdf_path: str, page: int, kind: str, dpi: int = 130, quality: in
             BACKGROUND_CHILD_SLOTS.release()
         _WORKERS.release()
     _remember(key, data)
-    if layout and len(layout) <= MAX_RENDER_BYTES:
+    if layout and len(layout) <= MAX_RENDER_BYTES and _whole_json(layout):
         _remember(key[:6] + ("layout", 130, 80, 32), layout)   # the key read_page_layout's render_page call uses
     return data or None
+
+
+def _whole_json(data: bytes) -> bool:
+    """A layout written alongside a render is cached only when complete (a capped write can cut it short)."""
+    import json
+
+    try:
+        return isinstance(json.loads(data), dict)
+    except ValueError:
+        return False
 
 
 def _remember(key: tuple, data: bytes) -> None:
@@ -203,7 +213,8 @@ def _remember(key: tuple, data: bytes) -> None:
     with _LOCK:
         previous = _CACHE.pop(key, b"")
         _CACHE_BYTES -= len(previous or b"")
-        while _CACHE and (_CACHE_BYTES + len(data) > _CACHE_LIMIT or len(_CACHE) >= 128):
+        # 256 entries: a page view keeps an image and its layout.
+        while _CACHE and (_CACHE_BYTES + len(data) > _CACHE_LIMIT or len(_CACHE) >= 256):
             _CACHE_BYTES -= len(_CACHE.popitem(last=False)[1] or b"")
         _CACHE[key] = data or None
         _CACHE_BYTES += len(data)

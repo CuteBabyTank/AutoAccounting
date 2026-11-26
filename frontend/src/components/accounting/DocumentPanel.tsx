@@ -108,6 +108,7 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
   const [activeField, setActiveField] = useState<string | null>(null);
   const [zoomRequest, setZoomRequest] = useState(0);   // bumped on every focus: refocusing a field zooms again
   const [placeable, setPlaceable] = useState<string[]>([]);   // fields the viewer can outline on the page shown
+  const [revealRequest, setRevealRequest] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -284,9 +285,9 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
   const flagged = useMemo(() => (flaggedKey ? flaggedKey.split("|") : []), [flaggedKey]);
   const fieldBoxes = useMemo<FieldBoxes>(() => ({
     src: "accounting", fileId: doc.file_id, targets, active: activeField, flagged, zoomRequest,
-    onPlaceable: setPlaceable,
+    onPlaceable: setPlaceable, revealRequest,
     onBoxClick: (key) => document.getElementById(`doc-field-${key}`)?.focus(),
-  }), [doc.file_id, targets, activeField, flagged, zoomRequest]);
+  }), [doc.file_id, targets, activeField, flagged, zoomRequest, revealRequest]);
   const focusProps = (key: string) => ({
     id: `doc-field-${key}`,
     onFocus: () => {
@@ -299,11 +300,14 @@ export default function DocumentPanel({ doc, focusPage, onClose, onChanged, onDe
     const cls = check ? `${INPUT} ${FLAG[check.level]}` : INPUT;
     const hintId = check ? `check-${key}` : undefined;
     return (
-      <div>
-        <label className={LABEL} htmlFor={`doc-field-${key}`}>
-          {label}
-          {placeable.includes(key) && <ShowOnScan onShow={() => document.getElementById(`doc-field-${key}`)?.focus()} />}
-        </label>
+      <div className="relative">
+        <label className={LABEL} htmlFor={`doc-field-${key}`}>{label}</label>
+        {placeable.includes(key) && (
+          <ShowOnScan onShow={() => {
+            setRevealRequest((n) => n + 1);
+            document.getElementById(`doc-field-${key}`)?.focus();
+          }} />
+        )}
         {AMOUNT_KEYS.has(key) ? (
           <AmountInput
             {...focusProps(key)}

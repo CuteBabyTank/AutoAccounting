@@ -131,16 +131,21 @@ export default function RecordPanel({
   const [activeCell, setActiveCell] = useState<string | null>(null);
   const [zoomRequest, setZoomRequest] = useState(0);
   const [placeable, setPlaceable] = useState<string[]>([]);   // cells the viewer can outline on the page shown
+  const [revealRequest, setRevealRequest] = useState(0);
   // What is typed in a cell before it saves: the outline follows it (a saved record replaces the panel's record).
   const [typing, setTyping] = useState<Record<string, string>>({});
-  useEffect(() => setTyping({}), [record]);
+  // A saved record keeps only the cell still being typed in (another cell's save must not undo it).
+  useEffect(() => {
+    const now = (document.activeElement as HTMLElement | null)?.dataset?.cell;
+    setTyping((t) => (now && now in t ? { [now]: t[now] } : {}));
+  }, [record]);
   const flaggedKey = [...byCell.keys()].join("|");
   const fieldBoxes = useMemo<FieldBoxes>(() => ({
     src: "extract", fileId: record.file_id, targets: snapshot ? recordTargets(record, snapshot, typing) : [],
-    zoomRequest, onPlaceable: setPlaceable,
+    zoomRequest, onPlaceable: setPlaceable, revealRequest,
     active: activeCell, flagged: flaggedKey ? flaggedKey.split("|") : [], onBoxClick: focusCell,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- focusCell only reads the DOM
-  }), [record, snapshot, activeCell, flaggedKey, typing, zoomRequest]);
+  }), [record, snapshot, activeCell, flaggedKey, typing, zoomRequest, revealRequest]);
 
   useEffect(() => {
     if (focus.cell) focusCell(focus.cell);
@@ -177,6 +182,17 @@ export default function RecordPanel({
         if (cell) {
           setActiveCell(cell);
           setZoomRequest((n) => n + 1);
+        }
+      }}
+      onKeyDown={(e) => {
+        // Escape puts the saved value back without an input event: the outline follows it again.
+        const cell = (e.target as HTMLElement).dataset?.cell;
+        if (e.key === "Escape" && cell) {
+          setTyping((t) => {
+            const rest = { ...t };
+            delete rest[cell];
+            return rest;
+          });
         }
       }}
       onInput={(e) => {
@@ -227,18 +243,22 @@ export default function RecordPanel({
               {header.map((f) => {
                 const id = cellId(f.key, null);
                 return (
-                  <label key={f.key} className="block min-w-0">
+                  <div key={f.key} className="relative min-w-0">
+                  <label className="block min-w-0">
                     <span className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-secondary)]">
                       {f.label} {edited.has(id) && <EditedMark />}
-                      {placeable.includes(id) && (
-                        <ShowOnScan onShow={() => root.current?.querySelector<HTMLInputElement>(
-                          `input[data-cell="${CSS.escape(id)}"]`)?.focus()} />
-                      )}
                     </span>
                     <CellInput id={id} field={f} row={null} value={record.values.header?.[f.key] ?? ""}
                       flags={byCell.get(id) ?? []} save={save} onStep={focusNext}
                       report={report} typingElsewhere={typingElsewhere} />
                   </label>
+                  {placeable.includes(id) && (
+                    <ShowOnScan onShow={() => {
+                      setRevealRequest((n) => n + 1);
+                      root.current?.querySelector<HTMLInputElement>(`input[data-cell="${CSS.escape(id)}"]`)?.focus();
+                    }} />
+                  )}
+                  </div>
                 );
               })}
             </div>

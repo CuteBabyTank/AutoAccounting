@@ -27,6 +27,8 @@ export interface FieldBoxes {
   flagged: string[];
   /** Bumped each time a field is focused: focusing the same field again zooms to it again. */
   zoomRequest?: number;
+  /** Bumped by a "show on scan" button: also scrolls the scan into sight (phones). A plain focus never scrolls. */
+  revealRequest?: number;
   onBoxClick?: (key: string) => void;
   /** The fields that can be outlined on the page shown (for the labels' "show on scan" buttons). */
   onPlaceable?: (keys: string[]) => void;
@@ -218,6 +220,7 @@ export default function PageViewer({ images, firstPage, className = "", onAspect
       found.current = { pw, no: currentNo, shape, map: new Map() };
     }
     const map = found.current.map;
+    if (map.size > 500) map.clear();   // many typed values on one page: start over rather than grow
     for (const t of fields.targets) {
       const id = `${t.key}\u0000${t.kind}\u0000${t.value}\u0000${JSON.stringify(t.hint ?? null)}`;
       if (!map.has(id)) {
@@ -232,7 +235,10 @@ export default function PageViewer({ images, firstPage, className = "", onAspect
   const placeableKey = Object.keys(placed).sort().join("|");
   const onPlaceable = fields?.onPlaceable;
   useEffect(() => {
+    // A hidden copy (the panel's other layout) never reports: it would wipe the shown one's list.
+    if (!box.current || box.current.offsetParent === null) return;
     onPlaceable?.(placeableKey ? placeableKey.split("|") : []);
+    return () => onPlaceable?.([]);
   }, [placeableKey, onPlaceable]);
   // Drawn: the focused field and the flagged ones, in container fractions.
   const boxes = useMemo(() => {
@@ -245,16 +251,27 @@ export default function PageViewer({ images, firstPage, className = "", onAspect
     return out;
   }, [fields, placed, size, boxAspect]);
 
+  // A "show on scan" press: the scan is brought into sight once the field's box is found.
+  const revealRequest = fields?.revealRequest ?? 0;
+  const revealing = useRef(false);
+  useEffect(() => {
+    if (revealRequest) revealing.current = true;
+  }, [revealRequest]);
+
   // Zoom to the focused field once its box is known (only once per focus).
   const activeBox = active ? boxes[active] : undefined;
   useEffect(() => {
     const el = box.current;
     if (!el || !activeBox || seeking.current !== active) return;
     seeking.current = null;
-    // Stacked layout (phones): bring the scan into sight when it is mostly off screen.
-    const r = el.getBoundingClientRect();
-    const seen = Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0);
-    if (seen < r.height / 3) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (revealing.current) {
+      // Stacked layout (phones): bring the scan into sight when it is mostly off screen. Only on request, so a
+      // tap into a field to type never scrolls that field away.
+      revealing.current = false;
+      const r = el.getBoundingClientRect();
+      const seen = Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0);
+      if (seen < r.height / 3) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
     if (!follow) return;
     const next = zoomFor(activeBox, { w: el.clientWidth, h: el.clientHeight, left: el.scrollLeft, top: el.scrollTop,
       zoom: zoomRef.current });
@@ -266,7 +283,7 @@ export default function PageViewer({ images, firstPage, className = "", onAspect
     pending.current = { left: next.left, top: next.top };
     zoomRef.current = next.zoom;
     setZoomState(next.zoom);
-  }, [activeBox, active, follow]);
+  }, [activeBox, active, follow, zoomRequest]);
 
   return (
     <div className={`flex min-h-0 flex-col ${className}`}>
